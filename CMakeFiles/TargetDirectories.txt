@@ -1,0 +1,7 @@
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/Modular.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/edit_cache.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/rebuild_cache.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/list_install_components.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/install.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/install/local.dir
+/home/superphenotype/.gitrepos/Modular/CMakeFiles/install/strip.dir

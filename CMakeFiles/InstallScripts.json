@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/superphenotype/.gitrepos/Modular/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

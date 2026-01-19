@@ -1,54 +1,47 @@
-cmake_minimum_required(VERSION 3.10)
-project(ModularProject)
+cmake_minimum_required(VERSION 3.20)
+project(Modular VERSION 1.0.0 LANGUAGES CXX)
 
-# Use C++17
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set output directories
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
+# Enable folders in IDEs
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Include directories (assuming Rename.h is in the 'include/' directory)
-include_directories(${CMAKE_SOURCE_DIR}/include)
-
-# Find cURL
+# Find required packages
 find_package(CURL REQUIRED)
+find_package(nlohmann_json 3.11 REQUIRED)
 
-# Find nlohmann/json (header-only library)
-find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp)
-if(NLOHMANN_JSON_INCLUDE_DIR)
-    include_directories(${NLOHMANN_JSON_INCLUDE_DIR})
-else()
-    message(FATAL_ERROR "nlohmann/json.hpp not found. Install nlohmann-json or provide the correct include path.")
-endif()
-
-# Add source files (adjust paths if needed)
-set(SOURCES
-    src/NexusMods.cpp
-    src/GameBanana.cpp
-    src/Rename.cpp
+# Create executable
+add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/GameBanana.cpp
+    src/NexusMods.cpp
+    src/Rename.cpp
+    include/GameBanana.h
+    include/NexusMods.h
+    include/Rename.h
 )
 
-# Create a library for all the sources
-add_library(ModularLib ${SOURCES})
-target_link_libraries(ModularLib CURL::libcurl)
+# Link libraries
+target_link_libraries(${PROJECT_NAME} 
+    PRIVATE 
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
+)
 
-# Linux executable
-add_executable(Modular_Linux src/main.cpp)
-target_link_libraries(Modular_Linux ModularLib)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    src/
+    ${CMAKE_SOURCE_DIR}     # Project root for headers
+    ${CMAKE_SOURCE_DIR}/include  # If you have include/ folder
+)
 
-# Enable additional compiler warnings with GCC/Clang
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(Modular_Linux PRIVATE -Wall -Wextra -Wpedantic)
+# Compiler warnings
+if (MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# Cross-compile for Windows (optional)
-if(CMAKE_CROSSCOMPILING OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc)
-    set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
-    add_executable(Modular_Windows src/main.cpp)
-    target_link_libraries(Modular_Windows ModularLib)
-endif()
+# Install target
+install(TARGETS ${PROJECT_NAME} DESTINATION bin)

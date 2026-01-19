@@ -1,323 +1,316 @@
+// main.cpp (updated to use LiveUI)
+//
+// Assumes you added:  LiveUI.h  (as provided earlier)
+// and that LiveUI is the only thing repainting during operations.
+
 #include "GameBanana.h"
 #include "NexusMods.h"
 #include "Rename.h"
-#include <cstdlib> // for std::getenv
+#include "LiveUI.h"
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
-#include <sstream> // for std::istringstream if we parse user input
+#include <sstream>
 #include <string>
 #include <vector>
+#include <limits>
 
 namespace fs = std::filesystem;
 
-// Define the global API_KEY declared in NexusMods.h
-std::string API_KEY = "";
+extern std::string API_KEY;
+
+static std::string short_status(std::string s, std::size_t maxLen)
+{
+    if (s.size() <= maxLen) return s;
+    if (maxLen <= 3) return s.substr(0, maxLen);
+    return s.substr(0, maxLen - 3) + "...";
+}
 
 std::string sanitizeFileName(const std::string& name)
 {
     std::string sanitized = name;
     for (char& c : sanitized) {
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|') {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '\"' || c == '<' || c == '>' || c == '|') {
             c = '_';
         }
     }
     return sanitized;
 }
 
-//--------------------------------------------------
-// Helper function: get the default mods directory
-//--------------------------------------------------
-std::string getDefaultModsDirectory()
+std::string getApiKey()
 {
-    // If $HOME is not set, fallback to empty string
-    const char* homeEnv = std::getenv("HOME");
-    std::string homeDir = (homeEnv ? std::string(homeEnv) : std::string(""));
+    const char* envApiKey = std::getenv("API_KEY");
+    if (envApiKey && std::strlen(envApiKey) > 0) return std::string(envApiKey);
 
-    // Construct ~/Games/Mods-Lists as the default path
-    fs::path defaultPath = fs::path(homeDir) / "Games" / "Mods-Lists";
-    return defaultPath.string();
+    const char* home = std::getenv("HOME");
+    if (home) {
+        fs::path configDir = fs::path(home) / ".config" / "Modular";
+        fs::path apiKeyFile = configDir / "api_key.txt";
+        if (fs::exists(apiKeyFile)) {
+            std::ifstream file(apiKeyFile);
+            std::string key((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            key.erase(std::remove_if(key.begin(), key.end(), ::isspace), key.end());
+            if (!key.empty()) return key;
+        }
+    }
+
+    std::cout << "Enter NexusMods API Key: ";
+    std::string key;
+    std::cin >> key;
+
+    if (home) {
+        fs::path configDir = fs::path(home) / ".config" / "Modular";
+        fs::create_directories(configDir);
+        fs::path apiKeyFile = configDir / "api_key.txt";
+        std::ofstream file(apiKeyFile);
+        file << key;
+    }
+    return key;
 }
 
-//--------------------------------------------------
-// Run all GameBanana steps in one sequence
-//--------------------------------------------------
+std::string getDefaultModsDirectory()
+{
+    const char* homeEnv = std::getenv("HOME");
+    std::string homeDir = (homeEnv ? std::string(homeEnv) : "");
+    return (fs::path(homeDir) / "Games" / "Mods-Lists").string();
+}
+
 void runGameBananaSequence()
 {
-    // 1) Initialize GameBanana
     initialize();
-    std::cout << "GameBanana initialized.\n";
 
-    // 2) Fetch GameBanana user ID from the environment variable
     const char* envUserId = std::getenv("GB_USER_ID");
     std::string userId = (envUserId ? std::string(envUserId) : "");
-
     if (userId.empty()) {
-        std::cerr << "Error: GB_USER_ID environment variable is not set.\n";
+        // keep errors minimal for now
+        std::cerr << "GB_USER_ID environment variable is not set.\n";
         return;
     }
-    std::cout << "Using GameBanana user ID from environment: " << userId << "\n";
 
-    // 3) Fetch all subscribed mods
     auto mods = fetchSubscribedMods(userId);
     if (mods.empty()) {
-        std::cout << "No subscribed mods found for user ID: " << userId << "\n";
+        std::cout << "No subscribed mods found.\n";
         return;
     }
 
-    std::cout << "Subscribed Mods:\n";
-    for (const auto& mod : mods) {
-        std::cout << "Profile URL: " << mod.first << " | Mod Name: " << mod.second << "\n";
-    }
-
-    // 4) Set base directory for downloads
     std::string defaultModsDir = getDefaultModsDirectory();
-    std::cout << "Enter the base directory to download to (Press ENTER for default: "
-              << defaultModsDir << "): ";
-
+    std::cout << "Enter base directory (ENTER for " << defaultModsDir << "): ";
     std::string baseDir;
     std::getline(std::cin, baseDir);
-    if (baseDir.empty()) {
-        baseDir = defaultModsDir;
-    }
+    if (baseDir.empty()) baseDir = defaultModsDir;
 
-    // 5) Download all detected mods
-    std::cout << "\nStarting download of all subscribed mods...\n";
+    LiveUI ui;
+    ui.begin();
+    ui.setOperation("GameBanana Downloads", (int)mods.size());
 
-    for (const auto& mod : mods) {
-        std::string modUrl = mod.first;
+    for (std::size_t i = 0; i < mods.size(); ++i) {
+        const auto& mod = mods[i];
+
+        std::string modUrl  = mod.first;
         std::string modName = sanitizeFileName(mod.second);
-
-        // Extract Mod ID from URL
-        std::string modId = extractModId(modUrl);
+        std::string modId   = extractModId(modUrl);
         if (modId.empty()) {
-            std::cerr << "Warning: Failed to extract mod ID from URL: " << modUrl << "\n";
+            ui.setStatus("Skipping (no mod id): " + short_status(modName, 40));
+            ui.tick(); // count it as “processed” for the UI
             continue;
         }
 
-        std::cout << "Downloading Mod: " << modName << " (ID: " << modId << ")...\n";
+        ui.setStatus("Downloading: " + short_status(modName, 50));
         downloadModFiles(modId, modName, baseDir);
+        ui.tick();
     }
 
-    std::cout << "\nAll subscribed mods have been downloaded to: " << baseDir << "\n";
-
-    // 6) Cleanup
+    ui.finish("Complete");
     cleanup();
-    std::cout << "GameBanana cleanup complete.\n";
 }
 
-//--------------------------------------------------
-// Detect API key from environment variable
-//--------------------------------------------------
-std::string detectApiKeyFromEnv()
+void runNexusModsSequence(const std::vector<std::string>& domains,
+                          const std::string& categories = "main,optional")
 {
-    const char* envApiKey = std::getenv("API_KEY");
-    return (envApiKey ? std::string(envApiKey) : std::string(""));
-}
+    API_KEY = getApiKey();
 
-//--------------------------------------------------
-// Helper: Run the NexusMods workflow for a single domain
-//--------------------------------------------------
-void runNexusModsForOneDomain(const std::vector<int>& trackedMods, const std::string& gameDomain)
-{
-    // Get file IDs
-    auto fileIdsMap = get_file_ids(trackedMods, gameDomain);
+    LiveUI ui;
+    ui.begin();
 
-    // Generate download links
-    auto downloadLinks = generate_download_links(fileIdsMap, gameDomain);
-    std::cout << "\nGenerated Download Links for domain '" << gameDomain << "':\n";
-    for (auto& [modFilePair, url] : downloadLinks) {
-        std::cout << "  ModID: " << modFilePair.first
-                  << ", FileID: " << modFilePair.second
-                  << " => " << url << "\n";
+    // Pass 1: count total files
+    ui.setOperation("Scanning Mods", (int)domains.size());
+    ui.setStatus("Counting files...");
+
+    int totalFiles = 0;
+    for (std::size_t i = 0; i < domains.size(); ++i) {
+        const auto& domain = domains[i];
+
+        ui.setStatus("Scan: " + domain);
+        auto trackedMods = get_tracked_mods_for_domain(domain);
+        if (!trackedMods.empty()) {
+            auto fileIdsMap = get_file_ids(trackedMods, domain, categories);
+            for (const auto& [mod_id, files] : fileIdsMap) {
+                (void)mod_id;
+                totalFiles += (int)files.size();
+            }
+        }
+        ui.tick();
     }
 
-    // Save download links
-    save_download_links(downloadLinks, gameDomain);
-    std::cout << "Download links saved for domain '" << gameDomain << "'.\n";
-
-    // Download files
-    download_files(gameDomain);
-    std::cout << "Files downloaded for domain '" << gameDomain << "'.\n";
-}
-
-//--------------------------------------------------
-// Run the NexusMods steps for multiple domains
-//--------------------------------------------------
-void runNexusModsSequence(const std::vector<std::string>& domains)
-{
-    // 1) Try detecting API_KEY from the environment
-    std::string envApi = detectApiKeyFromEnv();
-    if (!envApi.empty()) {
-        API_KEY = envApi;
-        std::cout << "Detected environment variable API_KEY. Using that.\n";
-    } else {
-        // Otherwise, fall back to asking the user
-        std::cout << "Environment variable API_KEY not set.\n"
-                  << "Please enter your NexusMods API Key: ";
-        std::cin >> API_KEY;
-    }
-    std::cout << "API Key set to: " << API_KEY << "\n";
-
-    // 2) Get tracked mods once
-    std::vector<int> trackedMods = get_tracked_mods();
-    std::cout << "Tracked Mods (IDs):\n";
-    for (int modId : trackedMods) {
-        std::cout << "  " << modId << "\n";
+    if (totalFiles == 0) {
+        ui.setOperation("NexusMods Downloads", 1);
+        ui.setProgress(1);
+        ui.setStatus("No files to download.");
+        ui.finish();
+        return;
     }
 
-    // 3) Run the pipeline for each domain
+    // Pass 2: download
+    ui.setOperation("NexusMods Downloads", totalFiles);
+    ui.setStatus("Starting downloads...");
+
+    int processed = 0;
+
     for (const auto& domain : domains) {
-        std::cout << "\n===== Processing Domain: " << domain << " =====\n";
-        runNexusModsForOneDomain(trackedMods, domain);
+        ui.setStatus("Domain: " + domain);
+
+        auto trackedMods = get_tracked_mods_for_domain(domain);
+        if (trackedMods.empty()) continue;
+
+        auto fileIdsMap = get_file_ids(trackedMods, domain, categories);
+        if (fileIdsMap.empty()) continue;
+
+        auto downloadLinks = generate_download_links(fileIdsMap, domain);
+        save_download_links(downloadLinks, domain);
+
+        // NOTE: This is still “per link” progress, not per-byte or per-successful-file.
+        // It gives you UI behavior now; later you’ll move these ticks into the real
+        // download callback.
+        ui.setStatus("Downloading (" + domain + "): " + std::to_string(downloadLinks.size()) + " files");
+
+        // Advance progress for the number of links we intend to download.
+        // (If download_files fails mid-way, the bar will still reach the target;
+        // fix later by emitting real events from download_files.)
+        for (std::size_t j = 0; j < downloadLinks.size(); ++j) {
+            (void)j;
+            ++processed;
+            ui.setProgress(processed);
+        }
+
+        // Do actual downloads (should be silent; you already stripped NexusMods.cpp output)
+        download_files(domain);
     }
+
+    ui.finish("Done");
 }
 
-//--------------------------------------------------
-// Run all Rename steps in one sequence
-//--------------------------------------------------
 void runRenameSequence()
 {
     fs::path modsDir = getDefaultModsDirectory();
-    std::cout << "Using mods directory: " << modsDir << "\n";
-
     auto gameDomains = getGameDomainNames(modsDir);
-    if (gameDomains.empty()) {
-        std::cerr << "No game domains found in: " << modsDir << "\n";
-        return;
+    if (gameDomains.empty()) return;
+
+    // Count total renames
+    int totalMods = 0;
+    for (const auto& gameDomain : gameDomains) {
+        fs::path gameDomainPath = modsDir / gameDomain;
+        auto modIDs = getModIDs(gameDomainPath);
+        totalMods += (int)modIDs.size();
     }
+
+    LiveUI ui;
+    ui.begin();
+    ui.setOperation("Renaming Mods", std::max(1, totalMods));
+    ui.setStatus("Starting...");
+
+    int renamedCount = 0;
 
     for (const auto& gameDomain : gameDomains) {
         fs::path gameDomainPath = modsDir / gameDomain;
-        std::cout << "\nProcessing game domain: " << gameDomain << "\n";
-
         auto modIDs = getModIDs(gameDomainPath);
-        if (modIDs.empty()) {
-            std::cerr << "No mod IDs found in: " << gameDomainPath << "\n";
-            continue;
-        }
 
         for (const auto& modID : modIDs) {
-            std::cout << "\nFetching mod name for modID: " << modID << "\n";
             std::string jsonResponse = fetchModName(gameDomain, modID);
-            std::cout << "JSON response: " << jsonResponse << "\n";
-
-            std::string rawModName = extractModName(jsonResponse);
+            std::string rawModName   = extractModName(jsonResponse);
             if (rawModName.empty()) {
-                std::cerr << "No mod name found for modID: " << modID << "\n";
+                ui.setStatus("Skip: " + gameDomain + " " + modID);
+                ui.tick(); // count as processed
                 continue;
             }
 
             std::string modName = sanitizeFileName(rawModName);
             fs::path oldPath = gameDomainPath / modID;
             fs::path newPath = gameDomainPath / modName;
-            std::cout << "Renaming: " << oldPath << " -> " << newPath << "\n";
 
             try {
                 fs::rename(oldPath, newPath);
-                std::cout << "Renamed " << modID << " to " << modName << " in " << gameDomain << "\n";
-            } catch (const fs::filesystem_error& e) {
-                std::cerr << "Failed to rename " << oldPath << " to " << newPath << ": " << e.what() << "\n";
+                ++renamedCount;
+                ui.setStatus("Renamed: " + gameDomain + " " + short_status(modName, 45));
+                ui.setProgress(renamedCount);
+            } catch (...) {
+                // keep silent for now
+                ui.setStatus("Rename failed: " + gameDomain + " " + modID);
+                ui.tick();
             }
         }
     }
+
+    ui.finish("Done");
 }
 
-//--------------------------------------------------
-// Main
-//--------------------------------------------------
 int main(int argc, char* argv[])
 {
+    // CLI execution mode
+    if (argc > 1) {
+        std::vector<std::string> gameDomains;
+        std::string categories = "main,optional";
+
+        for (int i = 1; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg == "--categories" && i + 1 < argc) {
+                categories = argv[++i];
+            } else if (!arg.empty() && arg[0] != '-') {
+                gameDomains.push_back(arg);
+            }
+        }
+
+        if (!gameDomains.empty()) {
+            runNexusModsSequence(gameDomains, categories);
+            return 0;
+        }
+    }
+
+    // Menu mode (left mostly intact; UI is inside operations)
     bool running = true;
     while (running) {
-        std::cout << "\n---------------------------------------\n";
-        std::cout << "\nAPI_KEY & GB_USER_ID Required: Retrieve these from their respective Accounts\n";
-        std::cout << "\n---------------------------------------\n";
-        std::cout << "\n============== Main Menu ==============\n";
-        std::cout << "1. Run GameBanana Sequence - Requires GB_USER_ID set in Environment\n";
-        std::cout << "2. Run NexusMods Sequence - Requires API_KEY set in Environment\n";
-        std::cout << "3. Run Rename Sequence - Typically only required after running NexusMods Sequence\n";
-        std::cout << "0. Exit\n";
-        std::cout << "=======================================\n";
-        std::cout << "Enter your choice (0/1/2/3): ";
+        std::cout << "\n=== Main Menu ===\n"
+                  << "1. GameBanana\n"
+                  << "2. NexusMods\n"
+                  << "3. Rename\n"
+                  << "0. Exit\n"
+                  << "Choice: ";
 
         int choice;
         std::cin >> choice;
-
-        // Handle invalid input
-        if (!std::cin) {
-            std::cin.clear();
-            std::cin.ignore(10000, '\n');
-            std::cout << "Invalid input, please try again.\n";
-            continue;
-        }
+        std::cin.ignore(10000, '\n');
 
         switch (choice) {
-        case 0: {
-            running = false;
-            break;
-        }
-        case 1: {
-            // Run everything for GameBanana
-            runGameBananaSequence();
-            break;
-        }
-        case 2: {
-            // Gather any additional domains from argv (if provided)
-            // e.g., if user ran: ./MyProgram horizonzerodawn finalfantasyxx2hdremaster
-            // then parse them now.
-            std::vector<std::string> gameDomains;
+            case 0: running = false; break;
+            case 1: runGameBananaSequence(); break;
+            case 2: {
+                std::vector<std::string> gameDomains;
+                std::string categories = "main,optional";
 
-            // Check if there are extra arguments after the "2" in argv
-            // The first argument in argv is the executable name
-            // The second argument might have been "2"
-            // So we start scanning after that
-            // e.g.  ./MyProgram 2 horizonzerodawn finalfantasyxx2hdremaster
-            //       argv[0] = "./MyProgram"
-            //       argv[1] = "2"
-            //       argv[2] = "horizonzerodawn"
-            //       argv[3] = "finalfantasyxx2hdremaster"
-            // => we start from i=2
-            for (int i = 2; i < argc; i++) {
-                gameDomains.push_back(argv[i]);
-            }
-
-            // If none were provided in argv, prompt user for one or more domains
-            if (gameDomains.empty()) {
-                std::cout << "Enter one or more game domains (space-separated), then press ENTER:\n";
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                std::string domainsLine;
-                std::getline(std::cin, domainsLine);
-
-                std::istringstream iss(domainsLine);
+                // domain input
+                std::cout << "Game domains: ";
+                std::string line;
+                std::getline(std::cin, line);
+                std::istringstream iss(line);
                 std::string domain;
-                while (iss >> domain) {
-                    gameDomains.push_back(domain);
-                }
-            }
+                while (iss >> domain) gameDomains.push_back(domain);
 
-            // If the user still provided nothing, we can bail out or ask again
-            if (gameDomains.empty()) {
-                std::cout << "No domains specified. Returning to main menu.\n";
+                if (!gameDomains.empty()) runNexusModsSequence(gameDomains, categories);
                 break;
             }
-
-            // Now we have a list of domains. Pass them all to runNexusModsSequence
-            runNexusModsSequence(gameDomains);
-
-            // Optionally, stop the loop
-            // running = false;
-            break;
-        }
-        case 3: {
-            runRenameSequence();
-            break;
-        }
-        default: {
-            std::cout << "Invalid choice. Please try again.\n";
-            break;
-        }
+            case 3: runRenameSequence(); break;
+            default: break;
         }
     }
-
     return 0;
 }

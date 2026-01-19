@@ -14,4 +14,7 @@ build/
 # executables
 bin/
 
-
+*.o
+*.exe
+*.dSYM/
+.DS_Store
