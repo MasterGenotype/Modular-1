@@ -1,10 +1,10 @@
 # Modular
 
-A sophisticated C++ command-line application for automating the downloading, organizing, and renaming of game modifications from multiple mod repositories.
+A C++ command-line application for automating the downloading, organizing, and renaming of game modifications from multiple mod repositories.
 
 ## Overview
 
-Modular streamlines game mod management by providing a unified interface to download mods from various sources (NexusMods, GameBanana), automatically organize them into structured directories, and rename folders using human-readable mod names. The application features robust rate limiting, download verification, and real-time progress visualization.
+Modular streamlines game mod management by providing an interface to download mods from various sources (NexusMods, GameBanana), automatically organize them into structured directories by Domain/Category/Mod_Id/Archived-Mod. Work In Progress
 
 ## Features
 
@@ -14,7 +14,7 @@ Modular streamlines game mod management by providing a unified interface to down
 - **Rate Limit Compliance** - Built-in rate limiter respects NexusMods API limits (20,000/day, 500/hour)
 - **Download Verification** - MD5 checksum verification with persistent download history database
 - **Tracking Validation** - Cross-validates API tracking against web tracking center for accuracy
-- **Real-Time Progress** - Live progress bars for all download and organization operations
+- **Real-Time Progress** - Live progress bars for all download and organization operations -WIP-
 - **Flexible Configuration** - Supports environment variables, config files, and command-line arguments
 - **Retry Logic** - Automatic retry with exponential backoff for failed network requests
 
@@ -80,7 +80,7 @@ Modular follows a clean three-layer architecture:
 | **CURL (libcurl)** | HTTP/HTTPS requests and file downloads |
 | **nlohmann/json** | JSON parsing and serialization |
 | **OpenSSL (libcrypto)** | MD5 checksum calculation |
-| **Catch2 v3.5.2** | Unit testing framework (fetched automatically) |
+| **Catch2 v3.5.2** | Unit testing framework (fetched automatically) | - git submodule -
 
 ## Building
 
