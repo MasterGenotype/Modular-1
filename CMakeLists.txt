@@ -11,37 +11,127 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Find required packages
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(OpenSSL REQUIRED)
 
-# Create executable
-add_executable(${PROJECT_NAME}
-    src/main.cpp
-    src/GameBanana.cpp
-    src/NexusMods.cpp
-    src/Rename.cpp
-    include/GameBanana.h
-    include/NexusMods.h
-    include/Rename.h
+#==============================================================================
+# Core Library (libmodular-core)
+#==============================================================================
+
+add_library(modular-core STATIC
+    # Core business logic
+    src/core/HttpClient.cpp
+    src/core/RateLimiter.cpp
+    src/core/Config.cpp
+    src/core/Utils.cpp
+    src/core/Database.cpp
+    src/core/NexusMods.cpp
+    src/core/GameBanana.cpp
+    src/core/Rename.cpp
+    src/core/HtmlParser.cpp
+    src/core/TrackingValidator.cpp
+    
+    # Headers
+    include/core/HttpClient.h
+    include/core/RateLimiter.h
+    include/core/Config.h
+    include/core/Utils.h
+    include/core/Database.h
+    include/core/ILogger.h
+    include/core/Exceptions.h
+    include/core/NexusMods.h
+    include/core/GameBanana.h
+    include/core/Rename.h
+    include/core/HtmlParser.h
+    include/core/TrackingValidator.h
 )
 
-# Link libraries
-target_link_libraries(${PROJECT_NAME} 
+target_include_directories(modular-core 
+    PUBLIC 
+        include
+    PRIVATE
+        src/core
+)
+
+target_link_libraries(modular-core 
+    PUBLIC 
+        CURL::libcurl
+        nlohmann_json::nlohmann_json
+        OpenSSL::Crypto
+)
+
+#==============================================================================
+# CLI Executable (modular-cli)
+#==============================================================================
+
+add_executable(modular-cli
+    src/cli/main.cpp
+    src/cli/LiveUI.cpp
+    include/cli/LiveUI.h
+)
+
+target_include_directories(modular-cli
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include/cli
+        ${CMAKE_SOURCE_DIR}/include/core
+)
+
+target_link_libraries(modular-cli 
     PRIVATE 
-    CURL::libcurl
-    nlohmann_json::nlohmann_json
-)
-
-target_include_directories(${PROJECT_NAME} PRIVATE 
-    src/
-    ${CMAKE_SOURCE_DIR}     # Project root for headers
-    ${CMAKE_SOURCE_DIR}/include  # If you have include/ folder
+        modular-core
 )
 
 # Compiler warnings
 if (MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
+    target_compile_options(modular-core PRIVATE /W4)
+    target_compile_options(modular-cli PRIVATE /W4)
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(modular-core PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(modular-cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Install target
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
+#==============================================================================
+# Testing (optional)
+#==============================================================================
+
+option(BUILD_TESTS "Build unit tests" ON)
+
+if(BUILD_TESTS)
+    enable_testing()
+    
+    # Fetch Catch2 v3
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.5.2
+    )
+    FetchContent_MakeAvailable(Catch2)
+    
+    # Test executable
+    add_executable(modular-tests
+        tests/test_main.cpp
+        tests/test_config.cpp
+        tests/test_utils.cpp
+        tests/test_database.cpp
+    )
+    
+    target_link_libraries(modular-tests
+        PRIVATE
+            modular-core
+            Catch2::Catch2WithMain
+    )
+    
+    target_include_directories(modular-tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include/core
+    )
+    
+    # Discover tests
+    list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(modular-tests)
+endif()
+
+# Install targets
+install(TARGETS modular-cli DESTINATION bin)
