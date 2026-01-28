@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(Modular VERSION 1.0.0 LANGUAGES CXX)
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+# Set C++ standard (C++20 required for std::stop_token, std::jthread)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Enable folders in IDEs
@@ -58,6 +58,16 @@ target_link_libraries(modular-core
         nlohmann_json::nlohmann_json
         OpenSSL::Crypto
 )
+
+#==============================================================================
+# Fluent HTTP Client Libraries
+#==============================================================================
+
+# Include fluent interface headers
+add_subdirectory(include/fluent)
+
+# Include fluent implementation
+add_subdirectory(src/fluent)
 
 #==============================================================================
 # CLI Executable (modular-cli)
@@ -131,6 +141,24 @@ if(BUILD_TESTS)
     include(CTest)
     include(Catch)
     catch_discover_tests(modular-tests)
+    
+    # Fluent API tests
+    add_executable(fluent-tests
+        tests/fluent/test_fluent_client.cpp
+    )
+    
+    target_link_libraries(fluent-tests
+        PRIVATE
+            fluent_client
+            Catch2::Catch2WithMain
+    )
+    
+    target_include_directories(fluent-tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+    )
+    
+    catch_discover_tests(fluent-tests)
 endif()
 
 # Install targets
