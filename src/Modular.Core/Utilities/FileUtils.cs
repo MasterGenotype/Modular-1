@@ -99,43 +99,56 @@ public static class FileUtils
     }
 
     /// <summary>
-    /// Safely moves a directory, handling cross-device moves.
+    /// Safely moves a directory, handling cross-device moves and merging.
     /// </summary>
     /// <param name="sourcePath">Source directory path</param>
     /// <param name="destPath">Destination directory path</param>
-    public static void MoveDirectory(string sourcePath, string destPath)
+    /// <returns>True if the source was fully moved/merged and deleted, false otherwise</returns>
+    public static bool MoveDirectory(string sourcePath, string destPath)
     {
         if (sourcePath == destPath)
-            return;
+            return true; // Nothing to do
+
+        if (!Directory.Exists(sourcePath))
+            return false; // Source doesn't exist
 
         // If destination exists, merge into it
         if (Directory.Exists(destPath))
         {
+            // Move all files, overwriting if they exist
             foreach (var file in Directory.GetFiles(sourcePath))
             {
                 var destFile = Path.Combine(destPath, Path.GetFileName(file));
-                if (!File.Exists(destFile))
-                    File.Move(file, destFile);
+                // Delete destination file if it exists (overwrite)
+                if (File.Exists(destFile))
+                    File.Delete(destFile);
+                File.Move(file, destFile);
             }
 
+            // Recursively move subdirectories
             foreach (var dir in Directory.GetDirectories(sourcePath))
             {
                 var destDir = Path.Combine(destPath, Path.GetFileName(dir));
                 MoveDirectory(dir, destDir);
             }
 
-            // Remove source if empty
+            // Remove source directory (should be empty now)
             if (!Directory.EnumerateFileSystemEntries(sourcePath).Any())
+            {
                 Directory.Delete(sourcePath);
+                return true;
+            }
+            return false; // Source still has entries
         }
         else
         {
             // Ensure parent exists
             var parent = Path.GetDirectoryName(destPath);
-            if (!string.IsNullOrEmpty(parent))
+            if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
                 Directory.CreateDirectory(parent);
 
             Directory.Move(sourcePath, destPath);
+            return true;
         }
     }
 }

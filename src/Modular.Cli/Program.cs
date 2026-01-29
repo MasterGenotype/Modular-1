@@ -61,6 +61,15 @@ class Program
         });
         rootCommand.AddCommand(gameBananaCommand);
 
+        // Fetch command to pre-populate metadata cache
+        var fetchCommand = new Command("fetch", "Fetch and cache mod metadata without renaming");
+        fetchCommand.AddArgument(new Argument<string?>("domain", () => null, "Game domain to fetch metadata for"));
+        fetchCommand.SetHandler(async (domain) =>
+        {
+            await RunFetchCommand(domain);
+        }, domainArg);
+        rootCommand.AddCommand(fetchCommand);
+
         return await rootCommand.InvokeAsync(args);
     }
 
@@ -91,9 +100,17 @@ class Program
 
     static async Task RunCommandMode(string domain, string[] categories, bool dryRun, bool force, bool organize, bool verbose)
     {
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+        };
+
         try
         {
-            var (settings, rateLimiter, database) = await InitializeServices();
+            var (settings, rateLimiter, database, metadataCache) = await InitializeServices();
 
             if (categories.Length > 0)
                 settings.DefaultCategories = categories.ToList();
@@ -101,7 +118,7 @@ class Program
 
             var nexusService = new NexusModsService(settings, rateLimiter, database,
                 verbose ? CreateLogger<NexusModsService>() : null);
-            var renameService = new RenameService(settings, rateLimiter,
+            var renameService = new RenameService(settings, rateLimiter, metadataCache,
                 verbose ? CreateLogger<RenameService>() : null);
 
             // Download mods - scanning phase with status output
@@ -123,17 +140,22 @@ class Program
             {
                 LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {domain}...");
                 var gameDomainPath = Path.Combine(settings.ModsDirectory, domain);
-                var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organize);
+                var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organize, cts.Token);
                 LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {domain}");
 
                 // Rename category folders
                 LiveProgressDisplay.ShowInfo($"Fetching category names for {domain}...");
-                var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath);
+                var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
                 LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders in {domain}");
             }
 
-            // Save rate limit state
+            // Save state
             await rateLimiter.SaveStateAsync(settings.RateLimitStatePath);
+            await metadataCache.SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            LiveProgressDisplay.ShowWarning("Operation cancelled by user.");
         }
         catch (Exception ex)
         {
@@ -143,11 +165,19 @@ class Program
 
     static async Task RunRenameCommand(string? domain, bool organize)
     {
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+        };
+
         try
         {
-            var (settings, rateLimiter, _) = await InitializeServices();
+            var (settings, rateLimiter, _, metadataCache) = await InitializeServices();
 
-            var renameService = new RenameService(settings, rateLimiter, CreateLogger<RenameService>());
+            var renameService = new RenameService(settings, rateLimiter, metadataCache, CreateLogger<RenameService>());
 
             IEnumerable<string> domains;
             if (!string.IsNullOrEmpty(domain))
@@ -169,14 +199,71 @@ class Program
                 }
 
                 LiveProgressDisplay.ShowInfo($"Processing {d}...");
-                var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organize);
+                var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organize, cts.Token);
                 LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
 
-                var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath);
+                var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
                 LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
             }
 
             await rateLimiter.SaveStateAsync(settings.RateLimitStatePath);
+            await metadataCache.SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            LiveProgressDisplay.ShowWarning("Operation cancelled by user.");
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError(ex.Message);
+        }
+    }
+
+    static async Task RunFetchCommand(string? domain)
+    {
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+        };
+
+        try
+        {
+            var (settings, rateLimiter, _, metadataCache) = await InitializeServices();
+            var renameService = new RenameService(settings, rateLimiter, metadataCache, CreateLogger<RenameService>());
+
+            IEnumerable<string> domains;
+            if (!string.IsNullOrEmpty(domain))
+            {
+                domains = [domain];
+            }
+            else
+            {
+                domains = renameService.GetGameDomainNames();
+            }
+
+            foreach (var d in domains)
+            {
+                var gameDomainPath = Path.Combine(settings.ModsDirectory, d);
+                if (!Directory.Exists(gameDomainPath))
+                {
+                    LiveProgressDisplay.ShowWarning($"Directory not found: {gameDomainPath}");
+                    continue;
+                }
+
+                LiveProgressDisplay.ShowInfo($"Fetching metadata for {d}...");
+                var fetched = await renameService.FetchAndCacheMetadataAsync(gameDomainPath, d, cts.Token);
+                LiveProgressDisplay.ShowSuccess($"Cached metadata for {fetched} mods in {d}");
+            }
+
+            await rateLimiter.SaveStateAsync(settings.RateLimitStatePath);
+            await metadataCache.SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            LiveProgressDisplay.ShowWarning("Operation cancelled by user.");
         }
         catch (Exception ex)
         {
@@ -209,19 +296,22 @@ class Program
         }
     }
 
-    static async Task<(AppSettings settings, NexusRateLimiter rateLimiter, DownloadDatabase database)> InitializeServices()
+    static async Task<(AppSettings settings, NexusRateLimiter rateLimiter, DownloadDatabase database, ModMetadataCache metadataCache)> InitializeServices()
     {
         var configService = new ConfigurationService();
         var settings = await configService.LoadAsync();
         configService.Validate(settings, requireNexusKey: true);
 
-        var rateLimiter = new NexusRateLimiter();
+        var rateLimiter = new NexusRateLimiter(settings.Verbose ? CreateLogger<NexusRateLimiter>() : null);
         await rateLimiter.LoadStateAsync(settings.RateLimitStatePath);
 
         var database = new DownloadDatabase(settings.DatabasePath);
         await database.LoadAsync();
 
-        return (settings, rateLimiter, database);
+        var metadataCache = new ModMetadataCache(settings.MetadataCachePath);
+        await metadataCache.LoadAsync();
+
+        return (settings, rateLimiter, database, metadataCache);
     }
 
     static ILogger<T>? CreateLogger<T>()

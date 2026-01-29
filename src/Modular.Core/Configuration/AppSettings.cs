@@ -86,4 +86,10 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("rate_limit_state_path")]
     public string RateLimitStatePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Path to the mod metadata cache file.
+    /// </summary>
+    [JsonPropertyName("metadata_cache_path")]
+    public string MetadataCachePath { get; set; } = string.Empty;
 }

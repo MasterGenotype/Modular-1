@@ -21,6 +21,10 @@ public class FluentClient : IFluentClient
     public FluentClient(HttpClient? httpClient = null)
     {
         _httpClient = httpClient ?? new HttpClient();
+        // Set a default timeout of 30 seconds to prevent indefinite hangs
+        // Only override if using a new HttpClient (default is 100 seconds which is too long)
+        if (httpClient == null)
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
     public string BaseUrl => _baseUrl;

@@ -140,9 +140,16 @@ public class NexusRateLimiter : IRateLimiter
         }
     }
 
+    /// <summary>
+    /// Maximum time to wait for rate limit reset. If wait would be longer, throws exception.
+    /// </summary>
+    private static readonly TimeSpan MaxWaitTime = TimeSpan.FromMinutes(5);
+
     /// <inheritdoc />
     public async Task WaitIfNeededAsync(CancellationToken cancellationToken = default)
     {
+        _logger?.LogDebug("[RateLimiter] Checking: Daily={DailyRemaining}/{DailyLimit}, Hourly={HourlyRemaining}/{HourlyLimit}",
+            _dailyRemaining, _dailyLimit, _hourlyRemaining, _hourlyLimit);
         while (!CanMakeRequest())
         {
             TimeSpan waitTime;
@@ -155,14 +162,14 @@ public class NexusRateLimiter : IRateLimiter
                 {
                     waitTime = _dailyReset - now;
                     _logger?.LogWarning(
-                        "Daily rate limit exhausted. Waiting until {ResetTime} ({WaitSeconds}s)",
+                        "Daily rate limit exhausted. Would need to wait until {ResetTime} ({WaitSeconds}s)",
                         _dailyReset, waitTime.TotalSeconds);
                 }
                 else if (_hourlyRemaining <= 0)
                 {
                     waitTime = _hourlyReset - now;
                     _logger?.LogWarning(
-                        "Hourly rate limit exhausted. Waiting until {ResetTime} ({WaitSeconds}s)",
+                        "Hourly rate limit exhausted. Would need to wait until {ResetTime} ({WaitSeconds}s)",
                         _hourlyReset, waitTime.TotalSeconds);
                 }
                 else
@@ -171,8 +178,19 @@ public class NexusRateLimiter : IRateLimiter
                 }
             }
 
+            // Don't wait for unreasonably long periods
+            if (waitTime > MaxWaitTime)
+            {
+                _logger?.LogError("Rate limit wait time ({WaitTime}) exceeds maximum ({MaxWait}). Aborting.",
+                    waitTime, MaxWaitTime);
+                throw new InvalidOperationException(
+                    $"NexusMods rate limit exceeded. Would need to wait {waitTime.TotalMinutes:F1} minutes. " +
+                    $"Maximum wait is {MaxWaitTime.TotalMinutes:F0} minutes. Try again later.");
+            }
+
             if (waitTime > TimeSpan.Zero)
             {
+                _logger?.LogDebug("[RateLimiter] Waiting {WaitSeconds}s for rate limit reset...", waitTime.TotalSeconds);
                 // Add a small buffer to ensure the limit has actually reset
                 waitTime = waitTime.Add(TimeSpan.FromSeconds(1));
                 await Task.Delay(waitTime, cancellationToken);

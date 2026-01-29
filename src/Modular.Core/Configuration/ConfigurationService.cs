@@ -37,6 +37,13 @@ public class ConfigurationService
         ".config", "Modular", "rate_limit_state.json");
 
     /// <summary>
+    /// Gets the default metadata cache path.
+    /// </summary>
+    public static string DefaultMetadataCachePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".config", "Modular", "metadata_cache.json");
+
+    /// <summary>
     /// Loads configuration from file and environment variables.
     /// Environment variables take precedence over file values.
     /// </summary>
@@ -72,12 +79,15 @@ public class ConfigurationService
             settings.DatabasePath = DefaultDatabasePath;
         if (string.IsNullOrEmpty(settings.RateLimitStatePath))
             settings.RateLimitStatePath = DefaultRateLimitStatePath;
+        if (string.IsNullOrEmpty(settings.MetadataCachePath))
+            settings.MetadataCachePath = DefaultMetadataCachePath;
 
         // Expand ~ in paths
         settings.ModsDirectory = FileUtils.ExpandPath(settings.ModsDirectory);
         settings.CookieFile = FileUtils.ExpandPath(settings.CookieFile);
         settings.DatabasePath = FileUtils.ExpandPath(settings.DatabasePath);
         settings.RateLimitStatePath = FileUtils.ExpandPath(settings.RateLimitStatePath);
+        settings.MetadataCachePath = FileUtils.ExpandPath(settings.MetadataCachePath);
 
         return settings;
     }
