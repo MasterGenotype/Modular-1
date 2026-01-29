@@ -244,6 +244,41 @@ public class ModMetadataCache
     }
 
     /// <summary>
+    /// Finds a mod by matching its sanitized name against cached metadata.
+    /// </summary>
+    /// <param name="gameDomain">Game domain</param>
+    /// <param name="directoryName">Directory name to match</param>
+    /// <returns>Mod metadata if found, null otherwise</returns>
+    public ModMetadata? FindModByDirectoryName(string gameDomain, string directoryName)
+    {
+        lock (_lock)
+        {
+            if (!_data.Mods.TryGetValue(gameDomain, out var mods))
+                return null;
+
+            var sanitizedDirName = Utilities.FileUtils.SanitizeDirectoryName(directoryName);
+            
+            // Try exact match first
+            foreach (var mod in mods.Values)
+            {
+                var sanitizedModName = Utilities.FileUtils.SanitizeDirectoryName(mod.Name);
+                if (sanitizedModName.Equals(sanitizedDirName, StringComparison.OrdinalIgnoreCase))
+                    return mod;
+            }
+
+            // Try partial match (directory name equals sanitized mod name)
+            foreach (var mod in mods.Values)
+            {
+                var sanitizedModName = Utilities.FileUtils.SanitizeDirectoryName(mod.Name);
+                if (directoryName.Equals(sanitizedModName, StringComparison.OrdinalIgnoreCase))
+                    return mod;
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Clears all cached data.
     /// </summary>
     public void ClearAll()

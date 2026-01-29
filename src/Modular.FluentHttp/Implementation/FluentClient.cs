@@ -95,9 +95,12 @@ public class FluentClient : IFluentClient
         {
             try
             {
-                // Wait for rate limiter
+                // Wait for rate limiter and reserve a slot
                 if (RateLimiter != null)
+                {
                     await RateLimiter.WaitIfNeededAsync(ct);
+                    RateLimiter.ReserveRequest();
+                }
 
                 using var httpRequest = new HttpRequestMessage(method, url);
 

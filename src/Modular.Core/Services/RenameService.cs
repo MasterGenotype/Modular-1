@@ -154,12 +154,21 @@ public class RenameService
     /// <summary>
     /// Reorganizes and renames mods in a game domain directory.
     /// Uses cached metadata - call FetchModMetadataBatchAsync first to populate cache.
+    /// Searches both top-level directories and inside category subdirectories.
+    /// Supports both numeric (unrenamed) and named (already renamed) directories.
     /// </summary>
     public async Task<int> ReorganizeAndRenameModsAsync(string gameDomainPath, bool organizeByCategory = true, CancellationToken ct = default)
     {
         var gameDomain = Path.GetFileName(gameDomainPath);
-        var modIds = GetModIds(gameDomainPath).ToList();
+        
+        // Create a lookup function for metadata by directory name
+        Func<string, ModMetadata?> metadataLookup = (dirName) => _cache.FindModByDirectoryName(gameDomain, dirName);
+        
+        // Find all mod directories (both numeric and already-renamed)
+        var modEntries = FileUtils.GetAllModDirectoriesWithMetadata(gameDomainPath, metadataLookup).ToList();
         var renamedCount = 0;
+
+        _logger?.LogInformation("Found {Count} mod directories to process in {Domain}", modEntries.Count, gameDomain);
 
         // Get categories from cache or fetch if needed
         Dictionary<int, string>? categories = null;
@@ -168,11 +177,9 @@ public class RenameService
             categories = await GetOrFetchGameCategoriesAsync(gameDomain, ct);
         }
 
-        foreach (var modId in modIds)
+        foreach (var (modId, oldPath, isRenamed) in modEntries)
         {
             ct.ThrowIfCancellationRequested();
-
-            var oldPath = Path.Combine(gameDomainPath, modId.ToString());
 
             // Get metadata from cache (or fetch if not cached)
             var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
@@ -207,7 +214,11 @@ public class RenameService
                 {
                     if (FileUtils.MoveDirectory(oldPath, newPath))
                     {
-                        _logger?.LogInformation("Renamed: {ModId} -> {ModName}", modId, metadata.Name);
+                        _logger?.LogInformation("{Action}: {OldName} -> {Category}/{ModName}",
+                            isRenamed ? "Reorganized" : "Renamed",
+                            Path.GetFileName(oldPath),
+                            organizeByCategory && categories != null ? Path.GetFileName(Path.GetDirectoryName(newPath)) : "",
+                            metadata.Name);
                         renamedCount++;
                     }
                     else
@@ -217,7 +228,7 @@ public class RenameService
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Failed to rename {OldPath} to {NewPath}", oldPath, newPath);
+                    _logger?.LogError(ex, "Failed to move {OldPath} to {NewPath}", oldPath, newPath);
                 }
             }
         }
@@ -318,5 +329,6 @@ public class RenameService
         public void UpdateFromHeaders(IEnumerable<KeyValuePair<string, IEnumerable<string>>> headers) => _inner.UpdateFromHeaders(headers);
         public bool CanMakeRequest() => _inner.CanMakeRequest();
         public Task WaitIfNeededAsync(CancellationToken ct = default) => _inner.WaitIfNeededAsync(ct);
+        public void ReserveRequest() => _inner.ReserveRequest();
     }
 }

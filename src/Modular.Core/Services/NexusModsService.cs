@@ -287,5 +287,6 @@ public class NexusModsService
         public void UpdateFromHeaders(IEnumerable<KeyValuePair<string, IEnumerable<string>>> headers) => _inner.UpdateFromHeaders(headers);
         public bool CanMakeRequest() => _inner.CanMakeRequest();
         public Task WaitIfNeededAsync(CancellationToken ct = default) => _inner.WaitIfNeededAsync(ct);
+        public void ReserveRequest() => _inner.ReserveRequest();
     }
 }

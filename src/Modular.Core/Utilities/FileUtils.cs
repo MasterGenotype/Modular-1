@@ -66,20 +66,105 @@ public static class FileUtils
 
     /// <summary>
     /// Gets all subdirectories that look like mod IDs (numeric names).
+    /// Searches both the parent directory and one level of subdirectories (for category folders).
+    /// </summary>
+    /// <param name="parentPath">Parent directory path</param>
+    /// <returns>List of (modId, fullPath) tuples found</returns>
+    public static IEnumerable<(int ModId, string Path)> GetModIdDirectoriesWithPaths(string parentPath)
+    {
+        if (!Directory.Exists(parentPath))
+            yield break;
+
+        // Check direct children
+        foreach (var dir in Directory.GetDirectories(parentPath))
+        {
+            var name = Path.GetFileName(dir);
+            if (int.TryParse(name, out var modId))
+            {
+                yield return (modId, dir);
+            }
+            else
+            {
+                // Also check inside subdirectories (category folders)
+                foreach (var subdir in Directory.GetDirectories(dir))
+                {
+                    var subName = Path.GetFileName(subdir);
+                    if (int.TryParse(subName, out var subModId))
+                    {
+                        yield return (subModId, subdir);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets all mod directories (both numeric and named) by matching against cached metadata.
+    /// Searches both the parent directory and one level of subdirectories (for category folders).
+    /// </summary>
+    /// <param name="parentPath">Parent directory path</param>
+    /// <param name="metadataLookup">Function to look up mod metadata by directory name</param>
+    /// <returns>List of (modId, fullPath, isRenamed) tuples found</returns>
+    public static IEnumerable<(int ModId, string Path, bool IsRenamed)> GetAllModDirectoriesWithMetadata(
+        string parentPath,
+        Func<string, Database.ModMetadata?> metadataLookup)
+    {
+        if (!Directory.Exists(parentPath))
+            yield break;
+
+        // Check direct children
+        foreach (var dir in Directory.GetDirectories(parentPath))
+        {
+            var name = Path.GetFileName(dir);
+            
+            // Try to parse as numeric mod ID first
+            if (int.TryParse(name, out var modId))
+            {
+                yield return (modId, dir, false);
+            }
+            else
+            {
+                // Try to match against cached metadata by name
+                var metadata = metadataLookup(name);
+                if (metadata != null)
+                {
+                    yield return (metadata.ModId, dir, true);
+                }
+                else
+                {
+                    // Not a mod directory, check inside for subdirectories (category folders)
+                    foreach (var subdir in Directory.GetDirectories(dir))
+                    {
+                        var subName = Path.GetFileName(subdir);
+                        
+                        // Try numeric first
+                        if (int.TryParse(subName, out var subModId))
+                        {
+                            yield return (subModId, subdir, false);
+                        }
+                        else
+                        {
+                            // Try to match by name
+                            var subMetadata = metadataLookup(subName);
+                            if (subMetadata != null)
+                            {
+                                yield return (subMetadata.ModId, subdir, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets all subdirectories that look like mod IDs (numeric names).
     /// </summary>
     /// <param name="parentPath">Parent directory path</param>
     /// <returns>List of mod IDs found</returns>
     public static IEnumerable<int> GetModIdDirectories(string parentPath)
     {
-        if (!Directory.Exists(parentPath))
-            yield break;
-
-        foreach (var dir in Directory.GetDirectories(parentPath))
-        {
-            var name = Path.GetFileName(dir);
-            if (int.TryParse(name, out var modId))
-                yield return modId;
-        }
+        return GetModIdDirectoriesWithPaths(parentPath).Select(x => x.ModId);
     }
 
     /// <summary>

@@ -24,7 +24,7 @@ public class NexusRateLimiter : IRateLimiter
     private int _hourlyLimit = 500;
     private int _hourlyRemaining = 500;
     private DateTimeOffset _dailyReset = DateTimeOffset.UtcNow.Date.AddDays(1);
-    private DateTimeOffset _hourlyReset = DateTimeOffset.UtcNow.AddHours(1).Date.AddHours(DateTimeOffset.UtcNow.Hour + 1);
+    private DateTimeOffset _hourlyReset = new DateTimeOffset(DateTimeOffset.UtcNow.Year, DateTimeOffset.UtcNow.Month, DateTimeOffset.UtcNow.Day, DateTimeOffset.UtcNow.Hour, 0, 0, TimeSpan.Zero).AddHours(1);
 
     public NexusRateLimiter(ILogger<NexusRateLimiter>? logger = null)
     {
@@ -121,29 +121,67 @@ public class NexusRateLimiter : IRateLimiter
     {
         lock (_lock)
         {
-            var now = DateTimeOffset.UtcNow;
-
-            // Check if limits have reset
-            if (now >= _dailyReset)
-            {
-                _dailyRemaining = _dailyLimit;
-                _dailyReset = now.Date.AddDays(1);
-            }
-
-            if (now >= _hourlyReset)
-            {
-                _hourlyRemaining = _hourlyLimit;
-                _hourlyReset = now.AddHours(1).Date.AddHours(now.Hour + 1);
-            }
-
+            CheckAndResetLimits();
             return _dailyRemaining > 0 && _hourlyRemaining > 0;
         }
     }
 
     /// <summary>
-    /// Maximum time to wait for rate limit reset. If wait would be longer, throws exception.
+    /// Reserves a request slot by decrementing the remaining counts.
+    /// Call this BEFORE making a request to prevent exceeding limits.
+    /// The actual counts will be corrected when UpdateFromHeaders is called.
     /// </summary>
-    private static readonly TimeSpan MaxWaitTime = TimeSpan.FromMinutes(5);
+    public void ReserveRequest()
+    {
+        lock (_lock)
+        {
+            CheckAndResetLimits();
+            
+            if (_dailyRemaining > 0)
+                _dailyRemaining--;
+            if (_hourlyRemaining > 0)
+                _hourlyRemaining--;
+                
+            _logger?.LogDebug("Reserved request slot. Remaining: Daily={Daily}, Hourly={Hourly}",
+                _dailyRemaining, _hourlyRemaining);
+        }
+    }
+
+    /// <summary>
+    /// Checks if limits have reset and updates the remaining counts accordingly.
+    /// Must be called while holding _lock.
+    /// </summary>
+    private void CheckAndResetLimits()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // Check if limits have reset
+        if (now >= _dailyReset)
+        {
+            _dailyRemaining = _dailyLimit;
+            _dailyReset = now.Date.AddDays(1);
+            _logger?.LogDebug("Daily limit reset to {Limit}", _dailyLimit);
+        }
+
+        if (now >= _hourlyReset)
+        {
+            _hourlyRemaining = _hourlyLimit;
+            // Calculate next hour boundary in UTC to avoid timezone conversion issues
+            _hourlyReset = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero).AddHours(1);
+            _logger?.LogDebug("Hourly limit reset to {Limit}", _hourlyLimit);
+        }
+    }
+
+    /// <summary>
+    /// Maximum time to wait for daily rate limit reset. Daily limits are too long to wait for.
+    /// </summary>
+    private static readonly TimeSpan MaxDailyWaitTime = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Maximum time to wait for hourly rate limit reset. 
+    /// NexusMods hourly limits reset at the top of each hour (max 60 min wait).
+    /// </summary>
+    private static readonly TimeSpan MaxHourlyWaitTime = TimeSpan.FromMinutes(61);
 
     /// <inheritdoc />
     public async Task WaitIfNeededAsync(CancellationToken cancellationToken = default)
@@ -153,6 +191,7 @@ public class NexusRateLimiter : IRateLimiter
         while (!CanMakeRequest())
         {
             TimeSpan waitTime;
+            bool isHourlyLimit = false;
 
             lock (_lock)
             {
@@ -167,10 +206,24 @@ public class NexusRateLimiter : IRateLimiter
                 }
                 else if (_hourlyRemaining <= 0)
                 {
+                    isHourlyLimit = true;
                     waitTime = _hourlyReset - now;
+                    
+                    // Cap hourly wait to max 60 minutes - NexusMods resets at top of each hour
+                    // If stored reset time seems wrong, calculate time until next hour boundary
+                    if (waitTime > MaxHourlyWaitTime || waitTime < TimeSpan.Zero)
+                    {
+                        // Calculate next hour boundary in UTC (now is DateTimeOffset.UtcNow)
+                        // Using DateTimeOffset consistently to avoid timezone conversion issues
+                        var nextHour = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero).AddHours(1);
+                        waitTime = nextHour - now;
+                        _hourlyReset = nextHour;
+                        _logger?.LogDebug("Corrected hourly reset time to {ResetTime}", nextHour);
+                    }
+                    
                     _logger?.LogWarning(
-                        "Hourly rate limit exhausted. Would need to wait until {ResetTime} ({WaitSeconds}s)",
-                        _hourlyReset, waitTime.TotalSeconds);
+                        "Hourly rate limit exhausted. Waiting until {ResetTime} ({WaitMinutes:F1} minutes)",
+                        _hourlyReset, waitTime.TotalMinutes);
                 }
                 else
                 {
@@ -178,21 +231,23 @@ public class NexusRateLimiter : IRateLimiter
                 }
             }
 
-            // Don't wait for unreasonably long periods
-            if (waitTime > MaxWaitTime)
+            // For daily limits, don't wait (too long). For hourly limits, wait up to 60 min.
+            var maxWait = isHourlyLimit ? MaxHourlyWaitTime : MaxDailyWaitTime;
+            if (waitTime > maxWait)
             {
-                _logger?.LogError("Rate limit wait time ({WaitTime}) exceeds maximum ({MaxWait}). Aborting.",
-                    waitTime, MaxWaitTime);
+                var limitType = isHourlyLimit ? "Hourly" : "Daily";
+                _logger?.LogError("{LimitType} rate limit wait time ({WaitTime}) exceeds maximum ({MaxWait}). Aborting.",
+                    limitType, waitTime, maxWait);
                 throw new InvalidOperationException(
-                    $"NexusMods rate limit exceeded. Would need to wait {waitTime.TotalMinutes:F1} minutes. " +
-                    $"Maximum wait is {MaxWaitTime.TotalMinutes:F0} minutes. Try again later.");
+                    $"NexusMods {limitType.ToLower()} rate limit exceeded. Would need to wait {waitTime.TotalMinutes:F1} minutes. " +
+                    $"Maximum wait is {maxWait.TotalMinutes:F0} minutes. Try again later.");
             }
 
             if (waitTime > TimeSpan.Zero)
             {
-                _logger?.LogDebug("[RateLimiter] Waiting {WaitSeconds}s for rate limit reset...", waitTime.TotalSeconds);
+                _logger?.LogInformation("[RateLimiter] Waiting {WaitMinutes:F1} minutes for hourly rate limit reset...", waitTime.TotalMinutes);
                 // Add a small buffer to ensure the limit has actually reset
-                waitTime = waitTime.Add(TimeSpan.FromSeconds(1));
+                waitTime = waitTime.Add(TimeSpan.FromSeconds(2));
                 await Task.Delay(waitTime, cancellationToken);
             }
         }

@@ -24,6 +24,12 @@ public interface IRateLimiter
     Task WaitIfNeededAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reserves a request slot by decrementing remaining counts.
+    /// Call BEFORE making a request to prevent exceeding limits.
+    /// </summary>
+    void ReserveRequest();
+
+    /// <summary>
     /// Save rate limit state to file.
     /// </summary>
     /// <param name="path">Path to state file</param>

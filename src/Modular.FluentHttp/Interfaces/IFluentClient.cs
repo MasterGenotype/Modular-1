@@ -58,4 +58,5 @@ public interface IRateLimiter
     void UpdateFromHeaders(IEnumerable<KeyValuePair<string, IEnumerable<string>>> headers);
     bool CanMakeRequest();
     Task WaitIfNeededAsync(CancellationToken ct = default);
+    void ReserveRequest();
 }
