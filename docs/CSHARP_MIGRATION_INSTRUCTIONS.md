@@ -19,6 +19,100 @@ This document provides instructions for an AI coding agent to rewrite the Modula
 
 ---
 
+## CRITICAL: Fluent HTTP Client Requirement
+
+**Both `NexusModsService` and `GameBananaService` MUST use the Fluent HTTP client.**
+
+In the original C++ codebase:
+- `NexusMods.cpp` uses raw CURL directly (legacy implementation)
+- `GameBanana.cpp` uses a basic `HttpClient` wrapper (not the Fluent client)
+
+**For the C# migration, this must be corrected.** All HTTP operations in both services must use `IFluentClient` to benefit from:
+- Consistent middleware/filter pipeline (authentication, rate limiting, logging, retry)
+- Unified error handling via filters
+- Cleaner, more maintainable code
+- Proper separation of concerns
+
+**Example - NexusModsService using Fluent client:**
+```csharp
+public class NexusModsService
+{
+    private readonly IFluentClient _client;
+
+    public NexusModsService(IFluentClient client)
+    {
+        _client = client;
+        _client.SetBaseUrl("https://api.nexusmods.com");
+    }
+
+    public async Task<List<TrackedMod>> GetTrackedModsAsync(CancellationToken ct = default)
+    {
+        var response = await _client.GetAsync("/v1/user/tracked_mods.json")
+            .WithHeader("accept", "application/json")
+            .WithCancellation(ct)
+            .AsResponseAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new ApiException($"Failed to get tracked mods", response.StatusCode);
+
+        return response.As<List<TrackedMod>>();
+    }
+}
+```
+
+**Example - GameBananaService using Fluent client:**
+```csharp
+public class GameBananaService
+{
+    private readonly IFluentClient _client;
+
+    public GameBananaService(IFluentClient client)
+    {
+        _client = client;
+        _client.SetBaseUrl("https://gamebanana.com");
+    }
+
+    public async Task<List<(string modId, string modName)>> FetchSubscribedModsAsync(
+        string userId, CancellationToken ct = default)
+    {
+        var response = await _client.GetAsync($"/apiv11/Member/{userId}/Subscriptions")
+            .WithCancellation(ct)
+            .AsResponseAsync();
+
+        var json = response.AsJson();
+        // Parse and return mods...
+    }
+}
+```
+
+**DI Registration (both services share configured client):**
+```csharp
+// In Program.cs or Startup
+services.AddSingleton<IRateLimiter, NexusRateLimiter>();
+
+services.AddSingleton<IFluentClient>(sp =>
+{
+    var rateLimiter = sp.GetRequiredService<IRateLimiter>();
+    var logger = sp.GetRequiredService<ILogger<FluentClient>>();
+    var settings = sp.GetRequiredService<IOptions<AppSettings>>().Value;
+
+    var client = FluentClientFactory.Create();
+    client.SetRateLimiter(rateLimiter);
+    client.SetLogger(logger);
+    client.AddFilter(new AuthenticationFilter("apikey", settings.NexusApiKey));
+    client.AddFilter(new RateLimitFilter(rateLimiter));
+    client.AddFilter(new RetryFilter(maxRetries: 3));
+    client.AddFilter(new LoggingFilter(logger));
+
+    return client;
+});
+
+services.AddScoped<NexusModsService>();
+services.AddScoped<GameBananaService>();
+```
+
+---
+
 ## 1. Project Structure
 
 Create a solution with the following structure:
@@ -271,9 +365,20 @@ public class DownloadDatabase
 
 **C++ Source:** `include/core/NexusMods.h`, `src/core/NexusMods.cpp`
 
+> **IMPORTANT:** The C++ implementation uses raw CURL. The C# version **MUST use `IFluentClient`** for all HTTP operations. See the "CRITICAL: Fluent HTTP Client Requirement" section above.
+
 ```csharp
 public class NexusModsService
 {
+    private readonly IFluentClient _client;
+    private readonly ILogger<NexusModsService> _logger;
+
+    public NexusModsService(IFluentClient client, ILogger<NexusModsService> logger)
+    {
+        _client = client;
+        _logger = logger;
+    }
+
     public async Task<List<TrackedMod>> GetTrackedModsAsync(CancellationToken ct = default);
     public async Task<Dictionary<int, List<int>>> GetFileIdsAsync(
         IEnumerable<int> modIds, string gameDomain,
@@ -286,6 +391,21 @@ public class NexusModsService
 }
 ```
 
+**Implementation Pattern (all methods should follow this):**
+```csharp
+public async Task<List<TrackedMod>> GetTrackedModsAsync(CancellationToken ct = default)
+{
+    var response = await _client.GetAsync("/v1/user/tracked_mods.json")
+        .WithHeader("accept", "application/json")
+        .WithCancellation(ct)
+        .AsResponseAsync();
+
+    response.EnsureSuccessStatusCode(); // Throws ApiException on failure
+
+    return response.As<List<TrackedMod>>();
+}
+```
+
 **API Endpoints:**
 | Endpoint | Purpose |
 |----------|---------|
@@ -295,15 +415,28 @@ public class NexusModsService
 | `/v1/games/{domain}/mods/{id}/files/{fileId}/download_link.json` | Generate download link |
 | `/v1/games/{domain}/categories` | Get game categories |
 
-**Headers:** `apikey: {API_KEY}`, `accept: application/json`
+**Base URL:** `https://api.nexusmods.com`
+
+**Authentication:** Use `AuthenticationFilter` with scheme `apikey` (not Bearer)
 
 ### 3.6 GameBanana Service
 
 **C++ Source:** `include/core/GameBanana.h`, `src/core/GameBanana.cpp`
 
+> **IMPORTANT:** The C++ implementation uses basic `HttpClient`. The C# version **MUST use `IFluentClient`** for all HTTP operations. See the "CRITICAL: Fluent HTTP Client Requirement" section above.
+
 ```csharp
 public class GameBananaService
 {
+    private readonly IFluentClient _client;
+    private readonly ILogger<GameBananaService> _logger;
+
+    public GameBananaService(IFluentClient client, ILogger<GameBananaService> logger)
+    {
+        _client = client;
+        _logger = logger;
+    }
+
     public async Task<List<(string modId, string modName)>> FetchSubscribedModsAsync(
         string userId, CancellationToken ct = default);
     public async Task<List<string>> FetchModFileUrlsAsync(
@@ -314,9 +447,37 @@ public class GameBananaService
 }
 ```
 
+**Implementation Pattern:**
+```csharp
+public async Task<List<(string modId, string modName)>> FetchSubscribedModsAsync(
+    string userId, CancellationToken ct = default)
+{
+    var response = await _client.GetAsync($"/apiv11/Member/{userId}/Subscriptions")
+        .WithCancellation(ct)
+        .AsResponseAsync();
+
+    var json = response.AsJson();
+    var mods = new List<(string, string)>();
+
+    if (json.RootElement.TryGetProperty("_aRecords", out var records))
+    {
+        foreach (var record in records.EnumerateArray())
+        {
+            // Parse subscription data...
+        }
+    }
+
+    return mods;
+}
+```
+
 **API Endpoints:**
-- `/apiv10/User/{userId}/Submissions` - Get subscribed mods
-- `/apiv10/ModProfile/{modId}/Files` - Get mod files
+- `/apiv11/Member/{userId}/Subscriptions` - Get subscribed mods
+- `/apiv11/Mod/{modId}?_csvProperties=_aFiles` - Get mod files
+
+**Base URL:** `https://gamebanana.com`
+
+**Note:** GameBanana does not require API key authentication
 
 ### 3.7 Rename Service
 
