@@ -1,0 +1,16 @@
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.csproj.AssemblyReference.cache
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.GeneratedMSBuildEditorConfig.editorconfig
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.AssemblyInfoInputs.cache
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.AssemblyInfo.cs
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.csproj.CoreCompileInputs.cache
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.sourcelink.json
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/bin/Debug/net8.0/Modular.Core.deps.json
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/bin/Debug/net8.0/Modular.Core.dll
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/bin/Debug/net8.0/Modular.Core.pdb
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/bin/Debug/net8.0/Modular.FluentHttp.dll
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/bin/Debug/net8.0/Modular.FluentHttp.pdb
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.csproj.CopyComplete
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.dll
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/refint/Modular.Core.dll
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/Modular.Core.pdb
+/home/superphenotype/.gitrepos/Modular/csharp/src/Modular.Core/obj/Debug/net8.0/ref/Modular.Core.dll
