@@ -1,1 +1,0 @@
-/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/modular-cli.dir/link.d "CMakeFiles/modular-cli.dir/src/cli/main.cpp.o" "CMakeFiles/modular-cli.dir/src/cli/LiveUI.cpp.o" -o modular-cli  libmodular-core.a /usr/lib/libcurl.so /usr/lib/libcurl.so /usr/lib/libcrypto.so

@@ -1,9 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/superphenotype/.gitrepos/Modular/cmake_install.cmake",
-		"/home/superphenotype/.gitrepos/Modular/_deps/catch2-build/cmake_install.cmake",
-		"/home/superphenotype/.gitrepos/Modular/_deps/catch2-build/src/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

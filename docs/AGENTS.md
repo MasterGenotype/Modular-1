@@ -4,33 +4,31 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Build Commands
 
-**Configure and build (using presets):**
+**Build:**
 ```bash
-cmake --preset default
-cmake --build build
+make build
 ```
 
-**Debug build:**
+**Build release and install to ~/.local/bin/:**
 ```bash
-cmake --preset debug
-cmake --build build
+make install
 ```
 
-**Traditional build (without presets):**
+**Run tests:**
 ```bash
-cmake .
-make
+make test
 ```
 
-The executable is output to `build/Modular`.
+**Clean:**
+```bash
+make clean
+```
+
+The executable is installed to `~/.local/bin/modular`.
 
 ## Dependencies
 
-- C++17 compiler (g++ or clang++)
-- CURL (`libcurl`)
-- nlohmann/json (install via package manager or from https://github.com/nlohmann/json)
-- CMake 3.20+
-- Ninja (optional, used by presets)
+- .NET 8.0 SDK
 
 ## Environment Variables
 
@@ -41,19 +39,17 @@ The executable is output to `build/Modular`.
 
 ### Core Modules
 
-- **NexusMods** (`src/NexusMods.cpp`, `include/NexusMods.h`) - Handles NexusMods API interactions: tracking mods, fetching file IDs, generating download links, downloading files. Uses CURL for HTTP requests and nlohmann/json for parsing.
+- **Modular.Core** (`src/Modular.Core/`) - Core business logic including NexusMods and GameBanana API interactions, configuration, database, HTTP client, rate limiting, rename/reorganize services.
 
-- **GameBanana** (`src/GameBanana.cpp`, `include/GameBanana.h`) - Handles GameBanana API interactions: fetching subscribed mods, extracting mod IDs from URLs, downloading mod files.
+- **Modular.FluentHttp** (`src/Modular.FluentHttp/`) - Fluent HTTP client library for making API requests.
 
-- **Rename** (`src/Rename.cpp`, `include/Rename.h`) - Directory utilities: scanning game domains and mod IDs, fetching mod names from API, renaming directories, merging directory structures.
-
-- **LiveUI** (`src/LiveUI.cpp`, `include/LiveUI.h`) - Terminal progress bar component using ANSI escape codes. Provides a two-line repainting UI with operation label, progress bar, and status line.
+- **Modular.Cli** (`src/Modular.Cli/`) - Command-line interface application.
 
 ### Entry Point
 
-`main.cpp` provides two modes:
-1. **CLI mode** - Pass game domains as arguments: `./build/Modular skyrimspecialedition --categories main,optional`
-2. **Menu mode** - Interactive menu when run without arguments
+`src/Modular.Cli/Program.cs` provides CLI commands for:
+1. Downloading mods from NexusMods and GameBanana
+2. Renaming downloaded mod directories to human-readable names
 
 ### Data Flow
 
@@ -61,4 +57,4 @@ Mods are stored in `~/Games/Mods-Lists/{game_domain}/{mod_id}/`. The rename oper
 
 ## Compiler Settings
 
-Warnings are treated as errors (`-Werror` / `/WX`). The project uses `-Wall -Wextra -Wpedantic` on GCC/Clang.
+Warnings are treated as errors (`<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`).

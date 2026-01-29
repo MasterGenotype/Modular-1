@@ -293,7 +293,7 @@ public class NexusModsService
 | `/v1/user/tracked_mods.json` | Get tracked mods |
 | `/v1/games/{domain}/mods/{id}/files` | Get mod files |
 | `/v1/games/{domain}/mods/{id}/files/{fileId}/download_link.json` | Generate download link |
-| `/v1/games/{domain}/categories` | Get game categories |
+| `/v1/games/{domain}.json` | Get game info (includes categories array) |
 
 **Headers:** `apikey: {API_KEY}`, `accept: application/json`
 

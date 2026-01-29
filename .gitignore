@@ -1,9 +1,20 @@
-# Node modules
-node_modules/
-
 # Build directories
-build/
+bin/
+obj/
 
+# .NET
+*.dll
+*.pdb
+*.nupkg
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
 
 # Logs
 *.log
@@ -11,10 +22,5 @@ build/
 # Environment files
 .env
 
-# executables
-bin/
-
-*.o
-*.exe
-*.dSYM/
+# OS
 .DS_Store

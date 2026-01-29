@@ -1,1 +1,0 @@
-/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/Modular_Linux.dir/link.d CMakeFiles/Modular_Linux.dir/src/main.cpp.o -o bin/Modular_Linux  build/libModularLib.a /usr/lib/libcurl.so /usr/lib/libcurl.so

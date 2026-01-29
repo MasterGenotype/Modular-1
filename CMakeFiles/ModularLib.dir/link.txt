@@ -1,2 +1,0 @@
-/usr/bin/ar qc build/libModularLib.a CMakeFiles/ModularLib.dir/src/NexusMods.cpp.o CMakeFiles/ModularLib.dir/src/GameBanana.cpp.o CMakeFiles/ModularLib.dir/src/Rename.cpp.o CMakeFiles/ModularLib.dir/src/main.cpp.o
-/usr/bin/ranlib build/libModularLib.a
