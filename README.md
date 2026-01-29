@@ -1,6 +1,6 @@
 # Modular
 
-A sophisticated C++ command-line application for automating the downloading, organizing, and management of game modifications from multiple mod repositories. Features a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
+A sophisticated C#/.NET command-line application for automating the downloading, organizing, and management of game modifications from multiple mod repositories. Features a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ A sophisticated C++ command-line application for automating the downloading, org
 
 Modular streamlines game mod management by providing a unified interface to download mods from various sources (NexusMods, GameBanana), automatically organize them into structured directories (`Domain/Category/Mod_Id`), and rename folders from numeric IDs to human-readable names.
 
-The project implements a clean three-layer architecture separating concerns between the CLI interface, core business logic, and a modern fluent HTTP client library inspired by .NET's FluentHttpClient.
+The project implements a clean three-layer architecture separating concerns between the CLI interface, core business logic, and a modern fluent HTTP client library.
 
 ## Features
 
@@ -55,119 +55,115 @@ Modular follows a clean **three-layer architecture**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     CLI Layer (modular-cli)                 │
+│                    CLI Layer (Modular.Cli)                  │
 │            Interactive menu, progress display, I/O          │
 ├─────────────────────────────────────────────────────────────┤
-│                  Core Library (libmodular-core)             │
-│    NexusMods API, GameBanana API, Database, Config,         │
-│    RateLimiter, Rename, TrackingValidator, Utils            │
+│                  Core Library (Modular.Core)                │
+│     NexusMods API, GameBanana API, Database, Config,        │
+│     RateLimiter, Rename, TrackingValidator, Utils           │
 ├─────────────────────────────────────────────────────────────┤
-│              Fluent HTTP Client (fluent_client)             │
+│             Fluent HTTP Client (Modular.FluentHttp)         │
 │    Modern fluent API, middleware filters, retry policies    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Layer Responsibilities
 
-1. **CLI Layer (`modular-cli`)** - Interactive command-line interface with menu-driven operations and real-time progress visualization through LiveUI
-2. **Core Library (`libmodular-core`)** - Static library containing all business logic including HTTP operations, API integrations, rate limiting, file operations, and data persistence
-3. **Fluent HTTP Layer (`fluent_client`)** - Modern fluent-style HTTP client library with chainable request building, middleware filters, and type-safe responses
+1. **CLI Layer (`Modular.Cli`)** - Interactive command-line interface with menu-driven operations and real-time progress visualization through LiveProgressDisplay
+2. **Core Library (`Modular.Core`)** - Class library containing all business logic including HTTP operations, API integrations, rate limiting, file operations, and data persistence
+3. **Fluent HTTP Layer (`Modular.FluentHttp`)** - Modern fluent-style HTTP client library with chainable request building, middleware filters, and type-safe responses
 
 ## Project Structure
 
 ```
 Modular/
-├── CMakeLists.txt              # CMake build configuration
-├── CMakePresets.json           # Build presets (Release/Debug)
-├── include/
-│   ├── core/                   # Core library headers
-│   │   ├── HttpClient.h        # HTTP client with retry logic
-│   │   ├── RateLimiter.h       # API rate limit enforcement
-│   │   ├── NexusMods.h         # NexusMods API integration
-│   │   ├── GameBanana.h        # GameBanana API integration
-│   │   ├── Database.h          # Download history persistence
-│   │   ├── Config.h            # Configuration management
-│   │   ├── Rename.h            # Mod renaming and organization
-│   │   ├── TrackingValidator.h # Web scraping validation
-│   │   ├── HtmlParser.h        # HTML parsing utilities
-│   │   ├── Utils.h             # File/string utilities
-│   │   ├── Exceptions.h        # Exception hierarchy
-│   │   └── ILogger.h           # Logging interface
-│   ├── cli/
-│   │   └── LiveUI.h            # Terminal progress visualization
-│   └── fluent/                 # Fluent HTTP client headers
-│       ├── IFluentClient.h     # Main client interface
-│       ├── IRequest.h          # Request builder interface
-│       ├── IResponse.h         # Response handler interface
-│       ├── IHttpFilter.h       # Middleware filter interface
-│       ├── IBodyBuilder.h      # Request body builder
-│       ├── IRetryConfig.h      # Retry policy configuration
-│       ├── IRequestCoordinator.h # Retry dispatch coordinator
-│       └── IRateLimiter.h      # Rate limiter interface
+├── Modular.sln                           # Visual Studio solution file
+├── BUILD.md                              # Build and installation guide
+├── Makefile                              # Build shortcuts
 ├── src/
-│   ├── core/                   # Core library implementation
-│   │   ├── HttpClient.cpp
-│   │   ├── RateLimiter.cpp
-│   │   ├── NexusMods.cpp
-│   │   ├── GameBanana.cpp
-│   │   ├── Database.cpp
-│   │   ├── Config.cpp
-│   │   ├── Rename.cpp
-│   │   ├── TrackingValidator.cpp
-│   │   ├── HtmlParser.cpp
-│   │   └── Utils.cpp
-│   ├── cli/
-│   │   ├── main.cpp            # CLI entry point and menu
-│   │   └── LiveUI.cpp          # Progress bar implementation
-│   └── fluent/                 # Fluent HTTP client implementation
-│       ├── FluentClient.cpp    # Main client implementation
-│       ├── Request.cpp         # Request builder
-│       ├── Response.cpp        # Response handler
-│       ├── BodyBuilder.cpp     # JSON/form body construction
-│       ├── HttpClientBridge.cpp # Bridge to CURL
-│       ├── RetryCoordinator.cpp # Retry logic management
-│       ├── Filters.cpp         # Built-in middleware filters
-│       └── NexusModsClient.cpp # High-level NexusMods client
-├── tests/                      # Unit tests (Catch2)
-│   ├── test_main.cpp
-│   ├── test_config.cpp
-│   ├── test_utils.cpp
-│   ├── test_database.cpp
-│   └── test_fluent.cpp         # Fluent API tests
-├── docs/                       # Documentation
-└── build/                      # Build output (generated)
+│   ├── Modular.Cli/                      # CLI application
+│   │   ├── Modular.Cli.csproj
+│   │   ├── Program.cs                    # Entry point and command handlers
+│   │   └── UI/
+│   │       └── LiveProgressDisplay.cs    # Terminal progress visualization
+│   ├── Modular.Core/                     # Core business logic library
+│   │   ├── Modular.Core.csproj
+│   │   ├── Configuration/
+│   │   │   ├── AppSettings.cs            # Configuration model
+│   │   │   └── ConfigurationService.cs   # Configuration loading/validation
+│   │   ├── Database/
+│   │   │   ├── DownloadDatabase.cs       # Download history persistence
+│   │   │   ├── DownloadRecord.cs         # Download record model
+│   │   │   └── ModMetadataCache.cs       # Mod metadata caching
+│   │   ├── Exceptions/
+│   │   │   └── ModularException.cs       # Custom exception hierarchy
+│   │   ├── Http/
+│   │   │   ├── ModularHttpClient.cs      # HTTP client wrapper
+│   │   │   └── RetryPolicy.cs            # Retry configuration
+│   │   ├── Models/
+│   │   │   ├── TrackedMod.cs             # Tracked mod model
+│   │   │   ├── ModFile.cs                # Mod file model
+│   │   │   ├── DownloadLink.cs           # Download link model
+│   │   │   ├── GameCategory.cs           # Game category model
+│   │   │   └── ValidationResult.cs       # Validation result model
+│   │   ├── RateLimiting/
+│   │   │   ├── IRateLimiter.cs           # Rate limiter interface
+│   │   │   └── NexusRateLimiter.cs       # NexusMods rate limiter
+│   │   ├── Services/
+│   │   │   ├── NexusModsService.cs       # NexusMods API integration
+│   │   │   ├── GameBananaService.cs      # GameBanana API integration
+│   │   │   ├── RenameService.cs          # Mod renaming and organization
+│   │   │   └── TrackingValidatorService.cs # Web scraping validation
+│   │   └── Utilities/
+│   │       ├── FileUtils.cs              # File operation utilities
+│   │       └── Md5Calculator.cs          # MD5 checksum calculation
+│   └── Modular.FluentHttp/               # Fluent HTTP client library
+│       ├── Modular.FluentHttp.csproj
+│       ├── Interfaces/
+│       │   ├── IFluentClient.cs          # Main client interface
+│       │   ├── IRequest.cs               # Request builder interface
+│       │   ├── IResponse.cs              # Response handler interface
+│       │   ├── IHttpFilter.cs            # Middleware filter interface
+│       │   └── IRetryConfig.cs           # Retry policy configuration
+│       ├── Implementation/
+│       │   ├── FluentClient.cs           # Main client implementation
+│       │   ├── FluentRequest.cs          # Request builder
+│       │   ├── FluentResponse.cs         # Response handler
+│       │   └── RequestOptions.cs         # Request options model
+│       └── Filters/
+│           └── HttpFilters.cs            # Built-in middleware filters
+├── tests/
+│   ├── Modular.Core.Tests/               # Core library tests
+│   │   ├── Modular.Core.Tests.csproj
+│   │   ├── ConfigurationTests.cs
+│   │   ├── DatabaseTests.cs
+│   │   └── UtilityTests.cs
+│   └── Modular.FluentHttp.Tests/         # Fluent HTTP client tests
+│       ├── Modular.FluentHttp.Tests.csproj
+│       └── FluentClientTests.cs
+└── docs/                                 # Documentation
 ```
 
 ## Key Components
 
-### HttpClient (`src/core/HttpClient.cpp`)
-
-Instance-based HTTP client with CURL handle ownership:
-- GET requests for JSON/text data
-- File downloads with progress callbacks
-- Retry policy with exponential backoff
-- Response header parsing for rate limit tracking
-- Non-copyable (CURL handle), but movable
-- Conditional retry logic (5xx errors, not 4xx except 429)
-
-### RateLimiter (`src/core/RateLimiter.cpp`)
-
-Tracks NexusMods API rate limits from response headers:
-- Parses `x-rl-daily-remaining` and `x-rl-hourly-remaining` headers
-- Stores Unix timestamp reset times
-- Implements blocking backoff when limits exhausted
-- Supports state persistence between sessions
-
-### NexusMods API (`src/core/NexusMods.cpp`)
+### NexusModsService (`src/Modular.Core/Services/NexusModsService.cs`)
 
 Complete NexusMods API integration:
 - Fetches tracked mods with domain information
 - Retrieves file IDs for mods
 - Generates time-limited download links
 - Downloads files with progress callbacks
-- Integrates with RateLimiter for compliance
+- Integrates with NexusRateLimiter for compliance
 
-### GameBanana API (`src/core/GameBanana.cpp`)
+### NexusRateLimiter (`src/Modular.Core/RateLimiting/NexusRateLimiter.cs`)
+
+Tracks NexusMods API rate limits from response headers:
+- Parses `x-rl-daily-remaining` and `x-rl-hourly-remaining` headers
+- Stores Unix timestamp reset times
+- Implements async waiting when limits exhausted
+- Supports state persistence between sessions
+
+### GameBananaService (`src/Modular.Core/Services/GameBananaService.cs`)
 
 GameBanana platform integration:
 - Fetches user's subscribed mods
@@ -175,133 +171,115 @@ GameBanana platform integration:
 - Downloads files with optional progress tracking
 - No rate limiting required
 
-### Database (`src/core/Database.cpp`)
+### DownloadDatabase (`src/Modular.Core/Database/DownloadDatabase.cs`)
 
 JSON-based download history persistence:
 - Stores: game_domain, mod_id, file_id, filename, filepath, MD5, download time, status
 - Operations: add, find, query by domain/mod, verification updates, removal
 - Human-readable format for debugging
 
-### Config (`src/core/Config.cpp`)
+### ConfigurationService (`src/Modular.Core/Configuration/ConfigurationService.cs`)
 
-Struct-based configuration management:
+Configuration management using Microsoft.Extensions.Configuration:
 - Location: `~/.config/Modular/config.json`
 - Precedence: Environment variables > Config file > Defaults
 - Settings: API keys, paths, preferences
 
-### TrackingValidator (`src/core/TrackingValidator.cpp`)
+### RenameService (`src/Modular.Core/Services/RenameService.cs`)
 
-Web scraping validation for NexusMods:
-- Scrapes web tracking center using cookies
-- Validates API tracking against web tracking
-- Reports mismatches (API-only, web-only mods)
-- Maps game domains to game IDs
+Mod folder organization and renaming:
+- Renames numeric ID folders to human-readable names
+- Organizes mods into category subdirectories
+- Caches metadata to reduce API calls
 
-### LiveUI (`src/cli/LiveUI.cpp`)
+### LiveProgressDisplay (`src/Modular.Cli/UI/LiveProgressDisplay.cs`)
 
 Real-time terminal progress visualization:
 - Progress bars with percentage completion
 - Status updates for scanning, downloading, organizing
+- Interactive menu system
 - Decoupled from core logic via callbacks
 
 ## Fluent HTTP Client
 
-Modular includes a complete fluent HTTP client library inspired by .NET's FluentHttpClient. This provides a modern, chainable API for HTTP operations.
+Modular includes a complete fluent HTTP client library. This provides a modern, chainable API for HTTP operations.
 
 ### Basic Usage
 
-```cpp
-#include "fluent/FluentClient.h"
+```csharp
+using Modular.FluentHttp.Implementation;
 
 // Create client
-auto client = createFluentClient("https://api.nexusmods.com");
+var client = FluentClientFactory.Create("https://api.nexusmods.com");
 
 // Make a request with fluent API
-auto response = client
-    ->request("/v1/users/validate.json")
-    ->withHeader("apikey", apiKey)
-    ->withHeader("accept", "application/json")
-    ->get()
-    ->asJson();
+var response = await client
+    .GetAsync("/v1/users/validate.json")
+    .WithHeader("apikey", apiKey)
+    .WithHeader("accept", "application/json")
+    .SendAsync();
 
 // Access response data
-std::string username = response["name"];
+var json = await response.AsJsonAsync<UserInfo>();
 ```
 
 ### Features
 
 - **Method Chaining** - Build requests fluently with chainable methods
-- **Async Support** - Async/await via `std::future`
+- **Async Support** - Full async/await support throughout
 - **Middleware Filters** - Request/response interception pipeline
-- **Type-Safe Responses** - Typed deserialization methods
+- **Type-Safe Responses** - Generic deserialization methods
 - **Retry Policies** - Configurable retry with exponential backoff
 - **Progress Callbacks** - Download progress tracking
 - **Rate Limiting** - Integrated rate limiter support
 
 ### Request Building
 
-```cpp
+```csharp
 // POST with JSON body
-auto response = client
-    ->request("/api/endpoint")
-    ->withHeader("Content-Type", "application/json")
-    ->withBody()
-        ->json({{"key", "value"}})
-    ->post();
+var response = await client
+    .PostAsync("/api/endpoint")
+    .WithHeader("Content-Type", "application/json")
+    .WithJsonBody(new { key = "value" })
+    .SendAsync();
 
 // GET with query parameters
-auto response = client
-    ->request("/api/search")
-    ->withQueryParam("q", "skyrim")
-    ->withQueryParam("page", "1")
-    ->get();
+var response = await client
+    .GetAsync("/api/search")
+    .WithQueryParam("q", "skyrim")
+    .WithQueryParam("page", "1")
+    .SendAsync();
 
 // Download with progress
-auto response = client
-    ->request("/files/download/123")
-    ->withProgress([](size_t downloaded, size_t total) {
-        std::cout << downloaded << "/" << total << std::endl;
-    })
-    ->download("/path/to/file");
+await client
+    .GetAsync("/files/download/123")
+    .WithProgress((downloaded, total) =>
+        Console.WriteLine($"{downloaded}/{total}"))
+    .DownloadAsync("/path/to/file");
+```
+
+### Client Configuration
+
+```csharp
+var client = FluentClientFactory.Create("https://api.example.com")
+    .SetUserAgent("Modular/1.0")
+    .SetBearerAuth(token)
+    .SetRetryPolicy(maxRetries: 3, initialDelayMs: 1000)
+    .SetConnectionTimeout(TimeSpan.FromSeconds(30))
+    .SetRateLimiter(rateLimiter);
 ```
 
 ### Middleware Filters
 
-Built-in filters for common operations:
+Filters intercept requests and responses for cross-cutting concerns:
 
-```cpp
-// Authentication filter
-client->addFilter(std::make_unique<AuthenticationFilter>(apiKey));
+```csharp
+// Add custom filter
+client.AddFilter(new LoggingFilter(logger));
 
-// Rate limiting filter
-client->addFilter(std::make_unique<RateLimitFilter>(rateLimiter));
-
-// Logging filter
-client->addFilter(std::make_unique<LoggingFilter>(logger));
-
-// Error handling filter
-client->addFilter(std::make_unique<ErrorHandlingFilter>());
-```
-
-Filters execute in priority order for requests (high to low) and reverse for responses.
-
-### NexusModsClient
-
-High-level client for NexusMods operations:
-
-```cpp
-#include "fluent/NexusModsClient.h"
-
-NexusModsClient nexus(apiKey, rateLimiter);
-
-// Validate API key
-auto user = nexus.validateKey();
-
-// Get tracked mods
-auto mods = nexus.getTrackedMods();
-
-// Download a mod file
-nexus.downloadFile(domain, modId, fileId, "/path/to/save", progressCallback);
+// Built-in filters
+client.AddFilter(new AuthenticationFilter(apiKey));
+client.AddFilter(new RateLimitFilter(rateLimiter));
 ```
 
 ## Design Patterns
@@ -310,22 +288,20 @@ nexus.downloadFile(domain, modId, fileId, "/path/to/save", progressCallback);
 Request/response configuration via method chaining improves code readability and discoverability.
 
 ### Middleware Filter Pattern
-Request/response interception pipeline with filters executing in priority order. Built-in filters handle authentication, rate limiting, logging, and error handling.
+Request/response interception pipeline with filters for authentication, rate limiting, logging, and error handling.
 
 ### Dependency Injection
-HttpClient takes `RateLimiter&` and `ILogger&` as constructor parameters, enabling testability and flexibility.
+Services accept `ILogger<T>` and configuration via constructor parameters, enabling testability and flexibility.
 
-### RAII (Resource Acquisition Is Initialization)
-- `CurlGlobal`: RAII wrapper for CURL global initialization
-- `HttpClient`: Owns and manages CURL easy handle lifetime
+### Repository Pattern
+`DownloadDatabase` and `ModMetadataCache` abstract data persistence from business logic.
 
 ### Strategy Pattern
 - Retry policies via `IRetryConfig`
-- Rate limiting strategies
-- Logger implementations (`StderrLogger`, `NullLogger`)
+- Rate limiting strategies via `IRateLimiter`
 
 ### Factory Pattern
-`createFluentClient()` factory function separates interface from implementation.
+`FluentClientFactory.Create()` separates interface from implementation.
 
 ## Error Handling
 
@@ -333,25 +309,24 @@ Modular uses a custom exception hierarchy for precise error handling:
 
 | Exception | Description |
 |-----------|-------------|
-| `ModularException` | Base exception with context (URL, response snippet) |
-| `NetworkException` | CURL errors, timeouts, DNS failures |
+| `ModularException` | Base exception with context information |
+| `ConfigurationException` | Configuration validation errors |
 | `ApiException` | HTTP 4xx/5xx errors |
 | `RateLimitException` | 429 responses with retry-after support |
-| `AuthException` | 401/403 authentication failures |
-| `ParseException` | JSON parsing errors |
-| `FileSystemException` | File I/O errors |
-| `ConfigException` | Configuration validation errors |
 
 Example usage:
-```cpp
-try {
-    auto response = nexus.downloadFile(...);
-} catch (const RateLimitException& e) {
-    std::cerr << "Rate limited, retry after: " << e.retryAfter() << "s\n";
-} catch (const AuthException& e) {
-    std::cerr << "Authentication failed: " << e.what() << "\n";
-} catch (const NetworkException& e) {
-    std::cerr << "Network error: " << e.what() << "\n";
+```csharp
+try
+{
+    await nexusService.DownloadFilesAsync(...);
+}
+catch (RateLimitException ex)
+{
+    Console.WriteLine($"Rate limited, retry after: {ex.RetryAfter}s");
+}
+catch (ModularException ex)
+{
+    Console.WriteLine($"Error: {ex.Message}");
 }
 ```
 
@@ -359,70 +334,77 @@ try {
 
 | Dependency | Purpose | Version |
 |------------|---------|---------|
-| **C++20** | Language standard | - |
-| **CMake** | Build system | 3.20+ |
-| **CURL (libcurl)** | HTTP/HTTPS requests | - |
-| **nlohmann/json** | JSON parsing/serialization | 3.11+ |
-| **OpenSSL (libcrypto)** | MD5 checksum calculation | - |
-| **Catch2** | Unit testing framework | v3.5.2 |
+| **.NET SDK** | Runtime and build | 8.0+ |
+| **System.CommandLine** | CLI argument parsing | 2.0+ |
+| **Microsoft.Extensions.Configuration** | Configuration management | 8.0.0 |
+| **Microsoft.Extensions.Logging** | Logging abstractions | 8.0.0 |
+| **System.Text.Json** | JSON serialization | 8.0.5 |
 
 ## Building
 
 ### Prerequisites
 
-- CMake 3.20 or later
-- C++20 compatible compiler (GCC 10+, Clang 10+, or MSVC 2019+)
-- libcurl development files
-- OpenSSL development files
-- nlohmann/json
+- .NET SDK 8.0 or later
+  - Check with: `dotnet --version`
 
-### Linux Build
+### Installing .NET SDK
+
+**Debian/Ubuntu:**
+```bash
+# Add Microsoft package repository
+wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+sudo dpkg -i packages-microsoft-prod.deb
+rm packages-microsoft-prod.deb
+
+sudo apt update
+sudo apt install dotnet-sdk-8.0
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S dotnet-sdk
+```
+
+**Fedora:**
+```bash
+sudo dnf install dotnet-sdk-8.0
+```
+
+### Build Commands
 
 ```bash
 # Clone the repository
 git clone https://github.com/MasterGenotype/Modular-1.git
 cd Modular-1
 
-# Configure and build (using presets)
-cmake --preset default
-cmake --build build
+# Build in Release mode
+dotnet build -c Release
 
-# Or manually
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make
+# Build in Debug mode
+dotnet build -c Debug
 ```
 
-### Debug Build
+### Installing to ~/.local/bin
 
+**Framework-Dependent (Recommended):**
 ```bash
-cmake --preset debug
-cmake --build build
+# Publish the CLI project
+dotnet publish src/Modular.Cli/Modular.Cli.csproj -c Release -o ~/.local/share/modular --self-contained false
+
+# Create launcher script
+cat > ~/.local/bin/modular << 'EOF'
+#!/bin/bash
+exec dotnet "$HOME/.local/share/modular/Modular.Cli.dll" "$@"
+EOF
+
+chmod +x ~/.local/bin/modular
 ```
 
-### Installing Dependencies
-
-**Debian/Ubuntu:**
+**Self-Contained (No .NET Runtime Required):**
 ```bash
-sudo apt install libcurl4-openssl-dev libssl-dev nlohmann-json3-dev cmake ninja-build
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S curl openssl nlohmann-json cmake ninja
-```
-
-**Fedora:**
-```bash
-sudo dnf install libcurl-devel openssl-devel json-devel cmake ninja-build
-```
-
-### Cross-Compiling for Windows
-
-```bash
-# Ensure MinGW-w64 is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=/path/to/mingw-toolchain.cmake --preset default
-cmake --build build
+dotnet publish src/Modular.Cli/Modular.Cli.csproj -c Release -r linux-x64 --self-contained -o ~/.local/share/modular
+cp ~/.local/share/modular/Modular.Cli ~/.local/bin/modular
+chmod +x ~/.local/bin/modular
 ```
 
 ## Configuration
@@ -471,32 +453,50 @@ Configuration is stored in `~/.config/Modular/config.json`:
 ### Interactive Mode
 
 ```bash
-./build/modular-cli
+modular
 ```
 
 This presents a menu with options:
-1. Download mods from GameBanana
-2. Download mods from NexusMods
-3. Rename mods (convert IDs to names)
-4. Exit
+1. NexusMods - Download tracked mods
+2. GameBanana - Download subscribed mods
+3. Rename - Rename mod folders to human-readable names
 
 ### Command-Line Arguments
 
 ```bash
-# Download mods for specific game domains
-./build/modular-cli --domain skyrimspecialedition --domain fallout4
+# Download mods for a specific game domain
+modular skyrimspecialedition
 
 # Filter by category
-./build/modular-cli --domain skyrimspecialedition --category weapons
+modular skyrimspecialedition --categories main optional
 
 # Dry run (show what would be downloaded)
-./build/modular-cli --domain skyrimspecialedition --dry-run
+modular skyrimspecialedition --dry-run
 
 # Force re-download of existing files
-./build/modular-cli --domain skyrimspecialedition --force
+modular skyrimspecialedition --force
 
 # Organize mods into category subdirectories
-./build/modular-cli --domain skyrimspecialedition --organize-by-category
+modular skyrimspecialedition --organize-by-category
+
+# Verbose output
+modular skyrimspecialedition --verbose
+```
+
+### Subcommands
+
+```bash
+# Rename mod folders
+modular rename skyrimspecialedition
+
+# Rename all game domains
+modular rename
+
+# Download from GameBanana
+modular gamebanana
+
+# Fetch and cache metadata without renaming
+modular fetch skyrimspecialedition
 ```
 
 ### Output Structure
@@ -523,15 +523,15 @@ After downloading and organizing, mods are stored as:
 ## Testing
 
 ```bash
-# Build with tests enabled
-cmake --preset default -DBUILD_TESTS=ON
-cmake --build build
+# Run all tests
+dotnet test
 
-# Run core library tests
-./build/modular-tests
+# Run specific test project
+dotnet test tests/Modular.Core.Tests/
+dotnet test tests/Modular.FluentHttp.Tests/
 
-# Run fluent API tests
-./build/fluent-tests
+# Run with verbose output
+dotnet test --verbosity normal
 ```
 
 ### Test Coverage
@@ -540,7 +540,6 @@ cmake --build build
 - Utility functions (filename sanitization, MD5 calculation)
 - Database operations (add, find, query, remove)
 - Fluent HTTP client request building
-- Rate limiter state management
 
 ## Workflows
 
@@ -605,6 +604,8 @@ Additional documentation is available in the `/docs/` directory:
 | `fluent/README.md` | Fluent HTTP client user guide |
 | `fluent/INTERFACES.md` | Fluent API interface documentation |
 | `MODULAR_INTEGRATION_COMPARISON.md` | Fluent vs traditional client comparison |
+| `GUI_RECOMMENDATIONS.md` | GUI implementation recommendations |
+| `CODEBASE_REVIEW_RECOMMENDATIONS.md` | Comprehensive codebase review |
 
 ## Contributing
 
@@ -618,11 +619,12 @@ Additional documentation is available in the `/docs/` directory:
 
 ### Code Style
 
-- C++20 standard
+- C# 12 / .NET 8.0
 - 4-space indentation
-- PascalCase for classes, camelCase for functions/variables
-- Header guards using `#pragma once`
-- All warnings enabled (`-Wall -Wextra -Wpedantic`)
+- PascalCase for types and public members, camelCase for private fields with underscore prefix
+- File-scoped namespaces
+- Nullable reference types enabled
+- Treat warnings as errors
 
 ## License
 
@@ -632,6 +634,5 @@ MIT License - See LICENSE file for details.
 
 - [NexusMods](https://www.nexusmods.com/) for their comprehensive modding API
 - [GameBanana](https://gamebanana.com/) for their mod hosting platform
-- [nlohmann/json](https://github.com/nlohmann/json) for the excellent JSON library
-- [Catch2](https://github.com/catchorg/Catch2) for the testing framework
-- [libcurl](https://curl.se/libcurl/) for reliable HTTP operations
+- [System.CommandLine](https://github.com/dotnet/command-line-api) for CLI argument parsing
+- [Microsoft.Extensions](https://github.com/dotnet/runtime) for configuration and logging
