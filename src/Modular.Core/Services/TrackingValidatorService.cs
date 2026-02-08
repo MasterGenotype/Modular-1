@@ -5,6 +5,9 @@ using Modular.Core.Models;
 using Modular.Core.RateLimiting;
 using Modular.FluentHttp.Implementation;
 
+// TODO: Migrate TrackingValidatorService to use NexusModsBackend instead of NexusModsService
+#pragma warning disable CS0618 // Type or member is obsolete
+
 namespace Modular.Core.Services;
 
 /// <summary>

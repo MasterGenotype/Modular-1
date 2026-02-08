@@ -13,6 +13,11 @@ namespace Modular.Core.Services;
 /// <summary>
 /// Service for interacting with the NexusMods API.
 /// </summary>
+/// <remarks>
+/// This class is deprecated. Use <see cref="Modular.Core.Backends.NexusMods.NexusModsBackend"/> instead,
+/// which implements the unified <see cref="Modular.Core.Backends.IModBackend"/> interface.
+/// </remarks>
+[Obsolete("Use NexusModsBackend instead. This class will be removed in a future version.")]
 public class NexusModsService
 {
     private const string BaseUrl = "https://api.nexusmods.com";

@@ -10,6 +10,11 @@ namespace Modular.Core.Services;
 /// <summary>
 /// Service for interacting with the GameBanana API.
 /// </summary>
+/// <remarks>
+/// This class is deprecated. Use <see cref="Modular.Core.Backends.GameBanana.GameBananaBackend"/> instead,
+/// which implements the unified <see cref="Modular.Core.Backends.IModBackend"/> interface.
+/// </remarks>
+[Obsolete("Use GameBananaBackend instead. This class will be removed in a future version.")]
 public class GameBananaService
 {
     private const string BaseUrl = "https://gamebanana.com/apiv10";

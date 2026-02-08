@@ -20,6 +20,26 @@ public class AppSettings
     public string GameBananaUserId { get; set; } = string.Empty;
 
     /// <summary>
+    /// GameBanana game IDs to filter subscriptions by.
+    /// If empty, all subscribed mods are returned regardless of game.
+    /// </summary>
+    [JsonPropertyName("gamebanana_game_ids")]
+    public List<int> GameBananaGameIds { get; set; } = [];
+
+    /// <summary>
+    /// Subdirectory name for GameBanana downloads (default: "gamebanana").
+    /// </summary>
+    [JsonPropertyName("gamebanana_download_dir")]
+    public string GameBananaDownloadDir { get; set; } = "gamebanana";
+
+    /// <summary>
+    /// List of enabled backend IDs (e.g., "nexusmods", "gamebanana").
+    /// Backends not in this list will not be registered at startup.
+    /// </summary>
+    [JsonPropertyName("enabled_backends")]
+    public List<string> EnabledBackends { get; set; } = ["nexusmods", "gamebanana"];
+
+    /// <summary>
     /// Base directory for storing downloaded mods.
     /// </summary>
     [JsonPropertyName("mods_directory")]
