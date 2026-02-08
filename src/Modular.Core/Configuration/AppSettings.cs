@@ -14,6 +14,20 @@ public class AppSettings
     public string NexusApiKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Application slug registered with NexusMods for SSO.
+    /// </summary>
+    [JsonPropertyName("nexus_application_slug")]
+    public string NexusApplicationSlug { get; set; } = "modular";
+
+    /// <summary>
+    /// Whether to use SSO to obtain the NexusMods API key interactively.
+    /// When true and no API key is configured, Modular will open the browser
+    /// for authorization. Set to false for headless/CI environments.
+    /// </summary>
+    [JsonPropertyName("nexus_sso_enabled")]
+    public bool NexusSsoEnabled { get; set; } = true;
+
+    /// <summary>
     /// GameBanana user ID.
     /// </summary>
     [JsonPropertyName("gamebanana_user_id")]

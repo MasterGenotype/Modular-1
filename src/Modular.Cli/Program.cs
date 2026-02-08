@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Microsoft.Extensions.Logging;
 using Modular.Cli.UI;
+using Modular.Core.Authentication;
 using Modular.Core.Backends;
 using Modular.Core.Backends.Common;
 using Modular.Core.Backends.GameBanana;
@@ -95,6 +96,14 @@ class Program
             await RunFetchCommand(domain);
         }, domainArg);
         rootCommand.AddCommand(fetchCommand);
+
+        // Login command for SSO authentication
+        var loginCommand = new Command("login", "Authenticate with NexusMods via browser SSO");
+        loginCommand.SetHandler(async () =>
+        {
+            await RunLoginCommand();
+        });
+        rootCommand.AddCommand(loginCommand);
 
         return await rootCommand.InvokeAsync(args);
     }
@@ -367,10 +376,71 @@ class Program
         }
     }
 
+    static async Task RunLoginCommand()
+    {
+        try
+        {
+            var configService = new ConfigurationService();
+            var settings = await configService.LoadAsync();
+
+            Console.WriteLine("Opening browser for NexusMods authorization...");
+            Console.WriteLine("Please log in and authorize Modular when prompted.");
+            Console.WriteLine();
+
+            var ssoClient = new NexusSsoClient(
+                settings.NexusApplicationSlug,
+                settings.Verbose ? CreateLogger<NexusSsoClient>() : null);
+
+            settings.NexusApiKey = await ssoClient.AuthenticateAsync();
+            await configService.SaveAsync(settings);
+
+            LiveProgressDisplay.ShowSuccess("Login successful! API key saved to config.");
+        }
+        catch (TimeoutException)
+        {
+            LiveProgressDisplay.ShowError("SSO authorization timed out.");
+            Console.Error.WriteLine("You can set the API key manually:");
+            Console.Error.WriteLine("  export NEXUS_API_KEY=your_key_here");
+            Console.Error.WriteLine("  or add 'nexus_api_key' to ~/.config/Modular/config.json");
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError(ex.Message);
+        }
+    }
+
     static async Task<(AppSettings settings, NexusRateLimiter rateLimiter, DownloadDatabase database, ModMetadataCache metadataCache)> InitializeServices()
     {
         var configService = new ConfigurationService();
         var settings = await configService.LoadAsync();
+
+        // If no API key and SSO is enabled, run the SSO flow
+        if (string.IsNullOrWhiteSpace(settings.NexusApiKey) && settings.NexusSsoEnabled)
+        {
+            Console.WriteLine("No NexusMods API key found. Starting browser authorization...");
+            Console.WriteLine("A browser window will open. Please log in and authorize Modular.");
+            Console.WriteLine();
+
+            var ssoClient = new NexusSsoClient(
+                settings.NexusApplicationSlug,
+                settings.Verbose ? CreateLogger<NexusSsoClient>() : null);
+
+            try
+            {
+                settings.NexusApiKey = await ssoClient.AuthenticateAsync();
+                await configService.SaveAsync(settings);
+                LiveProgressDisplay.ShowSuccess("Authorization successful! API key saved to config.");
+            }
+            catch (TimeoutException)
+            {
+                LiveProgressDisplay.ShowError("SSO authorization timed out.");
+                Console.Error.WriteLine("You can set the API key manually:");
+                Console.Error.WriteLine("  export NEXUS_API_KEY=your_key_here");
+                Console.Error.WriteLine("  or add 'nexus_api_key' to ~/.config/Modular/config.json");
+                throw;
+            }
+        }
+
         configService.Validate(settings, requireNexusKey: true);
 
         var rateLimiter = new NexusRateLimiter(settings.Verbose ? CreateLogger<NexusRateLimiter>() : null);

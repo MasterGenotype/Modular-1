@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Modular.Core.Backends.Common;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Exceptions;
 using Modular.Core.Models;
 using Modular.Core.RateLimiting;
 using Modular.Core.Utilities;
@@ -149,12 +150,28 @@ public class NexusModsBackend : IModBackend
 
         try
         {
-            var links = await _client
+            var response = await _client
                 .GetAsync($"v1/games/{gameDomain}/mods/{modId}/files/{fileId}/download_link.json")
                 .WithHeader("apikey", _settings.NexusApiKey)
                 .WithHeader("accept", "application/json")
-                .AsArrayAsync<DownloadLink>();
+                .AsResponseAsync();
 
+            // Check for successful response before deserializing
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == 403)
+                {
+                    _logger?.LogWarning("Cannot get download link for mod {ModId} file {FileId}: NexusMods Premium membership required", modId, fileId);
+                }
+                else
+                {
+                    _logger?.LogWarning("Failed to resolve download URL for mod {ModId} file {FileId}: HTTP {StatusCode}", 
+                        modId, fileId, response.StatusCode);
+                }
+                return null;
+            }
+
+            var links = response.AsArray<DownloadLink>();
             return links.Count > 0 ? links[0].Uri : null;
         }
         catch (Exception ex)
@@ -218,6 +235,16 @@ public class NexusModsBackend : IModBackend
         }
 
         options.StatusCallback?.Invoke($"Ready to download {downloadQueue.Count} files.");
+
+        // Check if no download links were obtained
+        if (downloadQueue.Count == 0 && allFiles.Count > 0)
+        {
+            _logger?.LogError("Could not obtain any download links. NexusMods Premium membership is required to download mods via the API.");
+            throw new ApiException(
+                "Cannot download mods: NexusMods requires a Premium membership to access download links via the API. " +
+                "Visit https://www.nexusmods.com/register/premium to upgrade your account.",
+                403);
+        }
 
         // Download phase
         var completed = 0;
