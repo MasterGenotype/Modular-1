@@ -92,8 +92,9 @@ sealed class Program
             var settings = sp.GetRequiredService<AppSettings>();
             var rateLimiter = sp.GetRequiredService<IRateLimiter>();
             var database = sp.GetRequiredService<DownloadDatabase>();
+            var metadataCache = sp.GetRequiredService<ModMetadataCache>();
             var logger = sp.GetService<ILogger<NexusModsBackend>>();
-            return new NexusModsBackend(settings, rateLimiter, database, logger);
+            return new NexusModsBackend(settings, rateLimiter, database, metadataCache, logger);
         });
         services.AddSingleton(sp =>
         {

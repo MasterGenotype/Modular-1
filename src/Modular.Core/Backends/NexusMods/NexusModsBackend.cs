@@ -22,6 +22,7 @@ public class NexusModsBackend : IModBackend
     private readonly AppSettings _settings;
     private readonly IFluentClient _client;
     private readonly DownloadDatabase _database;
+    private readonly ModMetadataCache _metadataCache;
     private readonly ILogger<NexusModsBackend>? _logger;
 
     // Cache of tracked mods to avoid repeated API calls
@@ -42,10 +43,12 @@ public class NexusModsBackend : IModBackend
         AppSettings settings,
         Modular.Core.RateLimiting.IRateLimiter rateLimiter,
         DownloadDatabase database,
+        ModMetadataCache metadataCache,
         ILogger<NexusModsBackend>? logger = null)
     {
         _settings = settings;
         _database = database;
+        _metadataCache = metadataCache;
         _logger = logger;
         _client = FluentClientFactory.Create(BaseUrl, new RateLimiterAdapter(rateLimiter), logger);
         _client.SetUserAgent("Modular/1.0");
@@ -80,22 +83,55 @@ public class NexusModsBackend : IModBackend
         {
             ct.ThrowIfCancellationRequested();
 
-            // Fetch mod info to get the name (tracked_mods only returns ID and domain)
-            var modInfo = await GetModInfoAsync(m.ModId.ToString(), m.DomainName, ct);
-
-            mods.Add(new BackendMod
+            // Check cache first to avoid rate limiting
+            var cached = _metadataCache.GetModMetadata(m.DomainName, m.ModId);
+            if (cached != null)
             {
-                ModId = m.ModId.ToString(),
-                Name = modInfo?.Name ?? $"Mod {m.ModId}",
-                GameDomain = m.DomainName,
-                BackendId = Id,
-                Url = $"https://www.nexusmods.com/{m.DomainName}/mods/{m.ModId}",
-                Author = modInfo?.Author,
-                Summary = modInfo?.Summary,
-                UpdatedAt = modInfo?.UpdatedAt,
-                ThumbnailUrl = modInfo?.ThumbnailUrl
-            });
+                mods.Add(new BackendMod
+                {
+                    ModId = m.ModId.ToString(),
+                    Name = cached.Name,
+                    GameDomain = m.DomainName,
+                    BackendId = Id,
+                    Url = $"https://www.nexusmods.com/{m.DomainName}/mods/{m.ModId}",
+                    CategoryId = cached.CategoryId
+                });
+            }
+            else
+            {
+                // Fetch mod info from API (only if not in cache)
+                var modInfo = await GetModInfoAsync(m.ModId.ToString(), m.DomainName, ct);
+
+                mods.Add(new BackendMod
+                {
+                    ModId = m.ModId.ToString(),
+                    Name = modInfo?.Name ?? $"Mod {m.ModId}",
+                    GameDomain = m.DomainName,
+                    BackendId = Id,
+                    Url = $"https://www.nexusmods.com/{m.DomainName}/mods/{m.ModId}",
+                    Author = modInfo?.Author,
+                    Summary = modInfo?.Summary,
+                    UpdatedAt = modInfo?.UpdatedAt,
+                    ThumbnailUrl = modInfo?.ThumbnailUrl,
+                    CategoryId = modInfo?.CategoryId
+                });
+
+                // Save to cache for future use
+                if (modInfo != null)
+                {
+                    _metadataCache.SetModMetadata(m.DomainName, new ModMetadata
+                    {
+                        ModId = m.ModId,
+                        Name = modInfo.Name,
+                        CategoryId = modInfo.CategoryId ?? 0,
+                        FetchedAt = DateTime.UtcNow
+                    });
+                }
+            }
         }
+
+        // Save cache after loading mods
+        _ = _metadataCache.SaveAsync();
 
         return mods;
     }

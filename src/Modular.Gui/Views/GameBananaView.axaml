@@ -116,7 +116,8 @@
             </TextBlock>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                <Button Classes="accent" IsEnabled="{Binding IsConfigured}">
+                <Button Classes="accent" IsEnabled="{Binding IsConfigured}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <mi:MaterialIcon Kind="Download" Width="16" Height="16"/>
                         <TextBlock Text="Download Selected"/>

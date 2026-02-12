@@ -169,7 +169,8 @@
                         <TextBlock Text="Select Updates"/>
                     </StackPanel>
                 </Button>
-                <Button Classes="accent">
+                <Button Classes="accent" 
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <mi:MaterialIcon Kind="Download" Width="16" Height="16"/>
                         <TextBlock Text="Download Selected"/>
