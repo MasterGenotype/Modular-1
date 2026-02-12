@@ -14,7 +14,7 @@ namespace Modular.Core.Services;
 /// Service for renaming mod folders and organizing by category.
 /// Uses a metadata cache to minimize API calls.
 /// </summary>
-public class RenameService
+public class RenameService : IRenameService
 {
     private const string BaseUrl = "https://api.nexusmods.com";
     private readonly IFluentClient _client;

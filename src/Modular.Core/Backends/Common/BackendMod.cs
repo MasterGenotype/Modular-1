@@ -59,4 +59,9 @@ public class BackendMod
     /// When the mod was last updated.
     /// </summary>
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// URL to a thumbnail image for the mod.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }

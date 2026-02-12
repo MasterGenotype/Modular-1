@@ -14,8 +14,8 @@ namespace Modular.Core.Backends.GameBanana;
 /// </summary>
 public class GameBananaBackend : IModBackend
 {
-    private const string BaseUrl = "https://gamebanana.com/apiv10";
-    private const int DefaultPageSize = 50;
+    private const string BaseUrl = "https://gamebanana.com/apiv11";
+    private const int DefaultPageSize = 15;
     private static readonly TimeSpan ThrottleDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly AppSettings _settings;
@@ -82,47 +82,56 @@ public class GameBananaBackend : IModBackend
                 ct.ThrowIfCancellationRequested();
                 await ThrottleAsync();
 
-                // Fetch the user's submissions with subscriptions (paginated)
-                var response = await _client.GetAsync($"Member/{_settings.GameBananaUserId}/Submissions")
-                    .WithArgument("_aFilters[Generic_SubscriptionCount]", ">0")
+                // Fetch the user's subscriptions (mods they follow) using v11 API
+                var response = await _client.GetAsync($"Member/{_settings.GameBananaUserId}/Subscriptions")
                     .WithArgument("_nPage", page.ToString())
                     .WithArgument("_nPerpage", DefaultPageSize.ToString())
                     .AsJsonAsync();
 
-                var recordResponse = JsonSerializer.Deserialize<GameBananaRecordResponse>(
+                var v11Response = JsonSerializer.Deserialize<GameBananaV11Response>(
                     response.RootElement.GetRawText());
 
-                if (recordResponse?.Records == null || recordResponse.Records.Count == 0)
+                if (v11Response?.Records == null || v11Response.Records.Count == 0)
                     break;
 
-                foreach (var record in recordResponse.Records)
+                foreach (var record in v11Response.Records)
                 {
+                    // Subscription records have the actual mod in _aSubscription
+                    var mod = record.Subscription ?? record;
+                    if (mod.Id == 0 || string.IsNullOrEmpty(mod.Name))
+                        continue;
+
                     // Optional: Filter by game IDs if configured
                     if (_settings.GameBananaGameIds.Count > 0 &&
-                        record.Game != null &&
-                        !_settings.GameBananaGameIds.Contains(record.Game.Id))
+                        mod.Game != null &&
+                        !_settings.GameBananaGameIds.Contains(mod.Game.Id))
                     {
                         continue;
                     }
 
-                    var modId = record.Id.ToString();
+                    var modId = mod.Id.ToString();
+                    var thumbnailUrl = GetThumbnailUrl(mod.PreviewMedia);
+
                     result.Add(new BackendMod
                     {
                         ModId = modId,
-                        Name = record.Name,
+                        Name = mod.Name,
                         BackendId = Id,
-                        Url = $"https://gamebanana.com/mods/{modId}",
-                        Author = record.Submitter?.Name,
-                        Summary = record.Description,
-                        UpdatedAt = record.DateModifiedTimestamp.HasValue
-                            ? DateTimeOffset.FromUnixTimeSeconds(record.DateModifiedTimestamp.Value).DateTime
+                        Url = mod.ProfileUrl ?? $"https://gamebanana.com/mods/{modId}",
+                        Author = mod.Submitter?.Name,
+                        UpdatedAt = mod.DateModifiedTimestamp.HasValue
+                            ? DateTimeOffset.FromUnixTimeSeconds(mod.DateModifiedTimestamp.Value).DateTime
                             : null,
-                        GameDomain = record.Game?.Name
+                        GameDomain = mod.Game?.Name,
+                        ThumbnailUrl = thumbnailUrl
                     });
                 }
 
                 // Check if we've fetched all records
-                if (result.Count >= recordResponse.RecordCount || recordResponse.Records.Count < DefaultPageSize)
+                var totalCount = v11Response.Metadata?.RecordCount ?? 0;
+                if (v11Response.Metadata?.IsComplete == true ||
+                    result.Count >= totalCount ||
+                    v11Response.Records.Count < DefaultPageSize)
                     break;
 
                 page++;
@@ -140,6 +149,98 @@ public class GameBananaBackend : IModBackend
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Searches for mods on GameBanana.
+    /// </summary>
+    public async Task<List<BackendMod>> SearchModsAsync(
+        string searchQuery,
+        int? gameId = null,
+        int maxResults = 50,
+        CancellationToken ct = default)
+    {
+        var result = new List<BackendMod>();
+
+        try
+        {
+            var page = 1;
+            while (result.Count < maxResults)
+            {
+                ct.ThrowIfCancellationRequested();
+                await ThrottleAsync();
+
+                var request = _client.GetAsync("Mod/Index")
+                    .WithArgument("_nPage", page.ToString())
+                    .WithArgument("_nPerpage", DefaultPageSize.ToString());
+
+                if (!string.IsNullOrWhiteSpace(searchQuery))
+                    request = request.WithArgument("_sSearchText", searchQuery);
+
+                if (gameId.HasValue)
+                    request = request.WithArgument("_aFilters[Game][_idRow]", gameId.Value.ToString());
+
+                var response = await request.AsJsonAsync();
+
+                var v11Response = JsonSerializer.Deserialize<GameBananaV11Response>(
+                    response.RootElement.GetRawText());
+
+                if (v11Response?.Records == null || v11Response.Records.Count == 0)
+                    break;
+
+                foreach (var mod in v11Response.Records)
+                {
+                    if (mod.Id == 0 || string.IsNullOrEmpty(mod.Name))
+                        continue;
+
+                    var modId = mod.Id.ToString();
+                    var thumbnailUrl = GetThumbnailUrl(mod.PreviewMedia);
+
+                    result.Add(new BackendMod
+                    {
+                        ModId = modId,
+                        Name = mod.Name,
+                        BackendId = Id,
+                        Url = mod.ProfileUrl ?? $"https://gamebanana.com/mods/{modId}",
+                        Author = mod.Submitter?.Name,
+                        UpdatedAt = mod.DateModifiedTimestamp.HasValue
+                            ? DateTimeOffset.FromUnixTimeSeconds(mod.DateModifiedTimestamp.Value).DateTime
+                            : null,
+                        GameDomain = mod.Game?.Name,
+                        ThumbnailUrl = thumbnailUrl
+                    });
+
+                    if (result.Count >= maxResults)
+                        break;
+                }
+
+                if (v11Response.Metadata?.IsComplete == true ||
+                    v11Response.Records.Count < DefaultPageSize)
+                    break;
+
+                page++;
+            }
+
+            _logger?.LogInformation("Found {Count} mods matching '{Query}'", result.Count, searchQuery);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to search mods for query '{Query}'", searchQuery);
+        }
+
+        return result;
+    }
+
+    private static string? GetThumbnailUrl(GameBananaPreviewMedia? media)
+    {
+        var image = media?.Images?.FirstOrDefault();
+        if (image == null || string.IsNullOrEmpty(image.BaseUrl) || string.IsNullOrEmpty(image.File220))
+            return null;
+        return $"{image.BaseUrl}/{image.File220}";
     }
 
     public async Task<List<BackendModFile>> GetModFilesAsync(

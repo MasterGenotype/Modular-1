@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel">
+
+    <Design.DataContext>
+        <vm:LibraryViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,15">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="Mods Directory:" VerticalAlignment="Center" Opacity="0.7"/>
+                <TextBlock Text="{Binding ModsDirectory}" VerticalAlignment="Center" FontFamily="Consolas"/>
+            </StackPanel>
+            <Button Grid.Column="1" Command="{Binding OpenModsDirectoryCommand}" Margin="0,0,10,0"
+                    ToolTip.Tip="Open mods folder">
+                <mi:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
+            </Button>
+            <Button Grid.Column="2" Command="{Binding RefreshLibraryCommand}" ToolTip.Tip="Refresh">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    <TextBlock Text="Refresh"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Main Content - Three Column Layout -->
+        <Grid Grid.Row="1" ColumnDefinitions="200,*,250">
+            <!-- Game Domains List -->
+            <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10" Margin="0,0,10,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Games" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <ListBox ItemsSource="{Binding GameDomains}"
+                             SelectedItem="{Binding SelectedDomain}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GameDomainItem">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <mi:MaterialIcon Kind="Folder" Width="16" Height="16" Opacity="0.7"/>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}"/>
+                                        <TextBlock FontSize="11" Opacity="0.6">
+                                            <Run Text="{Binding ModCount}"/>
+                                            <Run Text=" mods"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Mods List -->
+            <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10" Margin="0,0,10,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Mods" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <ListBox ItemsSource="{Binding ModFolders}"
+                             SelectedItem="{Binding SelectedMod}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ModFolderItem">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <TextBlock FontSize="11" Opacity="0.6">
+                                                <Run Text="{Binding FileCount}"/>
+                                                <Run Text=" files"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding SizeText}" FontSize="11" Opacity="0.6"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Files List / Details -->
+            <Border Grid.Column="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <TextBlock Text="Files" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding SelectedMod.Name}" FontSize="12" Opacity="0.7"
+                                   IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </StackPanel>
+
+                    <!-- Actions for selected mod -->
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="5" Margin="0,10,0,0"
+                                IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Button Command="{Binding OpenModFolderCommand}" ToolTip.Tip="Open folder" Padding="8">
+                            <mi:MaterialIcon Kind="FolderOpen" Width="14" Height="14"/>
+                        </Button>
+                        <Button Command="{Binding DeleteSelectedModCommand}" ToolTip.Tip="Delete mod" Padding="8">
+                            <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                        </Button>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding SelectedModFiles}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <mi:MaterialIcon Kind="File" Width="14" Height="14" Opacity="0.5"/>
+                                    <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

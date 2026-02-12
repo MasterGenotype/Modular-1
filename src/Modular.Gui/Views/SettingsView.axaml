@@ -1,0 +1,147 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <Design.DataContext>
+        <vm:SettingsViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer>
+        <StackPanel Spacing="25" MaxWidth="600">
+            <!-- NexusMods Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Web" Width="24" Height="24"/>
+                        <TextBlock Text="NexusMods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="API Key" Margin="0,0,0,5"/>
+                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="5">
+                            <!-- Hidden API key (masked) -->
+                            <TextBox Text="{Binding NexusApiKey}"
+                                     PasswordChar="*"
+                                     Width="350"
+                                     Watermark="Enter your NexusMods API key"
+                                     IsVisible="{Binding !ShowNexusApiKey}"/>
+                            <!-- Visible API key (plain text) -->
+                            <TextBox Text="{Binding NexusApiKey}"
+                                     Width="350"
+                                     Watermark="Enter your NexusMods API key"
+                                     IsVisible="{Binding ShowNexusApiKey}"/>
+                            <Button Command="{Binding ToggleApiKeyVisibilityCommand}" 
+                                    ToolTip.Tip="Toggle visibility" Padding="8">
+                                <Panel>
+                                    <mi:MaterialIcon Kind="Eye" Width="16" Height="16" IsVisible="{Binding !ShowNexusApiKey}"/>
+                                    <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" IsVisible="{Binding ShowNexusApiKey}"/>
+                                </Panel>
+                            </Button>
+                        </StackPanel>
+                        <Button Grid.Row="1" Grid.Column="1" Margin="10,0,0,0"
+                                Command="{Binding TestNexusConnectionCommand}"
+                                IsEnabled="{Binding !IsTestingConnection}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Connection" Width="14" Height="14" 
+                                                 IsVisible="{Binding !IsTestingConnection}"/>
+                                <mi:MaterialIcon Kind="Loading" Width="14" Height="14" 
+                                                 IsVisible="{Binding IsTestingConnection}"
+                                                 Classes="rotating"/>
+                                <TextBlock Text="Test"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <TextBlock Text="Get your API key from nexusmods.com/users/myaccount?tab=api+access"
+                               FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <!-- GameBanana Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Gamepad" Width="24" Height="24"/>
+                        <TextBlock Text="GameBanana" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="User ID" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding GameBananaUserId}"
+                                 Width="200" HorizontalAlignment="Left"
+                                 Watermark="Enter your GameBanana user ID"/>
+                    </StackPanel>
+
+                    <TextBlock Text="Find your user ID in your GameBanana profile URL"
+                               FontSize="12" Opacity="0.6"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Downloads Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Download" Width="24" Height="24"/>
+                        <TextBlock Text="Downloads" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Mods Directory" Margin="0,0,0,5"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding ModsDirectory}"
+                                     Watermark="Select where to save downloaded mods"/>
+                            <Button Grid.Column="1" Content="Browse..." Margin="10,0,0,0"
+                                    Command="{Binding BrowseModsDirectoryCommand}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding VerifyDownloads}"
+                              Content="Verify downloads (MD5 checksum)"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Appearance Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Palette" Width="24" Height="24"/>
+                        <TextBlock Text="Appearance" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Theme" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding AvailableThemes}"
+                                  SelectedItem="{Binding SelectedTheme}"
+                                  Width="150" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Actions -->
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusMessage}" Opacity="0.7"/>
+                    <Border Background="Orange" CornerRadius="4" Padding="8,4"
+                            IsVisible="{Binding HasUnsavedChanges}">
+                        <TextBlock Text="Unsaved changes" FontSize="12"/>
+                    </Border>
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="Reset" Margin="0,0,10,0"
+                        Command="{Binding ResetSettingsCommand}"/>
+                <Button Grid.Column="2" Content="Save Settings" Classes="accent"
+                        Command="{Binding SaveSettingsCommand}"/>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

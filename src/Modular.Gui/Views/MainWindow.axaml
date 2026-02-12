@@ -1,0 +1,165 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Modular.Gui.ViewModels"
+        xmlns:views="using:Modular.Gui.Views"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:mi="using:Material.Icons.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="Modular.Gui.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Modular - Mod Manager"
+        Width="1200" Height="800"
+        MinWidth="800" MinHeight="600">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="10,5">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding StatusText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding RateLimitInfo}" VerticalAlignment="Center" Opacity="0.7"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid ColumnDefinitions="200,*">
+            <!-- Navigation Sidebar -->
+            <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                <DockPanel>
+                    <!-- App Title -->
+                    <Border DockPanel.Dock="Top" Padding="15,20">
+                        <StackPanel>
+                            <TextBlock Text="Modular" FontSize="24" FontWeight="Bold"/>
+                            <TextBlock Text="Mod Manager" FontSize="12" Opacity="0.7"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Navigation Items -->
+                    <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="5,10">
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="NexusMods"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Web" Width="20" Height="20"/>
+                                <TextBlock Text="NexusMods" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="GameBanana"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Gamepad" Width="20" Height="20"/>
+                                <TextBlock Text="GameBanana" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Downloads"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Download" Width="20" Height="20"/>
+                                <TextBlock Text="Downloads" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Library"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="FolderMultiple" Width="20" Height="20"/>
+                                <TextBlock Text="Library" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Settings at Bottom -->
+                    <Button DockPanel.Dock="Bottom" Command="{Binding NavigateToCommand}" CommandParameter="Settings"
+                            Classes="nav-button" Margin="5,10">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Cog" Width="20" Height="20"/>
+                            <TextBlock Text="Settings" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </DockPanel>
+            </Border>
+
+            <!-- Content Area -->
+            <Border Grid.Column="1" Padding="20">
+                <Grid>
+                    <!-- Configuration Warning -->
+                    <Border IsVisible="{Binding !IsConfigured}"
+                            Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                            CornerRadius="8" Padding="20" VerticalAlignment="Top">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="AlertCircle" Width="24" Height="24" Foreground="Orange"/>
+                                <TextBlock Text="Configuration Required" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding ConfigurationError}" TextWrapping="Wrap"/>
+                            <Button Content="Open Settings" Command="{Binding NavigateToCommand}" CommandParameter="Settings"
+                                    HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Page Content -->
+                    <DockPanel IsVisible="{Binding IsConfigured}">
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding SelectedPage}" FontSize="28" FontWeight="Bold" Margin="0,0,0,20"/>
+
+                        <!-- Content based on CurrentViewModel -->
+                        <ContentControl Content="{Binding CurrentViewModel}">
+                        <ContentControl.DataTemplates>
+                                <DataTemplate DataType="vm:ModListViewModel">
+                                    <views:ModListView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:DownloadQueueViewModel">
+                                    <views:DownloadQueueView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:SettingsViewModel">
+                                    <views:SettingsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:GameBananaViewModel">
+                                    <views:GameBananaView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:LibraryViewModel">
+                                    <views:LibraryView/>
+                                </DataTemplate>
+                            </ContentControl.DataTemplates>
+                        </ContentControl>
+                    </DockPanel>
+
+                    <!-- Placeholder for pages without ViewModels yet -->
+                    <Border IsVisible="{Binding IsConfigured}"
+                            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="8" Padding="40" MinHeight="400">
+                        <Border.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="IsConfigured"/>
+                                <Binding Path="CurrentViewModel" Converter="{x:Static ObjectConverters.IsNull}"/>
+                            </MultiBinding>
+                        </Border.IsVisible>
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                            <mi:MaterialIcon Kind="Application" Width="64" Height="64" Opacity="0.3"/>
+                            <TextBlock Text="Coming soon..." Opacity="0.5" FontSize="16"/>
+                            <TextBlock Text="{Binding SelectedPage, StringFormat='{}{0} view is under development'}" Opacity="0.3"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+
+    <Window.Styles>
+        <Style Selector="Button.nav-button">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="15,12"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.nav-button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}"/>
+        </Style>
+    </Window.Styles>
+</Window>

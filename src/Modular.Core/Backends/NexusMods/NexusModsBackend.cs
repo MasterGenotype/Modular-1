@@ -70,18 +70,32 @@ public class NexusModsBackend : IModBackend
 
         _trackedModsCache = response.Select(m => (m.DomainName, m.ModId)).ToHashSet();
 
-        var mods = response.Select(m => new BackendMod
-        {
-            ModId = m.ModId.ToString(),
-            Name = m.Name,
-            GameDomain = m.DomainName,
-            BackendId = Id,
-            Url = $"https://www.nexusmods.com/{m.DomainName}/mods/{m.ModId}"
-        }).ToList();
+        // Filter by game domain first to minimize API calls for mod info
+        var filteredMods = !string.IsNullOrEmpty(gameDomain)
+            ? response.Where(m => m.DomainName == gameDomain).ToList()
+            : response;
 
-        // Filter by game domain if specified
-        if (!string.IsNullOrEmpty(gameDomain))
-            mods = mods.Where(m => m.GameDomain == gameDomain).ToList();
+        var mods = new List<BackendMod>();
+        foreach (var m in filteredMods)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Fetch mod info to get the name (tracked_mods only returns ID and domain)
+            var modInfo = await GetModInfoAsync(m.ModId.ToString(), m.DomainName, ct);
+
+            mods.Add(new BackendMod
+            {
+                ModId = m.ModId.ToString(),
+                Name = modInfo?.Name ?? $"Mod {m.ModId}",
+                GameDomain = m.DomainName,
+                BackendId = Id,
+                Url = $"https://www.nexusmods.com/{m.DomainName}/mods/{m.ModId}",
+                Author = modInfo?.Author,
+                Summary = modInfo?.Summary,
+                UpdatedAt = modInfo?.UpdatedAt,
+                ThumbnailUrl = modInfo?.ThumbnailUrl
+            });
+        }
 
         return mods;
     }
@@ -357,7 +371,7 @@ public class NexusModsBackend : IModBackend
             return new BackendMod
             {
                 ModId = modId,
-                Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "",
+                Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? $"Mod {modId}" : $"Mod {modId}",
                 GameDomain = gameDomain,
                 BackendId = Id,
                 CategoryId = root.TryGetProperty("category_id", out var catProp) ? catProp.GetInt32() : null,
@@ -366,7 +380,8 @@ public class NexusModsBackend : IModBackend
                 Url = $"https://www.nexusmods.com/{gameDomain}/mods/{modId}",
                 UpdatedAt = root.TryGetProperty("updated_timestamp", out var updProp)
                     ? DateTimeOffset.FromUnixTimeSeconds(updProp.GetInt64()).DateTime
-                    : null
+                    : null,
+                ThumbnailUrl = root.TryGetProperty("picture_url", out var picProp) ? picProp.GetString() : null
             };
         }
         catch (Exception ex)

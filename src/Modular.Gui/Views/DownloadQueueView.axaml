@@ -1,0 +1,165 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:models="using:Modular.Gui.Models"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.DownloadQueueView"
+             x:DataType="vm:DownloadQueueViewModel">
+
+    <Design.DataContext>
+        <vm:DownloadQueueViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,*">
+        <!-- History Statistics -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <Grid ColumnDefinitions="*,*,*,*">
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TotalHistoryDownloads}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Total Downloads" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding SuccessfulHistoryDownloads}" FontSize="24" FontWeight="Bold" 
+                               Foreground="Green" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Successful" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding FailedHistoryDownloads}" FontSize="24" FontWeight="Bold" 
+                               Foreground="Red" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Failed" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TotalBytesDownloadedFormatted}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Total Size" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Active Downloads Header -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                <mi:MaterialIcon Kind="Download" Width="20" Height="20"/>
+                <TextBlock Text="Active Downloads" FontSize="18" FontWeight="SemiBold"/>
+                <Border Background="{DynamicResource SystemAccentColor}" CornerRadius="10" Padding="8,2"
+                        IsVisible="{Binding QueuedCount}">
+                    <TextBlock Text="{Binding QueuedCount}" FontSize="12"/>
+                </Border>
+            </StackPanel>
+            <Button Grid.Column="1" Command="{Binding CancelAllCommand}" Content="Cancel All"
+                    IsEnabled="{Binding IsDownloading}"/>
+        </Grid>
+
+        <!-- Active Downloads List -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="10" MinHeight="150" DragDrop.AllowDrop="True">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding ActiveDownloads}" x:Name="ActiveDownloadsList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:DownloadItemModel">
+                            <Border Margin="0,0,0,10" Padding="15" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                    CornerRadius="6"
+                                    PointerPressed="OnItemPointerPressed"
+                                    Cursor="Hand">
+                                <Grid RowDefinitions="Auto,Auto,Auto">
+                                    <!-- File name and status -->
+                                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="10,0" VerticalAlignment="Center">
+                                            <mi:MaterialIcon Kind="DragHorizontalVariant" Width="14" Height="14" Opacity="0.4"
+                                                             IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Queued}}"
+                                                             ToolTip.Tip="Drag to reorder"/>
+                                            <TextBlock Text="{Binding State}" Opacity="0.7"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).RemoveItemCommand}"
+                                                CommandParameter="{Binding}" Padding="5" Background="Transparent">
+                                            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <!-- Progress bar -->
+                                    <ProgressBar Grid.Row="1" Value="{Binding Progress}" Maximum="100"
+                                                 Height="8" Margin="0,10,0,5"/>
+
+                                    <!-- Progress details -->
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding ProgressText}" FontSize="12" Opacity="0.7"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding SpeedText}" FontSize="12" Opacity="0.7" Margin="10,0"/>
+                                        <TextBlock Grid.Column="2" FontSize="12" Opacity="0.7">
+                                            <Run Text="{Binding Progress, StringFormat='{}{0:F1}'}"/>
+                                            <Run Text="%"/>
+                                        </TextBlock>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Completed Downloads Header -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,20,0,10">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                <mi:MaterialIcon Kind="CheckCircle" Width="20" Height="20"/>
+                <TextBlock Text="Completed" FontSize="18" FontWeight="SemiBold"/>
+                <Border Background="{DynamicResource SystemAccentColor}" CornerRadius="10" Padding="8,2"
+                        IsVisible="{Binding CompletedCount}">
+                    <TextBlock Text="{Binding CompletedCount}" FontSize="12"/>
+                </Border>
+            </StackPanel>
+            <Button Grid.Column="1" Command="{Binding ClearCompletedCommand}" Content="Clear All"/>
+        </Grid>
+
+        <!-- Completed Downloads List -->
+        <Border Grid.Row="4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="10">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding CompletedDownloads}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:DownloadItemModel">
+                            <Border Margin="0,0,0,5" Padding="15" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                    CornerRadius="6">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                    <!-- Status icon -->
+                                    <Panel Grid.Column="0" Margin="0,0,15,0">
+                                        <mi:MaterialIcon Kind="CheckCircle" Foreground="Green" Width="24" Height="24"
+                                                         IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Completed}}"/>
+                                        <mi:MaterialIcon Kind="AlertCircle" Foreground="Red" Width="24" Height="24"
+                                                         IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Failed}}"/>
+                                        <mi:MaterialIcon Kind="Cancel" Foreground="Gray" Width="24" Height="24"
+                                                         IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Cancelled}}"/>
+                                    </Panel>
+
+                                    <!-- File info -->
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="Red"
+                                                   IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    </StackPanel>
+
+                                    <!-- Size -->
+                                    <TextBlock Grid.Column="2" Text="{Binding ProgressText}" VerticalAlignment="Center"
+                                               Margin="10,0" Opacity="0.7"/>
+
+                                    <!-- Remove button -->
+                                    <Button Grid.Column="3" Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).RemoveItemCommand}"
+                                            CommandParameter="{Binding}" Padding="5" Background="Transparent">
+                                        <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

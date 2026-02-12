@@ -1,6 +1,6 @@
 # Modular
 
-A sophisticated C#/.NET command-line application for automating the downloading, organizing, and management of game modifications from multiple mod repositories. Features a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
+A sophisticated C#/.NET application for automating the downloading, organizing, and management of game modifications from multiple mod repositories. Features both a command-line interface and a graphical user interface built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
 
 ## Table of Contents
 
@@ -16,6 +16,7 @@ A sophisticated C#/.NET command-line application for automating the downloading,
 - [Building](#building)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [GUI Application](#gui-application)
 - [Testing](#testing)
 - [Workflows](#workflows)
 - [Documentation](#documentation)
@@ -55,6 +56,9 @@ Modular follows a clean **three-layer architecture**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
+│                    GUI Layer (Modular.Gui)                  │
+│         Avalonia UI, MVVM, visual mod management            │
+├─────────────────────────────────────────────────────────────┤
 │                    CLI Layer (Modular.Cli)                  │
 │            Interactive menu, progress display, I/O          │
 ├─────────────────────────────────────────────────────────────┤
@@ -69,9 +73,10 @@ Modular follows a clean **three-layer architecture**:
 
 ### Layer Responsibilities
 
-1. **CLI Layer (`Modular.Cli`)** - Interactive command-line interface with menu-driven operations and real-time progress visualization through LiveProgressDisplay
-2. **Core Library (`Modular.Core`)** - Class library containing all business logic including HTTP operations, API integrations, rate limiting, file operations, and data persistence
-3. **Fluent HTTP Layer (`Modular.FluentHttp`)** - Modern fluent-style HTTP client library with chainable request building, middleware filters, and type-safe responses
+1. **GUI Layer (`Modular.Gui`)** - Cross-platform graphical interface built with Avalonia UI using MVVM architecture, featuring visual mod browsing, download queue management, and settings configuration
+2. **CLI Layer (`Modular.Cli`)** - Interactive command-line interface with menu-driven operations and real-time progress visualization through LiveProgressDisplay
+3. **Core Library (`Modular.Core`)** - Class library containing all business logic including HTTP operations, API integrations, rate limiting, file operations, and data persistence
+4. **Fluent HTTP Layer (`Modular.FluentHttp`)** - Modern fluent-style HTTP client library with chainable request building, middleware filters, and type-safe responses
 
 ## Project Structure
 
@@ -81,6 +86,13 @@ Modular/
 ├── BUILD.md                              # Build and installation guide
 ├── Makefile                              # Build shortcuts
 ├── src/
+│   ├── Modular.Gui/                      # GUI application (Avalonia)
+│   │   ├── Modular.Gui.csproj
+│   │   ├── Program.cs                    # Entry point and DI setup
+│   │   ├── App.axaml(.cs)                # Application and theme config
+│   │   ├── Views/                        # XAML views
+│   │   ├── ViewModels/                   # MVVM view models
+│   │   └── Services/                     # GUI-specific services
 │   ├── Modular.Cli/                      # CLI application
 │   │   ├── Modular.Cli.csproj
 │   │   ├── Program.cs                    # Entry point and command handlers
@@ -519,6 +531,90 @@ After downloading and organizing, mods are stored as:
         └── Laser_Musket_Plus/
             └── Laser Musket Plus-3456-1-0.zip
 ```
+
+## GUI Application
+
+Modular includes a full-featured graphical user interface built with Avalonia UI, providing a visual way to manage mods across multiple platforms.
+
+### GUI Features
+
+- **Multi-Platform Browsing** - Browse NexusMods tracked mods and GameBanana subscriptions in dedicated views
+- **Download Queue** - Visual download queue with progress tracking, pause/resume, and drag-and-drop reordering
+- **Mod Library** - Browse and manage downloaded mods with search and filtering
+- **Update Checking** - Check for mod updates with visual status indicators
+- **Download History** - Track download statistics and history
+- **Settings Management** - Configure all options through a visual interface
+- **Keyboard Shortcuts** - Quick access to common operations
+
+### Building the GUI
+
+```bash
+# Build the GUI
+make gui
+
+# Or using dotnet directly
+dotnet build src/Modular.Gui/Modular.Gui.csproj -c Release
+```
+
+### Running the GUI
+
+```bash
+# Run via Makefile
+make gui-run
+
+# Or using dotnet directly
+dotnet run --project src/Modular.Gui/Modular.Gui.csproj
+```
+
+### Publishing the GUI
+
+```bash
+# Publish for Linux (self-contained)
+make gui-publish-linux
+
+# Publish for Windows (self-contained)
+make gui-publish-windows
+
+# Output is in publish/gui-linux-x64/ or publish/gui-win-x64/
+```
+
+### GUI Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+R` | Refresh current view |
+| `Ctrl+D` | Start downloads |
+| `Ctrl+Q` | Quit application |
+| `Escape` | Cancel current operation |
+
+### GUI Views
+
+**NexusMods View**
+- Displays all tracked mods from your NexusMods account
+- Shows mod name, game, category, and update status
+- Select mods and add to download queue
+- Check for updates across all tracked mods
+
+**GameBanana View**
+- Displays subscribed mods from your GameBanana account
+- Browse by game with search filtering
+- Add mods to download queue
+
+**Downloads View**
+- Active download queue with real-time progress
+- Drag-and-drop to reorder queue
+- Pause, resume, or cancel individual downloads
+- Download history statistics panel
+
+**Library View**
+- Browse all downloaded mods
+- Search and filter by name or game
+- View mod details and file locations
+
+**Settings View**
+- Configure API keys (NexusMods, GameBanana)
+- Set download path and organization options
+- Toggle verification and auto-rename features
 
 ## Testing
 

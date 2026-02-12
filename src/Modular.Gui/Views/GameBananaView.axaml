@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:models="using:Modular.Gui.Models"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.GameBananaView"
+             x:DataType="vm:GameBananaViewModel">
+
+    <Design.DataContext>
+        <vm:GameBananaViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Configuration Warning -->
+        <Border Grid.Row="0" IsVisible="{Binding !IsConfigured}"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <mi:MaterialIcon Kind="AlertCircle" Width="20" Height="20" Foreground="Orange"/>
+                <TextBlock Text="{Binding ConfigurationError}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Header -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="Subscribed Mods" FontSize="16" VerticalAlignment="Center" Opacity="0.7"/>
+            <Button Grid.Column="1" Command="{Binding RefreshModsCommand}" ToolTip.Tip="Refresh subscribed mods"
+                    IsEnabled="{Binding IsConfigured}" Margin="0,0,10,0">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    <TextBlock Text="My Subscriptions"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Command="{Binding SearchModsCommand}" ToolTip.Tip="Search all GameBanana mods">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    <TextBlock Text="Search"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Search and filter bar -->
+        <Grid Grid.Row="2" RowDefinitions="Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,10">
+                <TextBox Grid.Column="0" 
+                         Text="{Binding SearchText}" 
+                         Watermark="Search GameBanana mods... (press Enter or click Search)"
+                         Margin="0,0,10,0">
+                    <TextBox.InnerLeftContent>
+                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
+                    </TextBox.InnerLeftContent>
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding SearchModsCommand}"/>
+                    </TextBox.KeyBindings>
+                </TextBox>
+
+                <Button Grid.Column="1" Command="{Binding SelectAllCommand}" 
+                        Content="Select All" Margin="0,0,5,0" IsEnabled="{Binding IsConfigured}"/>
+                <Button Grid.Column="2" Command="{Binding SelectNoneCommand}" 
+                        Content="Select None" Margin="0,0,5,0" IsEnabled="{Binding IsConfigured}"/>
+                <TextBlock Grid.Column="3" VerticalAlignment="Center" Opacity="0.7">
+                    <Run Text="{Binding SelectedCount}"/>
+                    <Run Text=" selected"/>
+                </TextBlock>
+            </Grid>
+
+            <!-- Mod list -->
+            <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
+                    CornerRadius="8" Padding="1">
+                <Grid>
+                    <!-- Loading indicator -->
+                    <StackPanel IsVisible="{Binding IsLoading}" 
+                                VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                        <ProgressBar IsIndeterminate="True" Width="200"/>
+                        <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.7"/>
+                    </StackPanel>
+
+                    <!-- Mod DataGrid -->
+                    <DataGrid IsVisible="{Binding !IsLoading}"
+                              ItemsSource="{Binding FilteredMods}"
+                              AutoGenerateColumns="False"
+                              CanUserReorderColumns="True"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              GridLinesVisibility="Horizontal"
+                              IsReadOnly="False"
+                              SelectionMode="Extended">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="50">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:ModDisplayModel">
+                                        <CheckBox IsChecked="{Binding IsSelected}" 
+                                                  HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Game" Binding="{Binding GameDomain}" Width="150" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80" IsReadOnly="True"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
+                <Run Text="{Binding TotalMods}"/>
+                <Run Text=" mods total"/>
+            </TextBlock>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                <Button Classes="accent" IsEnabled="{Binding IsConfigured}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="Download" Width="16" Height="16"/>
+                        <TextBlock Text="Download Selected"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

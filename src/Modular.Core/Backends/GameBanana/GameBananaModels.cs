@@ -16,6 +16,106 @@ public class GameBananaRecordResponse
 }
 
 /// <summary>
+/// Response wrapper for v11 API paginated listings.
+/// Used for endpoints like Member/{id}/Subscriptions and Mod/Index.
+/// </summary>
+public class GameBananaV11Response
+{
+    [JsonPropertyName("_aMetadata")]
+    public GameBananaMetadata? Metadata { get; set; }
+
+    [JsonPropertyName("_aRecords")]
+    public List<GameBananaV11Record> Records { get; set; } = [];
+}
+
+/// <summary>
+/// Metadata for paginated responses.
+/// </summary>
+public class GameBananaMetadata
+{
+    [JsonPropertyName("_nRecordCount")]
+    public int RecordCount { get; set; }
+
+    [JsonPropertyName("_nPerpage")]
+    public int PerPage { get; set; }
+
+    [JsonPropertyName("_bIsComplete")]
+    public bool IsComplete { get; set; }
+}
+
+/// <summary>
+/// A record from v11 API (can be a subscription wrapper or direct mod).
+/// </summary>
+public class GameBananaV11Record
+{
+    [JsonPropertyName("_idRow")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("_sModelName")]
+    public string? ModelName { get; set; }
+
+    [JsonPropertyName("_sName")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("_sProfileUrl")]
+    public string? ProfileUrl { get; set; }
+
+    [JsonPropertyName("_tsDateAdded")]
+    public long? DateAddedTimestamp { get; set; }
+
+    [JsonPropertyName("_tsDateModified")]
+    public long? DateModifiedTimestamp { get; set; }
+
+    [JsonPropertyName("_bHasFiles")]
+    public bool HasFiles { get; set; }
+
+    [JsonPropertyName("_aSubmitter")]
+    public GameBananaSubmitter? Submitter { get; set; }
+
+    [JsonPropertyName("_aGame")]
+    public GameBananaGameRef? Game { get; set; }
+
+    [JsonPropertyName("_aPreviewMedia")]
+    public GameBananaPreviewMedia? PreviewMedia { get; set; }
+
+    /// <summary>
+    /// For subscription records, contains the actual mod data.
+    /// </summary>
+    [JsonPropertyName("_aSubscription")]
+    public GameBananaV11Record? Subscription { get; set; }
+}
+
+/// <summary>
+/// Preview media (images) for a mod.
+/// </summary>
+public class GameBananaPreviewMedia
+{
+    [JsonPropertyName("_aImages")]
+    public List<GameBananaImage>? Images { get; set; }
+}
+
+/// <summary>
+/// An image from GameBanana.
+/// </summary>
+public class GameBananaImage
+{
+    [JsonPropertyName("_sType")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("_sBaseUrl")]
+    public string? BaseUrl { get; set; }
+
+    [JsonPropertyName("_sFile")]
+    public string? File { get; set; }
+
+    [JsonPropertyName("_sFile220")]
+    public string? File220 { get; set; }
+
+    [JsonPropertyName("_sFile100")]
+    public string? File100 { get; set; }
+}
+
+/// <summary>
 /// A single submission record (mod, skin, tool, etc.) from GameBanana.
 /// </summary>
 public class GameBananaRecord
