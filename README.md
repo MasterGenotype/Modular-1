@@ -118,7 +118,6 @@ Modular/
 │   ├── Modular.Cli/                      # CLI application
 │   │   ├── Modular.Cli.csproj
 │   │   ├── Program.cs                    # Entry point and command handlers
-│   │   ├── Commands/                     # Command implementations
 │   │   └── UI/                           # Terminal UI components
 │   ├── Modular.Core/                     # Core business logic library
 │   │   ├── Modular.Core.csproj
@@ -139,19 +138,38 @@ Modular/
 │   │   │   └── ModMetadataCache.cs       # Mod metadata caching
 │   │   ├── Dependencies/                 # Dependency resolution
 │   │   │   ├── DependencyGraph.cs        # Mod dependency graph
-│   │   │   └── ConflictDetector.cs       # Conflict detection logic
+│   │   │   ├── DependencyEdge.cs         # Graph edge model
+│   │   │   ├── ModNode.cs               # Graph node model
+│   │   │   ├── FileConflictIndex.cs     # File conflict detection
+│   │   │   ├── ConflictResolver.cs      # Conflict resolution strategies
+│   │   │   ├── PubGrubResolver.cs       # PubGrub-inspired version resolver
+│   │   │   ├── ModProfile.cs            # Mod profile/collection model
+│   │   │   └── ResolutionResult.cs      # Resolution result model
 │   │   ├── Diagnostics/                  # Health checks and diagnostics
 │   │   │   └── DiagnosticService.cs      # System diagnostics
 │   │   ├── Exceptions/
 │   │   │   └── ModularException.cs       # Custom exception hierarchy
+│   │   ├── Downloads/                    # Download orchestration
+│   │   │   ├── DownloadQueue.cs          # Download queue management
+│   │   │   └── DownloadEngine.cs         # Production-grade download handler
+│   │   ├── ErrorHandling/               # Error isolation
+│   │   │   ├── ErrorBoundary.cs          # Plugin error isolation
+│   │   │   └── RetryPolicy.cs           # Retry configuration
 │   │   ├── Http/
 │   │   │   ├── ModularHttpClient.cs      # HTTP client wrapper
-│   │   │   └── RetryPolicy.cs            # Retry configuration
+│   │   │   ├── RetryPolicy.cs            # Retry logic
+│   │   │   └── HttpCache.cs             # Response caching
 │   │   ├── Installers/                   # Installer framework
-│   │   │   └── InstallPipeline.cs        # Installation orchestration
+│   │   │   ├── InstallerManager.cs       # Installer orchestration
+│   │   │   ├── FomodInstaller.cs        # FOMOD format support
+│   │   │   ├── BepInExInstaller.cs      # BepInEx plugin installer
+│   │   │   └── LooseFileInstaller.cs    # Simple file extraction
 │   │   ├── Metadata/                     # Metadata enrichment
 │   │   │   ├── IMetadataEnricher.cs      # Enricher interface
-│   │   │   └── CanonicalSchema.cs        # Unified metadata schema
+│   │   │   ├── CanonicalMod.cs          # Unified metadata schema
+│   │   │   ├── CanonicalFile.cs         # File representation
+│   │   │   ├── CanonicalVersion.cs      # Version representation
+│   │   │   └── ModDependency.cs         # Dependency model
 │   │   ├── Models/
 │   │   │   ├── TrackedMod.cs             # Tracked mod model
 │   │   │   ├── ModFile.cs                # Mod file model
@@ -165,14 +183,14 @@ Modular/
 │   │   │   ├── PluginLoadContext.cs      # Isolated load context
 │   │   │   └── PluginMarketplace.cs      # Plugin discovery/installation
 │   │   ├── Profiles/                     # Profile management
-│   │   │   └── ProfileService.cs         # Mod profiles/collections
+│   │   │   └── ProfileExporter.cs        # Profile export/import
 │   │   ├── RateLimiting/
 │   │   │   ├── IRateLimiter.cs           # Rate limiter interface
 │   │   │   ├── NexusRateLimiter.cs       # NexusMods rate limiter
 │   │   │   └── RateLimitScheduler.cs     # Request scheduling
 │   │   ├── Services/
-│   │   │   ├── NexusModsService.cs       # NexusMods API integration
-│   │   │   ├── GameBananaService.cs      # GameBanana API integration
+│   │   │   ├── NexusModsService.cs       # NexusMods API (legacy, use NexusModsBackend)
+│   │   │   ├── GameBananaService.cs      # GameBanana API (legacy, use GameBananaBackend)
 │   │   │   ├── RenameService.cs          # Mod renaming and organization
 │   │   │   └── TrackingValidatorService.cs # Web scraping validation
 │   │   ├── Telemetry/                    # Performance metrics
@@ -181,7 +199,8 @@ Modular/
 │   │   │   ├── FileUtils.cs              # File operation utilities
 │   │   │   └── Md5Calculator.cs          # MD5 checksum calculation
 │   │   └── Versioning/                   # Version comparison
-│   │       └── SemanticVersion.cs        # SemVer implementation
+│   │       ├── SemanticVersion.cs        # SemVer implementation
+│   │       └── VersionRange.cs           # Version range constraints
 │   ├── Modular.Sdk/                      # Plugin SDK contracts
 │   │   ├── Modular.Sdk.csproj
 │   │   ├── Backends/                     # Backend contracts
@@ -219,7 +238,11 @@ Modular/
 │   │   ├── Modular.Core.Tests.csproj
 │   │   ├── ConfigurationTests.cs
 │   │   ├── DatabaseTests.cs
-│   │   └── UtilityTests.cs
+│   │   ├── UtilityTests.cs
+│   │   └── Backends/                     # Backend-specific tests
+│   │       ├── BackendRegistryTests.cs
+│   │       ├── NexusModsBackendTests.cs
+│   │       └── GameBananaBackendTests.cs
 │   └── Modular.FluentHttp.Tests/         # Fluent HTTP client tests
 │       ├── Modular.FluentHttp.Tests.csproj
 │       └── FluentClientTests.cs
@@ -306,15 +329,31 @@ The SSO flow:
 
 See [`docs/NEXUSMODS_SSO_INTEGRATION.md`](docs/NEXUSMODS_SSO_INTEGRATION.md) for implementation details.
 
-### NexusModsService (`src/Modular.Core/Services/NexusModsService.cs`)
+### Download Engine (`src/Modular.Core/Downloads/DownloadEngine.cs`)
 
-Complete NexusMods API integration:
-- Fetches tracked mods with domain information
-- Retrieves file IDs for mods
-- Generates time-limited download links
-- Downloads files with progress callbacks
-- Integrates with NexusRateLimiter for compliance
-- Supports both SSO and manual API key authentication
+Production-grade download handler:
+- Streaming downloads with resumable support (HTTP Range headers)
+- Concurrent download control via SemaphoreSlim
+- MD5/SHA256 checksum verification
+- Real-time progress tracking with callbacks
+- Automatic retry with exponential backoff
+
+### Dependency Resolution (`src/Modular.Core/Dependencies/PubGrubResolver.cs`)
+
+PubGrub-inspired version constraint solver:
+- Resolves mod dependencies to a consistent set of versions
+- Detects circular dependencies and incompatible mods
+- Topological sort for correct install order
+- Version range constraint propagation
+- Requires `IModVersionProvider` implementation per backend (see [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md))
+
+### Installer Framework (`src/Modular.Core/Installers/`)
+
+Extensible mod installation system:
+- **InstallerManager** - Orchestrates installer selection by priority and confidence
+- **FomodInstaller** - Parses FOMOD `ModuleConfig.xml` (simplified; UI selection not yet integrated)
+- **BepInExInstaller** - Detects and installs BepInEx plugins
+- **LooseFileInstaller** - Simple archive extraction fallback
 
 ### NexusRateLimiter (`src/Modular.Core/RateLimiting/NexusRateLimiter.cs`)
 
@@ -324,13 +363,9 @@ Tracks NexusMods API rate limits from response headers:
 - Implements async waiting when limits exhausted
 - Supports state persistence between sessions
 
-### GameBananaService (`src/Modular.Core/Services/GameBananaService.cs`)
+### Legacy Services (Deprecated)
 
-GameBanana platform integration:
-- Fetches user's subscribed mods
-- Extracts file URLs from mod pages
-- Downloads files with optional progress tracking
-- No rate limiting required
+> **Note:** `NexusModsService` and `GameBananaService` in `src/Modular.Core/Services/` are marked `[Obsolete]`. New code should use `NexusModsBackend` and `GameBananaBackend` via the backend abstraction instead. The CLI still references these services for some commands pending migration (see [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md)).
 
 ### DownloadDatabase (`src/Modular.Core/Database/DownloadDatabase.cs`)
 
@@ -530,7 +565,7 @@ catch (ModularException ex)
 
 | Dependency | Purpose | Version |
 |------------|---------|---------|
-| **.NET SDK** | Runtime and build | 10.0+ |
+| **.NET SDK** | Runtime and build | 8.0+ |
 | **System.CommandLine** | CLI argument parsing | 2.0.0-beta4 |
 | **Spectre.Console** | Rich terminal UI and progress | 0.49.1 |
 | **System.Composition** | MEF plugin composition | 10.0.3 |
@@ -549,7 +584,7 @@ catch (ModularException ex)
 
 ### Prerequisites
 
-- .NET SDK 10.0 or later (tested with 10.0.103)
+- .NET SDK 8.0 or later
   - Check with: `dotnet --version`
 
 ### Installing .NET SDK
@@ -828,6 +863,9 @@ dotnet test --verbosity normal
 - Configuration loading and validation
 - Utility functions (filename sanitization, MD5 calculation)
 - Database operations (add, find, query, remove)
+- Backend registry and discovery
+- NexusMods backend operations
+- GameBanana backend operations
 - Fluent HTTP client request building
 
 ## Workflows
@@ -889,6 +927,7 @@ Additional documentation is available in the `/docs/` directory:
 | Document | Description |
 |----------|-------------|
 | [`Modular_1_Blueprint.md`](docs/Modular_1_Blueprint.md) | Next-generation architecture blueprint and evolution roadmap |
+| [`IMPLEMENTATION_GUIDE.md`](docs/IMPLEMENTATION_GUIDE.md) | Guide to completing placeholder and partial implementations |
 | [`CODEBASE_REVIEW_RECOMMENDATIONS.md`](docs/CODEBASE_REVIEW_RECOMMENDATIONS.md) | Comprehensive codebase review and recommendations |
 | [`EVOLUTION_SUMMARY.md`](docs/EVOLUTION_SUMMARY.md) | Project evolution history and milestones |
 
