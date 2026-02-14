@@ -4,7 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Gui.Models;

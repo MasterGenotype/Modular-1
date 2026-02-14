@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modular.Core\Modular.Core.csproj" />
+    <ProjectReference Include="..\Modular.Sdk\Modular.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

@@ -203,7 +203,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            var itemsToQueue = new List<(Modular.Core.Backends.Common.BackendMod mod, Modular.Core.Backends.Common.BackendModFile file)>();
+            var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
 
             foreach (var modDisplay in selected)
             {
@@ -213,7 +213,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     var files = await backend.GetModFilesAsync(
                         modDisplay.ModId,
                         modDisplay.GameDomain,
-                        new Modular.Core.Backends.Common.FileFilter { Categories = ["main"] });
+                        new Modular.Sdk.Backends.Common.FileFilter { Categories = ["main"] });
 
                     if (files.Count > 0)
                     {
@@ -261,7 +261,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            var itemsToQueue = new List<(Modular.Core.Backends.Common.BackendMod mod, Modular.Core.Backends.Common.BackendModFile file)>();
+            var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
 
             foreach (var modDisplay in selected)
             {

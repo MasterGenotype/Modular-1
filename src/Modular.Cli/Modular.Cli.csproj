@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Modular.Core\Modular.Core.csproj" />
     <ProjectReference Include="..\Modular.FluentHttp\Modular.FluentHttp.csproj" />
+    <ProjectReference Include="..\Modular.Sdk\Modular.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
@@ -63,7 +63,7 @@ public partial class ModListViewModel : ViewModelBase
     public ModListViewModel()
     {
         // Add sample data for designer
-        Mods.Add(new ModDisplayModel(new Modular.Core.Backends.Common.BackendMod
+        Mods.Add(new ModDisplayModel(new Modular.Sdk.Backends.Common.BackendMod
         {
             ModId = "1",
             Name = "Sample Mod",

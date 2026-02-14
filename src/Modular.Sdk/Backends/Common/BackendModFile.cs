@@ -1,4 +1,4 @@
-namespace Modular.Core.Backends.Common;
+namespace Modular.Sdk.Backends.Common;
 
 /// <summary>
 /// Unified representation of a downloadable file across all backends.

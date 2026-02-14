@@ -1,6 +1,6 @@
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends.Common;
 
 namespace Modular.Gui.Models;
 

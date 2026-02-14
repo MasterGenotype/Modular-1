@@ -1,6 +1,8 @@
 using Modular.Core.Backends;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends;
+using Modular.Sdk.Backends.Common;
 using Xunit;
+using IModBackend = Modular.Core.Backends.IModBackend;
 
 namespace Modular.Core.Tests.Backends;
 

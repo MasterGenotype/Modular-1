@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends.Common;
 using Modular.Core.Configuration;
 using Modular.Core.Utilities;
 using Modular.FluentHttp.Implementation;

@@ -1,4 +1,4 @@
-namespace Modular.Core.Backends.Common;
+namespace Modular.Sdk.Backends.Common;
 
 /// <summary>
 /// Filter options for retrieving mod files.

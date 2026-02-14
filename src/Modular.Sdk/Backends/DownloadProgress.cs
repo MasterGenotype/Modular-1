@@ -1,4 +1,4 @@
-namespace Modular.Core.Backends;
+namespace Modular.Sdk.Backends;
 
 /// <summary>
 /// Progress information reported during download operations.

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Modular.Core.Metadata;
 
 namespace Modular.Core.Database;
 
@@ -41,11 +42,33 @@ public class GameCategoryCache
 /// </summary>
 public class MetadataCacheData
 {
+    /// <summary>
+    /// Legacy mod metadata storage (kept for backward compatibility).
+    /// </summary>
     [JsonPropertyName("mods")]
     public Dictionary<string, Dictionary<int, ModMetadata>> Mods { get; set; } = [];
 
+    /// <summary>
+    /// Canonical mod metadata storage (new format).
+    /// Keyed by canonical ID (e.g., "nexusmods:skyrim:12345").
+    /// </summary>
+    [JsonPropertyName("canonical_mods")]
+    public Dictionary<string, CanonicalModCacheEntry> CanonicalMods { get; set; } = [];
+
     [JsonPropertyName("game_categories")]
     public Dictionary<string, GameCategoryCache> GameCategories { get; set; } = [];
+}
+
+/// <summary>
+/// Cache entry for a canonical mod with metadata.
+/// </summary>
+public class CanonicalModCacheEntry
+{
+    [JsonPropertyName("mod")]
+    public CanonicalMod Mod { get; set; } = new();
+
+    [JsonPropertyName("fetched_at")]
+    public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>
@@ -75,7 +98,7 @@ public class ModMetadataCache
     }
 
     /// <summary>
-    /// Gets cached mod metadata if available.
+    /// Gets cached mod metadata if available (legacy format).
     /// </summary>
     /// <param name="gameDomain">Game domain</param>
     /// <param name="modId">Mod ID</param>
@@ -94,7 +117,24 @@ public class ModMetadataCache
     }
 
     /// <summary>
-    /// Stores mod metadata in the cache.
+    /// Gets cached canonical mod if available.
+    /// </summary>
+    /// <param name="canonicalId">Canonical ID (e.g., "nexusmods:skyrim:12345")</param>
+    /// <returns>Cached canonical mod or null if not cached</returns>
+    public CanonicalMod? GetCanonicalMod(string canonicalId)
+    {
+        lock (_lock)
+        {
+            if (_data.CanonicalMods.TryGetValue(canonicalId, out var entry))
+            {
+                return entry.Mod;
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Stores mod metadata in the cache (legacy format).
     /// </summary>
     /// <param name="gameDomain">Game domain</param>
     /// <param name="metadata">Mod metadata to cache</param>
@@ -106,6 +146,22 @@ public class ModMetadataCache
                 _data.Mods[gameDomain] = [];
 
             _data.Mods[gameDomain][metadata.ModId] = metadata;
+        }
+    }
+
+    /// <summary>
+    /// Stores canonical mod in the cache.
+    /// </summary>
+    /// <param name="mod">Canonical mod to cache</param>
+    public void SetCanonicalMod(CanonicalMod mod)
+    {
+        lock (_lock)
+        {
+            _data.CanonicalMods[mod.CanonicalId] = new CanonicalModCacheEntry
+            {
+                Mod = mod,
+                FetchedAt = DateTime.UtcNow
+            };
         }
     }
 
@@ -188,6 +244,9 @@ public class ModMetadataCache
                 Mods = _data.Mods.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.ToDictionary(m => m.Key, m => m.Value)),
+                CanonicalMods = _data.CanonicalMods.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value),
                 GameCategories = _data.GameCategories.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value)

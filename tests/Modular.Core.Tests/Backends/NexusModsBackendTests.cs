@@ -3,6 +3,7 @@ using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.RateLimiting;
+using Modular.Sdk.Backends;
 using Xunit;
 
 namespace Modular.Core.Tests.Backends;
@@ -102,7 +103,8 @@ public class NexusModsBackendTests
         settings ??= new AppSettings { NexusApiKey = "test-key" };
         var rateLimiter = new NexusRateLimiter();
         var database = new DownloadDatabase(":memory:");
+        var metadataCache = new ModMetadataCache(":memory:");
 
-        return new NexusModsBackend(settings, rateLimiter, database);
+        return new NexusModsBackend(settings, rateLimiter, database, metadataCache);
     }
 }

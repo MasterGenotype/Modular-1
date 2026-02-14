@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Modular.Core\Modular.Core.csproj" />
+    <ProjectReference Include="..\..\src\Modular.Sdk\Modular.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

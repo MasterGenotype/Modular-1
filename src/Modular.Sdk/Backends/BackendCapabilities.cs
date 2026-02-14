@@ -1,4 +1,4 @@
-namespace Modular.Core.Backends;
+namespace Modular.Sdk.Backends;
 
 /// <summary>
 /// Feature flags declaring what capabilities a backend supports.

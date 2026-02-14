@@ -3,7 +3,8 @@ using Microsoft.Extensions.Logging;
 using Modular.Cli.UI;
 using Modular.Core.Authentication;
 using Modular.Core.Backends;
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends;
+using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
@@ -115,7 +116,7 @@ class Program
             try
             {
                 var (settings, rateLimiter, database, metadataCache) = await InitializeServicesMinimal();
-                var registry = InitializeBackends(settings, rateLimiter, database, false);
+                var registry = InitializeBackends(settings, rateLimiter, database, metadataCache, false);
                 var configured = registry.GetConfigured();
 
                 // Build menu dynamically from configured backends + Rename option
@@ -484,6 +485,7 @@ class Program
         AppSettings settings,
         NexusRateLimiter rateLimiter,
         DownloadDatabase database,
+        ModMetadataCache metadataCache,
         bool verbose)
     {
         var registry = new BackendRegistry();
@@ -494,6 +496,7 @@ class Program
                 settings,
                 rateLimiter,
                 database,
+                metadataCache,
                 verbose ? CreateLogger<NexusModsBackend>() : null));
         }
 
@@ -532,10 +535,10 @@ class Program
             var (settings, rateLimiter, database, metadataCache) = await InitializeServicesMinimal();
             settings.Verbose = verbose;
 
-            var registry = InitializeBackends(settings, rateLimiter, database, verbose);
+            var registry = InitializeBackends(settings, rateLimiter, database, metadataCache, verbose);
 
             // Determine which backends to use
-            IEnumerable<IModBackend> backends;
+            IEnumerable<Modular.Core.Backends.IModBackend> backends;
             if (all)
             {
                 backends = registry.GetConfigured();
@@ -647,7 +650,7 @@ class Program
     /// Execute download for a single backend.
     /// </summary>
     static async Task RunBackendDownload(
-        IModBackend backend,
+        Modular.Core.Backends.IModBackend backend,
         AppSettings settings,
         string? gameDomain,
         DownloadOptions options,

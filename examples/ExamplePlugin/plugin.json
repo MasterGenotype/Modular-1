@@ -1,0 +1,10 @@
+{
+  "id": "modular.example-plugin",
+  "display_name": "Example Metadata Enricher Plugin",
+  "version": "1.0.0",
+  "author": "Modular Team",
+  "description": "A reference implementation showing how to create a metadata enricher plugin",
+  "entry_assembly": "ExamplePlugin.dll",
+  "dependencies": [],
+  "tags": ["example", "reference", "enricher"]
+}

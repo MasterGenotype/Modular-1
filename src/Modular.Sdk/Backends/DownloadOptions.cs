@@ -1,6 +1,6 @@
-using Modular.Core.Backends.Common;
+using Modular.Sdk.Backends.Common;
 
-namespace Modular.Core.Backends;
+namespace Modular.Sdk.Backends;
 
 /// <summary>
 /// Options for controlling download behavior in DownloadModsAsync.

@@ -146,4 +146,20 @@ public class BackendRegistry
     /// Number of registered backends.
     /// </summary>
     public int Count => _backends.Count;
+
+    /// <summary>
+    /// Registers all backends from a plugin composer.
+    /// This integrates with the plugin system to dynamically load backend implementations.
+    /// </summary>
+    /// <param name="composer">Plugin composer with loaded plugins.</param>
+    /// <returns>Number of backends registered from plugins.</returns>
+    public int RegisterFromPlugins(Plugins.PluginComposer composer)
+    {
+        var backends = composer.GetBackendExports().ToList();
+        foreach (var backend in backends)
+        {
+            Register(backend);
+        }
+        return backends.Count;
+    }
 }

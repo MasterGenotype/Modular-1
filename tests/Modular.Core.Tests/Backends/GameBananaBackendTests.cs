@@ -2,6 +2,7 @@ using System.Text.Json;
 using Modular.Core.Backends;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Configuration;
+using Modular.Sdk.Backends;
 using Xunit;
 
 namespace Modular.Core.Tests.Backends;

@@ -53,7 +53,7 @@ public partial class GameBananaViewModel : ViewModelBase
     public GameBananaViewModel()
     {
         IsConfigured = true;
-        Mods.Add(new ModDisplayModel(new Modular.Core.Backends.Common.BackendMod
+        Mods.Add(new ModDisplayModel(new Modular.Sdk.Backends.Common.BackendMod
         {
             ModId = "123456",
             Name = "Sample GameBanana Mod",
