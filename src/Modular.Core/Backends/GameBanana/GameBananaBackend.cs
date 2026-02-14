@@ -258,37 +258,62 @@ public class GameBananaBackend : IModBackend
             var response = await _client.GetAsync($"Mod/{modId}/Files")
                 .AsJsonAsync();
 
-            var filesResponse = JsonSerializer.Deserialize<GameBananaFilesResponse>(
-                response.RootElement.GetRawText());
+            var rawJson = response.RootElement.GetRawText();
+            _logger?.LogDebug("Files API response for mod {ModId}: {Response}", modId, rawJson.Length > 500 ? rawJson[..500] + "..." : rawJson);
 
-            if (filesResponse?.Files != null)
+            // The API returns a direct array, not wrapped in _aFiles
+            List<GameBananaFileEntry>? fileEntries = null;
+            
+            if (response.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
             {
-                foreach (var file in filesResponse.Files)
-                {
-                    if (string.IsNullOrEmpty(file.DownloadUrl))
-                        continue;
-
-                    // Use actual filename from API, fall back to URL-derived name
-                    var filename = !string.IsNullOrEmpty(file.FileName)
-                        ? file.FileName
-                        : Path.GetFileName(new Uri(file.DownloadUrl).LocalPath);
-
-                    files.Add(new BackendModFile
-                    {
-                        FileId = file.Id.ToString(),
-                        FileName = filename,
-                        DisplayName = file.Description ?? filename,
-                        SizeBytes = file.FileSize > 0 ? file.FileSize : null,
-                        DirectDownloadUrl = file.DownloadUrl,
-                        Description = file.Description,
-                        ModId = modId,
-                        Md5 = !string.IsNullOrEmpty(file.Md5Checksum) ? file.Md5Checksum : null,
-                        UploadedAt = file.DateAddedTimestamp > 0
-                            ? DateTimeOffset.FromUnixTimeSeconds(file.DateAddedTimestamp).DateTime
-                            : null
-                    });
-                }
+                // Direct array response
+                fileEntries = JsonSerializer.Deserialize<List<GameBananaFileEntry>>(rawJson);
             }
+            else
+            {
+                // Wrapped response (legacy format)
+                var filesResponse = JsonSerializer.Deserialize<GameBananaFilesResponse>(rawJson);
+                fileEntries = filesResponse?.Files;
+            }
+
+            if (fileEntries == null || fileEntries.Count == 0)
+            {
+                _logger?.LogWarning("No files found for mod {ModId}", modId);
+                return files;
+            }
+
+            foreach (var file in fileEntries)
+            {
+                if (string.IsNullOrEmpty(file.DownloadUrl))
+                {
+                    _logger?.LogWarning("File {FileId} in mod {ModId} has no download URL", file.Id, modId);
+                    continue;
+                }
+
+                // Use actual filename from API, fall back to URL-derived name
+                var filename = !string.IsNullOrEmpty(file.FileName)
+                    ? file.FileName
+                    : Path.GetFileName(new Uri(file.DownloadUrl).LocalPath);
+
+                _logger?.LogDebug("Found file: {FileName} with URL: {Url}", filename, file.DownloadUrl);
+
+                files.Add(new BackendModFile
+                {
+                    FileId = file.Id.ToString(),
+                    FileName = filename,
+                    DisplayName = file.Description ?? filename,
+                    SizeBytes = file.FileSize > 0 ? file.FileSize : null,
+                    DirectDownloadUrl = file.DownloadUrl,
+                    Description = file.Description,
+                    ModId = modId,
+                    Md5 = !string.IsNullOrEmpty(file.Md5Checksum) ? file.Md5Checksum : null,
+                    UploadedAt = file.DateAddedTimestamp > 0
+                        ? DateTimeOffset.FromUnixTimeSeconds(file.DateAddedTimestamp).DateTime
+                        : null
+                });
+            }
+
+            _logger?.LogDebug("Found {Count} files for mod {ModId}", files.Count, modId);
         }
         catch (Exception ex)
         {
@@ -318,6 +343,10 @@ public class GameBananaBackend : IModBackend
         CancellationToken ct = default)
     {
         options ??= DownloadOptions.Default;
+
+        // Ensure base output directory exists
+        FileUtils.EnsureDirectoryExists(outputDirectory);
+        _logger?.LogDebug("Output directory: {OutputDirectory}", outputDirectory);
 
         // Scanning phase
         progress?.Report(DownloadProgress.Scanning("Fetching subscribed mods from GameBanana..."));
@@ -396,13 +425,25 @@ public class GameBananaBackend : IModBackend
 
             try
             {
+                _logger?.LogDebug("Downloading from URL: {Url}", url);
+                _logger?.LogDebug("Output path: {OutputPath}", outputPath);
                 FileUtils.EnsureDirectoryExists(modOutputDir);
                 await _client.GetAsync(url).DownloadToAsync(outputPath, null, ct);
                 _logger?.LogInformation("Downloaded: {File}", outputPath);
             }
+            catch (HttpRequestException ex)
+            {
+                _logger?.LogError("Failed to download {ModName}/{FileName}: {Error}", mod.Name, file.FileName, ex.Message);
+                progress?.Report(DownloadProgress.Downloading(
+                    $"Failed: {file.FileName} - {ex.Message}",
+                    completed, total, file.FileName));
+            }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to download {Url}", url);
+                progress?.Report(DownloadProgress.Downloading(
+                    $"Failed: {file.FileName} - {ex.Message}",
+                    completed, total, file.FileName));
             }
 
             completed++;

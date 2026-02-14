@@ -106,10 +106,84 @@ public class DialogService : IDialogService
         return result;
     }
 
-    public Task<string?> ShowInputAsync(string title, string prompt, string? defaultValue = null)
+    public async Task<string?> ShowInputAsync(string title, string prompt, string? defaultValue = null)
     {
-        // TODO: Implement proper input dialog
-        return Task.FromResult<string?>(defaultValue);
+        var window = GetMainWindow();
+        if (window == null) return defaultValue;
+
+        string? result = null;
+        var inputBox = new TextBox 
+        { 
+            Text = defaultValue ?? string.Empty,
+            MinWidth = 300,
+            Watermark = "Enter value..."
+        };
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 400,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 15,
+                Children =
+                {
+                    new TextBlock 
+                    { 
+                        Text = prompt, 
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap 
+                    },
+                    inputBox,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        Spacing = 10,
+                        Children =
+                        {
+                            new Button { Content = "OK", MinWidth = 80 },
+                            new Button { Content = "Cancel", MinWidth = 80 }
+                        }
+                    }
+                }
+            }
+        };
+
+        if (dialog.Content is StackPanel panel && panel.Children[2] is StackPanel btnPanel)
+        {
+            if (btnPanel.Children[0] is Button okBtn)
+            {
+                okBtn.Click += (_, _) => { result = inputBox.Text; dialog.Close(); };
+            }
+            if (btnPanel.Children[1] is Button cancelBtn)
+            {
+                cancelBtn.Click += (_, _) => { result = null; dialog.Close(); };
+            }
+        }
+
+        // Focus the input box when the dialog opens
+        dialog.Opened += (_, _) => inputBox.Focus();
+        
+        // Allow Enter key to submit
+        inputBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Enter)
+            {
+                result = inputBox.Text;
+                dialog.Close();
+            }
+            else if (e.Key == Avalonia.Input.Key.Escape)
+            {
+                result = null;
+                dialog.Close();
+            }
+        };
+
+        await dialog.ShowDialog(window);
+        return result;
     }
 
     public async Task<string?> ShowFolderBrowserAsync(string? title = null, string? initialDirectory = null)

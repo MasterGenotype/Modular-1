@@ -1,0 +1,897 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Modular.Sdk</name>
+    </assembly>
+    <members>
+        <member name="T:Modular.Sdk.Backends.BackendCapabilities">
+            <summary>
+            Feature flags declaring what capabilities a backend supports.
+            Used by CLI to conditionally apply features like rate limiting,
+            game domain prompting, file category filtering, etc.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.None">
+            <summary>No special capabilities.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.GameDomains">
+            <summary>
+            Backend supports game domain filtering (e.g., NexusMods has skyrimspecialedition, stardewvalley).
+            If set, CLI should prompt for game domain.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.FileCategories">
+            <summary>
+            Backend supports file category filtering (main, optional, update, etc.).
+            If set, category filters can be applied to file listings.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.Md5Verification">
+            <summary>
+            Backend provides MD5 hashes for downloaded files.
+            If set, downloads can be verified against expected checksums.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.RateLimited">
+            <summary>
+            Backend requires rate limiting to avoid API throttling.
+            If set, rate limiter should be applied before requests.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.Authentication">
+            <summary>
+            Backend requires authentication (API key, login, etc.).
+            If set, configuration validation should check for credentials.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.BackendCapabilities.ModCategories">
+            <summary>
+            Backend supports organizing mods into category subdirectories.
+            If set, mods can be grouped by their category ID.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.Common.BackendMod">
+            <summary>
+            Unified representation of a mod across all backends.
+            Backend implementations map their API-specific models to this common type.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.ModId">
+            <summary>
+            Backend-specific mod ID.
+            Uses string to support both integer IDs (NexusMods) and string IDs (GameBanana).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.Name">
+            <summary>
+            Human-readable mod name.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.GameDomain">
+            <summary>
+            Game domain or game identifier (backend-specific).
+            For NexusMods: "skyrimspecialedition", "stardewvalley", etc.
+            May be null for backends that don't use game domains.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.CategoryId">
+            <summary>
+            Mod category ID, if the backend supports categories.
+            Used for organizing mods into category subdirectories.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.CategoryName">
+            <summary>
+            Category name, if available from the backend.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.BackendId">
+            <summary>
+            Which backend this mod came from (e.g., "nexusmods", "gamebanana").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.Url">
+            <summary>
+            URL to the mod's page on the backend website.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.Summary">
+            <summary>
+            Brief description of the mod, if available.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.Author">
+            <summary>
+            Mod author/uploader name.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.UpdatedAt">
+            <summary>
+            When the mod was last updated.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendMod.ThumbnailUrl">
+            <summary>
+            URL to a thumbnail image for the mod.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.Common.BackendModFile">
+            <summary>
+            Unified representation of a downloadable file across all backends.
+            Backend implementations map their API-specific file models to this common type.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.FileId">
+            <summary>
+            Backend-specific file ID.
+            Uses string to support both integer IDs (NexusMods) and string IDs (other backends).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.FileName">
+            <summary>
+            Actual filename for saving (e.g., "MyMod-1.2.3.zip").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.DisplayName">
+            <summary>
+            Human-readable display name (may differ from FileName).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.SizeBytes">
+            <summary>
+            File size in bytes, if known.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.Md5">
+            <summary>
+            MD5 hash for verification, if the backend provides it.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.Version">
+            <summary>
+            File version string, if available.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.Category">
+            <summary>
+            File category (e.g., "main", "optional", "update", "old_version").
+            Used for filtering which files to download.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.DirectDownloadUrl">
+            <summary>
+            Pre-resolved direct download URL, if available.
+            Some backends (GameBanana) include URLs in file listings.
+            Others (NexusMods) require a separate API call to resolve.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.UploadedAt">
+            <summary>
+            When the file was uploaded/last modified.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.Description">
+            <summary>
+            File description or changelog, if available.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.BackendModFile.ModId">
+            <summary>
+            Parent mod ID this file belongs to.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.Common.FileFilter">
+            <summary>
+            Filter options for retrieving mod files.
+            Used to narrow down which files are returned from GetModFilesAsync.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.Categories">
+            <summary>
+            Filter by file categories (e.g., "main", "optional").
+            Only files matching one of these categories will be returned.
+            If null or empty, all categories are included.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.MinVersion">
+            <summary>
+            Filter by file version pattern.
+            If set, only files matching this version (or newer) are returned.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.UploadedAfter">
+            <summary>
+            Filter by upload date.
+            If set, only files uploaded after this date are returned.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.IncludeArchived">
+            <summary>
+            Whether to include archived/old versions of files.
+            Default is false (only current files).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.All">
+            <summary>
+            Creates an empty filter that includes all files.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.MainOnly">
+            <summary>
+            Creates a filter for main files only.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.Common.FileFilter.MainAndOptional">
+            <summary>
+            Creates a filter for main and optional files.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.DownloadOptions">
+            <summary>
+            Options for controlling download behavior in DownloadModsAsync.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.DryRun">
+            <summary>
+            If true, show what would be downloaded without actually downloading.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.Force">
+            <summary>
+            If true, re-download files even if they already exist locally.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.Filter">
+            <summary>
+            Filter to apply when selecting which files to download.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.StatusCallback">
+            <summary>
+            Callback for status messages during the scanning/preparation phase.
+            Used for messages like "Fetching tracked mods..." before download progress starts.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.MaxConcurrency">
+            <summary>
+            Maximum number of concurrent downloads.
+            Default is 1 (sequential downloads).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.VerifyDownloads">
+            <summary>
+            Whether to verify downloads using MD5 checksums (if available).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.AutoRename">
+            <summary>
+            Whether to automatically rename/organize downloaded mods.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.OrganizeByCategory">
+            <summary>
+            Whether to organize mods into category subdirectories.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadOptions.Default">
+            <summary>
+            Creates default options for normal download behavior.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.DownloadProgress">
+            <summary>
+            Progress information reported during download operations.
+            Used with IProgress&lt;DownloadProgress&gt; to update UI.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.Status">
+            <summary>
+            Current status message (e.g., "Downloading MyMod.zip").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.Completed">
+            <summary>
+            Number of items completed so far.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.Total">
+            <summary>
+            Total number of items to process.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.CurrentFile">
+            <summary>
+            Name of the file currently being processed, if applicable.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.CurrentFileBytes">
+            <summary>
+            Bytes downloaded for the current file, if tracking file-level progress.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.CurrentFileTotalBytes">
+            <summary>
+            Total bytes for the current file, if known.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.Phase">
+            <summary>
+            Current phase of the download operation.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.DownloadProgress.PercentComplete">
+            <summary>
+            Percentage complete (0-100), calculated from Completed/Total.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Backends.DownloadProgress.Scanning(System.String)">
+            <summary>
+            Creates a progress update for the scanning phase.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Backends.DownloadProgress.Downloading(System.String,System.Int32,System.Int32,System.String)">
+            <summary>
+            Creates a progress update for active downloading.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Backends.DownloadProgress.Done(System.Int32)">
+            <summary>
+            Creates a progress update for completion.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.DownloadPhase">
+            <summary>
+            Phase of the download operation.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.DownloadPhase.Scanning">
+            <summary>Fetching mod lists and file information.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.DownloadPhase.Downloading">
+            <summary>Actively downloading files.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.DownloadPhase.Verifying">
+            <summary>Verifying downloaded files.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.DownloadPhase.Organizing">
+            <summary>Renaming/organizing files.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Backends.DownloadPhase.Complete">
+            <summary>Operation complete.</summary>
+        </member>
+        <member name="T:Modular.Sdk.Backends.IModBackend">
+            <summary>
+            Common interface for all mod repository backends.
+            Each backend (NexusMods, GameBanana, CurseForge, etc.) implements this interface.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.IModBackend.Id">
+            <summary>
+            Unique identifier for this backend (e.g., "nexusmods", "gamebanana").
+            Used as config keys, CLI subcommand names, and directory names.
+            Must be lowercase with no spaces.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.IModBackend.DisplayName">
+            <summary>
+            Human-readable display name (e.g., "NexusMods", "GameBanana").
+            Used in UI menus and status messages.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Backends.IModBackend.Capabilities">
+            <summary>
+            Declares what features this backend supports.
+            Used by CLI to conditionally apply rate limiting, MD5 verification,
+            category filtering, game domain prompting, etc.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.ValidateConfiguration">
+            <summary>
+            Validates that the backend is properly configured (API keys, user IDs, etc.).
+            </summary>
+            <returns>
+            A list of validation error messages, or an empty list if configuration is valid.
+            </returns>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.GetUserModsAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Fetches the list of mods the user has tracked/subscribed to.
+            </summary>
+            <param name="gameDomain">
+            Optional game domain to filter by (e.g., "skyrimspecialedition").
+            Only applicable for backends with GameDomains capability.
+            </param>
+            <param name="ct">Cancellation token.</param>
+            <returns>List of tracked/subscribed mods.</returns>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.GetModFilesAsync(System.String,System.String,Modular.Sdk.Backends.Common.FileFilter,System.Threading.CancellationToken)">
+            <summary>
+            Fetches downloadable files for a specific mod.
+            </summary>
+            <param name="modId">The mod ID (string to support both int and string IDs).</param>
+            <param name="gameDomain">
+            Optional game domain (required for some backends like NexusMods).
+            </param>
+            <param name="filter">Optional filter for categories, versions, etc.</param>
+            <param name="ct">Cancellation token.</param>
+            <returns>List of downloadable files for the mod.</returns>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.ResolveDownloadUrlAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Resolves a mod file to a direct download URL.
+            Some backends (NexusMods) require a separate API call to get download URLs.
+            Others (GameBanana) include URLs directly in file listings.
+            </summary>
+            <param name="modId">The mod ID.</param>
+            <param name="fileId">The file ID to resolve.</param>
+            <param name="gameDomain">Optional game domain.</param>
+            <param name="ct">Cancellation token.</param>
+            <returns>
+            The direct download URL, or null if resolution failed.
+            Returns null for backends that provide URLs inline (check DirectDownloadUrl on BackendModFile).
+            </returns>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.DownloadModsAsync(System.String,System.String,Modular.Sdk.Backends.DownloadOptions,System.IProgress{Modular.Sdk.Backends.DownloadProgress},System.Threading.CancellationToken)">
+            <summary>
+            Downloads files for tracked/subscribed mods.
+            This is the main entry point for bulk download operations.
+            </summary>
+            <param name="outputDirectory">Base directory to save downloaded files.</param>
+            <param name="gameDomain">
+            Optional game domain (required for backends with GameDomains capability).
+            </param>
+            <param name="options">Download options (dry run, force, filters, etc.).</param>
+            <param name="progress">Progress reporter for UI updates.</param>
+            <param name="ct">Cancellation token.</param>
+        </member>
+        <member name="M:Modular.Sdk.Backends.IModBackend.GetModInfoAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Gets mod information by ID.
+            Useful for fetching mod name, author, etc. for display or renaming.
+            </summary>
+            <param name="modId">The mod ID.</param>
+            <param name="gameDomain">Optional game domain.</param>
+            <param name="ct">Cancellation token.</param>
+            <returns>Mod information, or null if not found.</returns>
+        </member>
+        <member name="T:Modular.Sdk.Installers.IModInstaller">
+            <summary>
+            Interface for mod installation workflows.
+            Plugins can implement this to provide custom installation logic.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.IModInstaller.InstallerId">
+            <summary>
+            Unique identifier for this installer type.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.IModInstaller.DisplayName">
+            <summary>
+            Display name for this installer.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.IModInstaller.Priority">
+            <summary>
+            Priority for installer selection (higher = preferred).
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Installers.IModInstaller.DetectAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Detects if this installer can handle the given archive.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Installers.IModInstaller.AnalyzeAsync(System.String,Modular.Sdk.Installers.InstallContext,System.Threading.CancellationToken)">
+            <summary>
+            Analyzes archive layout and prepares installation plan.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Installers.IModInstaller.InstallAsync(Modular.Sdk.Installers.InstallPlan,System.IProgress{Modular.Sdk.Installers.InstallProgress},System.Threading.CancellationToken)">
+            <summary>
+            Executes the installation.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallDetectionResult">
+            <summary>
+            Result of installer detection.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallDetectionResult.CanHandle">
+            <summary>
+            Whether this installer can handle the archive.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallDetectionResult.Confidence">
+            <summary>
+            Confidence level (0.0 - 1.0).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallDetectionResult.InstallerType">
+            <summary>
+            Detected installer type.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallDetectionResult.Reason">
+            <summary>
+            Reason for detection result.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallContext">
+            <summary>
+            Context for installation operations.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.GameDirectory">
+            <summary>
+            Target game directory.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.GameId">
+            <summary>
+            Game identifier.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.ModId">
+            <summary>
+            Mod identifier.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.AllowOverwrite">
+            <summary>
+            Whether to overwrite existing files.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.CreateBackups">
+            <summary>
+            Whether to create backups.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallContext.Metadata">
+            <summary>
+            Additional metadata.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallPlan">
+            <summary>
+            Installation plan with file mappings.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.InstallerId">
+            <summary>
+            Installer that created this plan.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.SourcePath">
+            <summary>
+            Source archive path.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.Operations">
+            <summary>
+            File operations to perform.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.TotalBytes">
+            <summary>
+            Total bytes to install.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.RequiresUserInput">
+            <summary>
+            Whether user confirmation is required.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallPlan.Options">
+            <summary>
+            Installation options (for installers like FOMOD).
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.FileOperation">
+            <summary>
+            File operation for installation.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.FileOperation.Type">
+            <summary>
+            Type of operation.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.FileOperation.SourcePath">
+            <summary>
+            Source path (within archive or filesystem).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.FileOperation.DestinationPath">
+            <summary>
+            Destination path (relative to game directory).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.FileOperation.SizeBytes">
+            <summary>
+            File size in bytes.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.FileOperation.IsCritical">
+            <summary>
+            Whether this is a critical file.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.FileOperationType">
+            <summary>
+            Type of file operation.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.Copy">
+            <summary>Copy file from archive to destination.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.Extract">
+            <summary>Extract file from archive.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.CreateDirectory">
+            <summary>Create directory.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.Patch">
+            <summary>Apply patch to existing file.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.Merge">
+            <summary>Merge with existing file.</summary>
+        </member>
+        <member name="F:Modular.Sdk.Installers.FileOperationType.Symlink">
+            <summary>Create symbolic link.</summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallResult">
+            <summary>
+            Result of installation.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallResult.Success">
+            <summary>
+            Whether installation succeeded.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallResult.InstalledFiles">
+            <summary>
+            Files that were installed.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallResult.BackedUpFiles">
+            <summary>
+            Files that were backed up.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallResult.Error">
+            <summary>
+            Error message if failed.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallResult.Manifest">
+            <summary>
+            Installation manifest for uninstall.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallProgress">
+            <summary>
+            Progress information for installation.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.CurrentOperation">
+            <summary>
+            Current operation being performed.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.CurrentFile">
+            <summary>
+            Current file being processed.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.FilesProcessed">
+            <summary>
+            Files processed so far.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.TotalFiles">
+            <summary>
+            Total files to process.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.BytesProcessed">
+            <summary>
+            Bytes processed.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.TotalBytes">
+            <summary>
+            Total bytes to process.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallProgress.Percentage">
+            <summary>
+            Percentage complete (0-100).
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Installers.InstallManifest">
+            <summary>
+            Manifest tracking installed files for uninstall.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.ModId">
+            <summary>
+            Mod identifier.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.InstalledAt">
+            <summary>
+            When installation occurred.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.InstallerId">
+            <summary>
+            Installer used.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.Files">
+            <summary>
+            Files installed (relative to game directory).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.Directories">
+            <summary>
+            Directories created.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Installers.InstallManifest.Backups">
+            <summary>
+            Backup locations.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.IPluginMetadata">
+            <summary>
+            Metadata describing a plugin's identity and requirements.
+            All plugins must expose an implementation of this interface.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.Id">
+            <summary>
+            Unique identifier for the plugin (e.g., "curseforge-backend", "modrinth-backend").
+            Must be lowercase with no spaces. Used for plugin directory names and resolution.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.Version">
+            <summary>
+            Semantic version of the plugin (e.g., "1.0.0", "2.1.3-beta").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.DisplayName">
+            <summary>
+            Human-readable display name (e.g., "CurseForge Backend").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.Author">
+            <summary>
+            Plugin author name(s).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.Description">
+            <summary>
+            Brief description of what the plugin provides.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.MinHostVersion">
+            <summary>
+            Minimum version of Modular host required to run this plugin.
+            Format: semantic version (e.g., "1.0.0").
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.IPluginMetadata.Dependencies">
+            <summary>
+            List of plugin IDs this plugin depends on (optional).
+            Dependencies will be loaded before this plugin.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.Metadata.IMetadataEnricher">
+            <summary>
+            Interface for enriching backend-specific metadata into canonical format.
+            Plugins can implement this to add support for new mod backends.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.Metadata.IMetadataEnricher.BackendId">
+            <summary>
+            Backend identifier (e.g. "nexusmods", "gamebanana").
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.Metadata.IMetadataEnricher.EnrichAsync(System.Object,System.Threading.CancellationToken)">
+            <summary>
+            Enriches backend-specific metadata into canonical format.
+            </summary>
+            <param name="backendMetadata">Backend-specific metadata object.</param>
+            <param name="ct">Cancellation token.</param>
+            <returns>Canonical mod representation.</returns>
+        </member>
+        <member name="T:Modular.Sdk.UI.IUiExtension">
+            <summary>
+            Interface for UI extensions that plugins can provide.
+            Allows plugins to contribute custom panels, tabs, or views to the main application.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.IUiExtension.ExtensionId">
+            <summary>
+            Unique identifier for this UI extension.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.IUiExtension.DisplayName">
+            <summary>
+            Display name for the UI extension.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.IUiExtension.Location">
+            <summary>
+            Where this extension should appear in the UI.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.IUiExtension.Priority">
+            <summary>
+            Priority for ordering (higher = shown first).
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.IUiExtension.Icon">
+            <summary>
+            Icon identifier (optional).
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.UI.IUiExtension.CreateContent">
+            <summary>
+            Creates the view model or view content for this extension.
+            </summary>
+            <returns>UI content object (framework-specific, e.g. Avalonia Control or ViewModel).</returns>
+        </member>
+        <member name="M:Modular.Sdk.UI.IUiExtension.OnActivatedAsync(System.Threading.CancellationToken)">
+            <summary>
+            Called when the extension is activated/shown.
+            </summary>
+        </member>
+        <member name="M:Modular.Sdk.UI.IUiExtension.OnDeactivatedAsync(System.Threading.CancellationToken)">
+            <summary>
+            Called when the extension is deactivated/hidden.
+            </summary>
+        </member>
+        <member name="T:Modular.Sdk.UI.UiExtensionLocation">
+            <summary>
+            Location where a UI extension should be displayed.
+            </summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.MainTab">
+            <summary>Main navigation tab.</summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.Sidebar">
+            <summary>Sidebar panel.</summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.ToolsMenu">
+            <summary>Tools menu.</summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.Settings">
+            <summary>Settings page section.</summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.ModDetails">
+            <summary>Mod details page section.</summary>
+        </member>
+        <member name="F:Modular.Sdk.UI.UiExtensionLocation.StatusBar">
+            <summary>Status bar.</summary>
+        </member>
+        <member name="T:Modular.Sdk.UI.UiExtensionErrorEventArgs">
+            <summary>
+            Event args for UI extension errors.
+            </summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.UiExtensionErrorEventArgs.ExtensionId">
+            <summary>Extension identifier.</summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.UiExtensionErrorEventArgs.ExtensionName">
+            <summary>Extension display name.</summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.UiExtensionErrorEventArgs.Exception">
+            <summary>Exception that occurred.</summary>
+        </member>
+        <member name="P:Modular.Sdk.UI.UiExtensionErrorEventArgs.Phase">
+            <summary>Phase where error occurred (load, activate, deactivate).</summary>
+        </member>
+    </members>
+</doc>

@@ -104,6 +104,10 @@ public class FluentRequest : IRequest
     public async Task DownloadToAsync(string path, IProgress<(long downloaded, long total)>? progress = null, CancellationToken ct = default)
     {
         var response = await AsResponseAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException($"Download failed with status {response.StatusCode}: {response.StatusReason}");
+        }
         await response.SaveToFileAsync(path, progress, ct);
     }
 

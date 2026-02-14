@@ -243,6 +243,9 @@ public class NexusModsBackend : IModBackend
 
         options ??= DownloadOptions.Default;
 
+        // Ensure base output directory exists
+        FileUtils.EnsureDirectoryExists(outputDirectory);
+
         // Scanning phase
         progress?.Report(DownloadProgress.Scanning($"Fetching tracked mods for {gameDomain}..."));
         options.StatusCallback?.Invoke($"Fetching tracked mods for {gameDomain}...");

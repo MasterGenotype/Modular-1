@@ -59,6 +59,17 @@
                         </Button>
                     </Grid>
 
+                    <StackPanel>
+                        <TextBlock Text="Application Slug" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding NexusApplicationSlug}"
+                                 Width="200" HorizontalAlignment="Left"
+                                 Watermark="modular"/>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding NexusSsoEnabled}"
+                              Content="Enable SSO authentication"
+                              ToolTip.Tip="When enabled and no API key is configured, opens browser for authorization"/>
+
                     <TextBlock Text="Get your API key from nexusmods.com/users/myaccount?tab=api+access"
                                FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
                 </StackPanel>
@@ -80,7 +91,41 @@
                                  Watermark="Enter your GameBanana user ID"/>
                     </StackPanel>
 
+                    <StackPanel>
+                        <TextBlock Text="Game IDs (comma-separated)" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding GameBananaGameIds}"
+                                 Width="300" HorizontalAlignment="Left"
+                                 Watermark="e.g., 123, 456"
+                                 ToolTip.Tip="Filter subscriptions by game ID. Leave empty for all games."/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding GameBananaDownloadDir}"
+                                 Width="200" HorizontalAlignment="Left"
+                                 Watermark="gamebanana"/>
+                    </StackPanel>
+
                     <TextBlock Text="Find your user ID in your GameBanana profile URL"
+                               FontSize="12" Opacity="0.6"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Backends Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Server" Width="24" Height="24"/>
+                        <TextBlock Text="Enabled Backends" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding NexusModsBackendEnabled}"
+                              Content="NexusMods"/>
+                    <CheckBox IsChecked="{Binding GameBananaBackendEnabled}"
+                              Content="GameBanana"/>
+
+                    <TextBlock Text="Disabled backends will not be loaded at startup"
                                FontSize="12" Opacity="0.6"/>
                 </StackPanel>
             </Border>
@@ -104,8 +149,29 @@
                         </Grid>
                     </StackPanel>
 
+                    <StackPanel>
+                        <TextBlock Text="Default Categories (comma-separated)" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding DefaultCategories}"
+                                 Width="300" HorizontalAlignment="Left"
+                                 Watermark="main, optional"
+                                 ToolTip.Tip="File categories to download by default"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Max Concurrent Downloads" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding ConcurrentDownloadOptions}"
+                                  SelectedItem="{Binding MaxConcurrentDownloads}"
+                                  Width="80" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding AutoRename}"
+                              Content="Auto-rename mod folders to human-readable names"/>
+                    <CheckBox IsChecked="{Binding OrganizeByCategory}"
+                              Content="Organize mods into category subdirectories"/>
                     <CheckBox IsChecked="{Binding VerifyDownloads}"
                               Content="Verify downloads (MD5 checksum)"/>
+                    <CheckBox IsChecked="{Binding ValidateTracking}"
+                              Content="Validate API tracking against web tracking center"/>
                 </StackPanel>
             </Border>
 
@@ -123,6 +189,48 @@
                         <ComboBox ItemsSource="{Binding AvailableThemes}"
                                   SelectedItem="{Binding SelectedTheme}"
                                   Width="150" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Advanced Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
+                        <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding Verbose}"
+                              Content="Enable verbose logging"/>
+
+                    <StackPanel>
+                        <TextBlock Text="Cookie File Path" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding CookieFile}"
+                                 Watermark="~/Documents/cookies.txt"
+                                 ToolTip.Tip="Path to cookie file for web scraping authentication"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Database Path" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding DatabasePath}"
+                                 Watermark="~/.config/Modular/downloads.json"
+                                 ToolTip.Tip="Path to the download database file"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Rate Limit State Path" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding RateLimitStatePath}"
+                                 Watermark="~/.config/Modular/rate_limit_state.json"
+                                 ToolTip.Tip="Path to the rate limiter state file"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Metadata Cache Path" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding MetadataCachePath}"
+                                 Watermark="~/.config/Modular/metadata_cache.json"
+                                 ToolTip.Tip="Path to the mod metadata cache file"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
