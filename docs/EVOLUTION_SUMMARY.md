@@ -69,7 +69,7 @@ Successfully transformed Modular-1 from a basic mod manager into a production-gr
   - Topological sorting
 
 - **PubGrub Resolver**:
-  - `PubGrubResolver` (312 lines): Simplified PubGrub algorithm
+  - `GreedyDependencyResolver` (312 lines): Simplified PubGrub algorithm
   - `ResolutionResult` with 5 conflict types
   - Constraint propagation and conflict detection
   - Human-readable explanations

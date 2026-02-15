@@ -5,17 +5,28 @@ using Modular.Core.Versioning;
 namespace Modular.Core.Dependencies;
 
 /// <summary>
-/// Dependency resolver using a simplified PubGrub-inspired algorithm.
-/// Resolves mod dependencies to a consistent set of versions.
+/// Greedy dependency resolver that selects the latest satisfying version at each step.
 /// </summary>
-public class PubGrubResolver
+/// <remarks>
+/// This resolver uses a greedy BFS algorithm that does NOT backtrack. It picks the latest
+/// version satisfying constraints at each step. This means it can fail to find valid
+/// solutions that exist when an earlier version selection blocks later dependencies.
+/// 
+/// For example, if Mod A v2.0 requires Mod C >= 2.0, and Mod B requires Mod C &lt; 2.0,
+/// but Mod A v1.0 works with Mod C 1.x, this resolver will fail because it greedily
+/// selects Mod A v2.0 first and cannot backtrack.
+/// 
+/// For scenarios requiring backtracking, consider implementing actual PubGrub or using
+/// NuGet.Resolver which handles this correctly.
+/// </remarks>
+public class GreedyDependencyResolver
 {
     private readonly IModVersionProvider _versionProvider;
-    private readonly ILogger<PubGrubResolver>? _logger;
+    private readonly ILogger<GreedyDependencyResolver>? _logger;
 
-    public PubGrubResolver(
+    public GreedyDependencyResolver(
         IModVersionProvider versionProvider,
-        ILogger<PubGrubResolver>? logger = null)
+        ILogger<GreedyDependencyResolver>? logger = null)
     {
         _versionProvider = versionProvider;
         _logger = logger;

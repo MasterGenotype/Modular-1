@@ -76,7 +76,7 @@ public class CanonicalModCacheEntry
 /// Reduces API calls by caching previously fetched data.
 /// Thread-safe for concurrent access.
 /// </summary>
-public class ModMetadataCache
+public class ModMetadataCache : IMetadataCache
 {
     private readonly string _cachePath;
     private MetadataCacheData _data = new();

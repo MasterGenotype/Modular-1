@@ -114,12 +114,12 @@ The legacy services are functional but duplicate logic that now lives in the bac
 
 ## 3. IModVersionProvider - Backend Implementations
 
-**File:** `src/Modular.Core/Dependencies/PubGrubResolver.cs`
+**File:** `src/Modular.Core/Dependencies/GreedyDependencyResolver.cs`
 **Status:** Resolver algorithm complete; no concrete `IModVersionProvider` implementations exist
 
 ### Current State
 
-The `PubGrubResolver` implements a working dependency resolution algorithm that:
+The `GreedyDependencyResolver` implements a working dependency resolution algorithm that:
 - Selects versions satisfying all constraints (preferring latest)
 - Detects circular dependencies
 - Reports incompatible mods
@@ -326,7 +326,7 @@ However, no CLI command or GUI view triggers these operations.
    - Show validation warnings/errors after import
 
 3. **Wire profile data to dependency resolution**:
-   - On import, optionally run `PubGrubResolver` to check if all dependencies are available
+   - On import, optionally run `GreedyDependencyResolver` to check if all dependencies are available
    - Show missing mods and offer to download them
 
 4. **Create `ModProfile` instances from user selections**:

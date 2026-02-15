@@ -142,7 +142,7 @@ Modular/
 │   │   │   ├── ModNode.cs               # Graph node model
 │   │   │   ├── FileConflictIndex.cs     # File conflict detection
 │   │   │   ├── ConflictResolver.cs      # Conflict resolution strategies
-│   │   │   ├── PubGrubResolver.cs       # PubGrub-inspired version resolver
+│   │   │   ├── GreedyDependencyResolver.cs       # PubGrub-inspired version resolver
 │   │   │   ├── ModProfile.cs            # Mod profile/collection model
 │   │   │   └── ResolutionResult.cs      # Resolution result model
 │   │   ├── Diagnostics/                  # Health checks and diagnostics
@@ -338,7 +338,7 @@ Production-grade download handler:
 - Real-time progress tracking with callbacks
 - Automatic retry with exponential backoff
 
-### Dependency Resolution (`src/Modular.Core/Dependencies/PubGrubResolver.cs`)
+### Dependency Resolution (`src/Modular.Core/Dependencies/GreedyDependencyResolver.cs`)
 
 PubGrub-inspired version constraint solver:
 - Resolves mod dependencies to a consistent set of versions
