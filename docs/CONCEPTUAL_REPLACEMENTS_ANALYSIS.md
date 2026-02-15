@@ -603,6 +603,145 @@ Staying on .NET 8 is **reasonable** — it's an LTS release with 10 months of re
 
 ---
 
+## 13. Build Configuration: Per-Project Duplication → Centralized Build Props
+
+### Current Approach
+
+Each `.csproj` independently specifies:
+- `<TargetFramework>net8.0</TargetFramework>`
+- `<Nullable>enable</Nullable>`
+- `<ImplicitUsings>enable</ImplicitUsings>`
+- `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`
+- Individual NuGet package versions
+
+There is no `Directory.Build.props`, `Directory.Packages.props`, `global.json`, or `.editorconfig` in the repository.
+
+### Why This Is a Conceptual Problem
+
+- **Version drift**: If `Modular.Core` references `Microsoft.Extensions.Logging 8.0.0` and `Modular.Gui` references `8.0.1`, the mismatch can cause subtle runtime binding failures. With 7 projects sharing dependencies, manual synchronization is error-prone.
+- **Duplicated build settings**: Changing the language version or enabling a new analyzer requires editing every `.csproj`.
+- **No SDK pinning**: Without `global.json`, the project builds with whatever SDK happens to be installed. A contributor on .NET SDK 9.0 may introduce features that break on 8.0.
+- **No code style enforcement**: Formatting conventions exist only in AGENTS.md as prose. Without `.editorconfig`, `dotnet format` has nothing to enforce.
+
+### Recommended Replacement
+
+**`Directory.Build.props`** (in repo root):
+```xml
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>
+```
+
+**`Directory.Packages.props`** (NuGet Central Package Management):
+```xml
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageVersion Include="Polly" Version="8.3.0" />
+    <!-- All versions in one place -->
+  </ItemGroup>
+</Project>
+```
+
+**`global.json`**:
+```json
+{
+  "sdk": {
+    "version": "8.0.100",
+    "rollForward": "latestFeature"
+  }
+}
+```
+
+This is one of the lowest-effort, highest-return improvements available.
+
+---
+
+## 14. Metadata Cache: No Expiration → TTL-Based Staleness
+
+### Current Approach
+
+`ModMetadataCache` stores mod metadata indefinitely. Once a mod's metadata is cached, it's served forever without checking whether it's stale. There is no `cached_at` timestamp, no TTL, and no mechanism to invalidate individual entries.
+
+### Why This Is a Conceptual Problem
+
+Mod metadata changes frequently — authors update descriptions, change file names, release new versions, and mark old files as archived. A mod manager serving stale metadata will:
+- Show outdated file lists (missing new releases)
+- Display incorrect descriptions or categories
+- Attempt downloads from URLs that have since changed or expired
+- Show version numbers that don't match what's on the mod page
+
+Users will blame the mod manager for being "out of date" when the real issue is unbounded caching.
+
+### Recommended Replacement
+
+When migrating to SQLite (item #1), add a `cached_at` timestamp column:
+
+```sql
+CREATE TABLE mod_metadata (
+    game_domain TEXT NOT NULL,
+    mod_id TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (game_domain, mod_id)
+);
+```
+
+Query with staleness check:
+```sql
+SELECT metadata_json FROM mod_metadata
+WHERE game_domain = ? AND mod_id = ?
+  AND cached_at > datetime('now', '-24 hours');
+```
+
+This provides a configurable TTL (e.g., 24 hours for mod details, 1 hour for file lists) without requiring explicit invalidation. The `ConfigurationService` could expose a `MetadataCacheTtlHours` setting.
+
+---
+
+## 15. JSON Serialization: Reflection-Based → Source-Generated
+
+### Current Approach
+
+All JSON serialization uses reflection-based `System.Text.Json`:
+```csharp
+JsonSerializer.Deserialize<AppSettings>(json, new JsonSerializerOptions { ... });
+JsonSerializer.Serialize(records, JsonOptions);
+```
+
+### Why This Is a Conceptual Problem
+
+Reflection-based serialization:
+- Has slower startup (must build metadata from type reflection at first use)
+- Is incompatible with Native AOT compilation (which the project uses for single-file publishing via `PublishSingleFile`)
+- Allocates more during serialization due to runtime type inspection
+
+### Recommended Replacement
+
+Use `System.Text.Json` source generators (available since .NET 6):
+
+```csharp
+[JsonSerializable(typeof(AppSettings))]
+[JsonSerializable(typeof(List<DownloadRecord>))]
+[JsonSerializable(typeof(PluginManifest))]
+internal partial class ModularJsonContext : JsonSerializerContext { }
+
+// Usage
+var settings = JsonSerializer.Deserialize(json, ModularJsonContext.Default.AppSettings);
+```
+
+This is a mechanical change — each serializable type is registered once in the context, and all call sites replace `JsonSerializerOptions` with the generated context. The result is faster startup, reduced allocations, and full AOT compatibility.
+
+---
+
 ## Summary: Priority Matrix
 
 | # | Replacement | Current | Proposed | Effort | Impact |
@@ -619,17 +758,22 @@ Staying on .NET 8 is **reasonable** — it's an LTS release with 10 months of re
 | 10 | Test architecture | 65 tests, core only | Structured 3-layer strategy | High | High — regression prevention, refactoring safety |
 | 11 | Project structure | Monolithic `Modular.Core` | Domain-split sub-projects | Medium | Medium — clearer boundaries, parallel development |
 | 12 | .NET version | .NET 8.0 | .NET 10 (when GA) | Low | Low — incremental improvements |
+| 13 | Build configuration | Per-project duplication | Directory.Build.props + Central Package Mgmt | Low | Medium — eliminates version drift |
+| 14 | Metadata cache | No TTL/expiration | SQLite with `cached_at` column + configurable staleness | Low | Medium — prevents serving stale mod metadata |
+| 15 | JSON serialization | Reflection-based System.Text.Json | Source-generated `JsonSerializerContext` | Low | Low — startup perf, AOT compatibility |
 
 ### Suggested Execution Order
 
-1. **Extract interfaces** (#9 service extraction, #11 abstractions) — enables everything else
-2. **Consolidate HTTP** (#3) — reduces code volume, fixes active bugs
-3. **Add event bus** (#2) — low effort, immediate decoupling benefit
-4. **Replace CLI architecture** (#6) — enables CLI testing
-5. **Migrate to SQLite** (#1) — requires interfaces from step 1
-6. **Expand test coverage** (#10) — now possible after steps 1-4
-7. **Credential storage** (#8) — security improvement
-8. **Build system** (#5) — quality of life
-9. **Plugin isolation** (#4) — significant effort, security-driven priority
-10. **Dependency resolution** (#7) — correctness improvement
-11. **.NET version** (#12) — when .NET 10 ships
+1. **Add build props & central package management** (#13) — zero-risk, immediate value, 30 minutes of work
+2. **Extract interfaces** (#9 service extraction, #11 abstractions) — enables everything else
+3. **Consolidate HTTP** (#3) — reduces code volume, fixes active bugs
+4. **Add event bus** (#2) — low effort, immediate decoupling benefit
+5. **Replace CLI architecture** (#6) — enables CLI testing
+6. **Migrate to SQLite with TTL** (#1, #14) — requires interfaces from step 2, adds cache expiration
+7. **Add source-generated JSON** (#15) — mechanical change, improves AOT compat
+8. **Expand test coverage** (#10) — now possible after steps 2-5
+9. **Credential storage** (#8) — security improvement
+10. **Build system** (#5) — quality of life
+11. **Plugin isolation** (#4) — significant effort, security-driven priority
+12. **Dependency resolution** (#7) — correctness improvement
+13. **.NET version** (#12) — when .NET 10 ships
