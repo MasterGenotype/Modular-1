@@ -4,6 +4,13 @@ namespace Modular.Core.Metadata;
 /// Interface for enrichers that transform backend-native metadata to canonical format.
 /// Each backend implements this to map its API responses to CanonicalMod.
 /// </summary>
+/// <remarks>
+/// This interface is distinct from <see cref="Modular.Sdk.Metadata.IMetadataEnricher"/>
+/// which provides a generic plugin interface. This Core interface:
+/// - Has typed methods returning <see cref="CanonicalMod"/>
+/// - Is implemented by built-in backends (NexusModsMetadataEnricher, GameBananaMetadataEnricher)
+/// - Supports batch enrichment with rate limiting
+/// </remarks>
 public interface IMetadataEnricher
 {
     /// <summary>

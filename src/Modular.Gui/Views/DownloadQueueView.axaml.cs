@@ -36,7 +36,10 @@ public partial class DownloadQueueView : UserControl
         _draggedItem = item;
         _dragStartIndex = vm.GetItemIndex(item);
 
-#pragma warning disable CS0618 // Type or member is obsolete
+        // Avalonia's DataObject is marked obsolete but no replacement API exists yet.
+        // The obsolete warning is tracked in Avalonia's roadmap for future resolution.
+        // See: https://github.com/AvaloniaUI/Avalonia/issues/4992
+#pragma warning disable CS0618 // DataObject is obsolete - no alternative available
         var dragData = new DataObject();
         dragData.Set("DownloadItem", item);
 
@@ -48,7 +51,8 @@ public partial class DownloadQueueView : UserControl
     {
         e.DragEffects = DragDropEffects.Move;
 
-#pragma warning disable CS0618 // Type or member is obsolete
+        // See comment above regarding Avalonia's obsolete drag-drop API
+#pragma warning disable CS0618
         if (!e.Data.Contains("DownloadItem"))
 #pragma warning restore CS0618
         {

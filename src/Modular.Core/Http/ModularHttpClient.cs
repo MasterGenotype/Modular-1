@@ -12,7 +12,7 @@ public class ModularHttpClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly IRateLimiter? _rateLimiter;
     private readonly ILogger<ModularHttpClient>? _logger;
-    private RetryPolicy _retryPolicy = new();
+    private RetryConfig _retryConfig = new();
     private bool _disposed;
 
     public ModularHttpClient(
@@ -26,11 +26,11 @@ public class ModularHttpClient : IDisposable
     }
 
     /// <summary>
-    /// Sets the retry policy for requests.
+    /// Sets the retry configuration for requests.
     /// </summary>
-    public void SetRetryPolicy(RetryPolicy policy)
+    public void SetRetryConfig(RetryConfig config)
     {
-        _retryPolicy = policy;
+        _retryConfig = config;
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ public class ModularHttpClient : IDisposable
     {
         Exception? lastException = null;
 
-        for (var attempt = 0; attempt <= _retryPolicy.MaxRetries; attempt++)
+        for (var attempt = 0; attempt <= _retryConfig.MaxRetries; attempt++)
         {
             try
             {
@@ -163,14 +163,14 @@ public class ModularHttpClient : IDisposable
                     _rateLimiter.UpdateFromHeaders(response.Headers);
 
                 // Check if we should retry
-                if (!response.IsSuccessStatusCode && RetryPolicy.ShouldRetry((int)response.StatusCode))
+                if (!response.IsSuccessStatusCode && RetryConfig.ShouldRetry((int)response.StatusCode))
                 {
-                    if (attempt < _retryPolicy.MaxRetries)
+                    if (attempt < _retryConfig.MaxRetries)
                     {
-                        var delay = _retryPolicy.GetDelay(attempt);
+                        var delay = _retryConfig.GetDelay(attempt);
                         _logger?.LogWarning(
                             "Request to {Url} failed with {StatusCode}, retrying in {Delay}ms (attempt {Attempt}/{MaxRetries})",
-                            url, (int)response.StatusCode, delay, attempt + 1, _retryPolicy.MaxRetries);
+                            url, (int)response.StatusCode, delay, attempt + 1, _retryConfig.MaxRetries);
 
                         await Task.Delay(delay, cancellationToken);
                         continue;
@@ -183,12 +183,12 @@ public class ModularHttpClient : IDisposable
             {
                 lastException = ex;
 
-                if (attempt < _retryPolicy.MaxRetries)
+                if (attempt < _retryConfig.MaxRetries)
                 {
-                    var delay = _retryPolicy.GetDelay(attempt);
+                    var delay = _retryConfig.GetDelay(attempt);
                     _logger?.LogWarning(ex,
                         "Request to {Url} failed, retrying in {Delay}ms (attempt {Attempt}/{MaxRetries})",
-                        url, delay, attempt + 1, _retryPolicy.MaxRetries);
+                        url, delay, attempt + 1, _retryConfig.MaxRetries);
 
                     await Task.Delay(delay, cancellationToken);
                 }
@@ -198,19 +198,19 @@ public class ModularHttpClient : IDisposable
                 // Timeout
                 lastException = new NetworkException($"Request timed out: {url}") { Url = url };
 
-                if (attempt < _retryPolicy.MaxRetries)
+                if (attempt < _retryConfig.MaxRetries)
                 {
-                    var delay = _retryPolicy.GetDelay(attempt);
+                    var delay = _retryConfig.GetDelay(attempt);
                     _logger?.LogWarning(
                         "Request to {Url} timed out, retrying in {Delay}ms (attempt {Attempt}/{MaxRetries})",
-                        url, delay, attempt + 1, _retryPolicy.MaxRetries);
+                        url, delay, attempt + 1, _retryConfig.MaxRetries);
 
                     await Task.Delay(delay, cancellationToken);
                 }
             }
         }
 
-        throw new NetworkException($"Request failed after {_retryPolicy.MaxRetries} retries", lastException!)
+        throw new NetworkException($"Request failed after {_retryConfig.MaxRetries} retries", lastException!)
         {
             Url = url
         };

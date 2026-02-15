@@ -22,5 +22,8 @@ project.assets.json
 # Environment files
 .env
 
+# Published builds
+publish/
+
 # OS
 .DS_Store

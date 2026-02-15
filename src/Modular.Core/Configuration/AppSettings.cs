@@ -126,4 +126,16 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("metadata_cache_path")]
     public string MetadataCachePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL for the plugin marketplace index.
+    /// </summary>
+    [JsonPropertyName("plugin_marketplace_url")]
+    public string PluginMarketplaceUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether telemetry collection is enabled (opt-in).
+    /// </summary>
+    [JsonPropertyName("telemetry_enabled")]
+    public bool TelemetryEnabled { get; set; } = false;
 }

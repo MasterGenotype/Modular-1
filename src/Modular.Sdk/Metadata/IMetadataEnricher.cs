@@ -1,9 +1,14 @@
 namespace Modular.Sdk.Metadata;
 
 /// <summary>
-/// Interface for enriching backend-specific metadata into canonical format.
+/// Generic plugin interface for enriching backend-specific metadata.
 /// Plugins can implement this to add support for new mod backends.
 /// </summary>
+/// <remarks>
+/// This interface uses generic <c>object</c> types for plugin flexibility.
+/// For the strongly-typed interface used by built-in backends, see
+/// <c>Modular.Core.Metadata.IMetadataEnricher</c> which returns <c>CanonicalMod</c>.
+/// </remarks>
 public interface IMetadataEnricher
 {
     /// <summary>

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Modular.Cli.UI;
 using Modular.Core.Authentication;
@@ -9,8 +10,13 @@ using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Diagnostics;
+using Modular.Core.Plugins;
+using Modular.Core.Profiles;
+using Modular.Core.Dependencies;
 using Modular.Core.RateLimiting;
 using Modular.Core.Services;
+using Modular.Core.Telemetry;
 
 namespace Modular.Cli;
 
@@ -95,6 +101,127 @@ class Program
             await RunLoginCommand();
         });
         rootCommand.AddCommand(loginCommand);
+
+        // Diagnostics command
+        var diagnosticsCommand = new Command("diagnostics", "Run system diagnostics");
+        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        diagnosticsCommand.AddOption(jsonOption);
+        diagnosticsCommand.SetHandler(async (json) =>
+        {
+            await RunDiagnosticsCommand(json);
+        }, jsonOption);
+
+        var validateCommand = new Command("validate", "Validate a plugin manifest");
+        var pluginPathArg = new Argument<string>("plugin-path", "Path to plugin directory or manifest file");
+        validateCommand.AddArgument(pluginPathArg);
+        validateCommand.SetHandler(async (pluginPath) =>
+        {
+            await RunValidatePluginCommand(pluginPath);
+        }, pluginPathArg);
+        diagnosticsCommand.AddCommand(validateCommand);
+        rootCommand.AddCommand(diagnosticsCommand);
+
+        // Profile command group
+        var profileCommand = new Command("profile", "Manage mod profiles");
+
+        var profileExportCommand = new Command("export", "Export a mod profile");
+        var profileNameArg = new Argument<string>("name", "Profile name");
+        var outputOption = new Option<string?>("--output", "Output file path");
+        var formatOption = new Option<string>("--format", () => "json", "Export format (json or archive)");
+        profileExportCommand.AddArgument(profileNameArg);
+        profileExportCommand.AddOption(outputOption);
+        profileExportCommand.AddOption(formatOption);
+        profileExportCommand.SetHandler(async (name, output, format) =>
+        {
+            await RunProfileExportCommand(name, output, format);
+        }, profileNameArg, outputOption, formatOption);
+        profileCommand.AddCommand(profileExportCommand);
+
+        var profileImportCommand = new Command("import", "Import a mod profile");
+        var importPathArg = new Argument<string>("path", "Path to profile file");
+        var resolveOption = new Option<bool>("--resolve", "Resolve dependencies after import");
+        profileImportCommand.AddArgument(importPathArg);
+        profileImportCommand.AddOption(resolveOption);
+        profileImportCommand.SetHandler(async (path, resolve) =>
+        {
+            await RunProfileImportCommand(path, resolve);
+        }, importPathArg, resolveOption);
+        profileCommand.AddCommand(profileImportCommand);
+
+        var profileListCommand = new Command("list", "List available profiles");
+        profileListCommand.SetHandler(async () =>
+        {
+            await RunProfileListCommand();
+        });
+        profileCommand.AddCommand(profileListCommand);
+        rootCommand.AddCommand(profileCommand);
+
+        // Plugins command group
+        var pluginsCommand = new Command("plugins", "Manage plugins");
+
+        var pluginsListCommand = new Command("list", "List installed and available plugins");
+        var marketplaceOption = new Option<bool>("--marketplace", "Show plugins from marketplace");
+        pluginsListCommand.AddOption(marketplaceOption);
+        pluginsListCommand.SetHandler(async (marketplace) =>
+        {
+            await RunPluginsListCommand(marketplace);
+        }, marketplaceOption);
+        pluginsCommand.AddCommand(pluginsListCommand);
+
+        var pluginsInstallCommand = new Command("install", "Install a plugin from marketplace");
+        var pluginIdArg = new Argument<string>("plugin-id", "Plugin ID to install");
+        pluginsInstallCommand.AddArgument(pluginIdArg);
+        pluginsInstallCommand.SetHandler(async (pluginId) =>
+        {
+            await RunPluginsInstallCommand(pluginId);
+        }, pluginIdArg);
+        pluginsCommand.AddCommand(pluginsInstallCommand);
+
+        var pluginsUpdateCommand = new Command("update", "Check for and apply plugin updates");
+        pluginsUpdateCommand.SetHandler(async () =>
+        {
+            await RunPluginsUpdateCommand();
+        });
+        pluginsCommand.AddCommand(pluginsUpdateCommand);
+
+        var pluginsRemoveCommand = new Command("remove", "Remove an installed plugin");
+        var removePluginIdArg = new Argument<string>("plugin-id", "Plugin ID to remove");
+        pluginsRemoveCommand.AddArgument(removePluginIdArg);
+        pluginsRemoveCommand.SetHandler(async (pluginId) =>
+        {
+            await RunPluginsRemoveCommand(pluginId);
+        }, removePluginIdArg);
+        pluginsCommand.AddCommand(pluginsRemoveCommand);
+        rootCommand.AddCommand(pluginsCommand);
+
+        // Telemetry command group
+        var telemetryCommand = new Command("telemetry", "Manage telemetry data");
+
+        var telemetrySummaryCommand = new Command("summary", "Show telemetry summary");
+        var daysOption = new Option<int>("--days", () => 30, "Number of days to summarize");
+        telemetrySummaryCommand.AddOption(daysOption);
+        telemetrySummaryCommand.SetHandler(async (days) =>
+        {
+            await RunTelemetrySummaryCommand(days);
+        }, daysOption);
+        telemetryCommand.AddCommand(telemetrySummaryCommand);
+
+        var telemetryExportCommand = new Command("export", "Export telemetry data");
+        var telemetryOutputOption = new Option<string?>("--output", "Output file path");
+        telemetryExportCommand.AddOption(telemetryOutputOption);
+        telemetryExportCommand.SetHandler(async (output) =>
+        {
+            await RunTelemetryExportCommand(output);
+        }, telemetryOutputOption);
+        telemetryCommand.AddCommand(telemetryExportCommand);
+
+        var telemetryClearCommand = new Command("clear", "Clear all telemetry data");
+        telemetryClearCommand.SetHandler(async () =>
+        {
+            await RunTelemetryClearCommand();
+        });
+        telemetryCommand.AddCommand(telemetryClearCommand);
+        rootCommand.AddCommand(telemetryCommand);
 
         return await rootCommand.InvokeAsync(args);
     }
@@ -679,5 +806,602 @@ class Program
     static ILogger<T>? CreateLogger<T>()
     {
         return _loggerFactory.Value.CreateLogger<T>();
+    }
+
+    // ============ Diagnostics Commands ============
+
+    static async Task RunDiagnosticsCommand(bool asJson)
+    {
+        try
+        {
+            var pluginLoader = new PluginLoader();
+            var diagnosticService = new DiagnosticService(pluginLoader, CreateLogger<DiagnosticService>());
+
+            LiveProgressDisplay.ShowInfo("Running system diagnostics...");
+            var healthReport = await diagnosticService.RunHealthCheckAsync();
+            var report = diagnosticService.GenerateReport();
+
+            if (asJson)
+            {
+                var output = new
+                {
+                    Health = healthReport,
+                    Report = report
+                };
+                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            else
+            {
+                // Display health report
+                Console.WriteLine();
+                Console.WriteLine($"=== System Health: {healthReport.OverallStatus} ===");
+                Console.WriteLine();
+
+                foreach (var check in healthReport.Checks)
+                {
+                    var statusIcon = check.Status switch
+                    {
+                        HealthStatus.Healthy => "[OK]",
+                        HealthStatus.Degraded => "[WARN]",
+                        HealthStatus.Unhealthy => "[FAIL]",
+                        _ => "[??]"
+                    };
+                    Console.WriteLine($"  {statusIcon} {check.Name}: {check.Message}");
+                }
+
+                Console.WriteLine();
+                Console.WriteLine($"=== System Information ===");
+                Console.WriteLine($"  Host Version: {report.HostVersion}");
+                Console.WriteLine($"  Runtime: {report.Runtime}");
+                Console.WriteLine($"  Platform: {report.Platform}");
+                Console.WriteLine($"  Working Directory: {report.WorkingDirectory}");
+                Console.WriteLine();
+                Console.WriteLine($"=== Components ===");
+                Console.WriteLine($"  Plugins: {report.LoadedPlugins.Count}");
+                Console.WriteLine($"  Installers: {report.TotalInstallers}");
+                Console.WriteLine($"  Enrichers: {report.TotalEnrichers}");
+                Console.WriteLine($"  UI Extensions: {report.TotalUiExtensions}");
+
+                if (report.LoadedPlugins.Count > 0)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"=== Loaded Plugins ===");
+                    foreach (var plugin in report.LoadedPlugins)
+                    {
+                        Console.WriteLine($"  - {plugin.DisplayName} v{plugin.Version} ({plugin.Id})");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Diagnostics failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunValidatePluginCommand(string pluginPath)
+    {
+        try
+        {
+            var pluginLoader = new PluginLoader();
+            var diagnosticService = new DiagnosticService(pluginLoader, CreateLogger<DiagnosticService>());
+
+            // If path is a directory, look for plugin.json
+            var manifestPath = pluginPath;
+            if (Directory.Exists(pluginPath))
+            {
+                manifestPath = Path.Combine(pluginPath, "plugin.json");
+            }
+
+            LiveProgressDisplay.ShowInfo($"Validating: {manifestPath}");
+            var result = diagnosticService.ValidatePlugin(manifestPath);
+
+            if (result.IsValid)
+            {
+                LiveProgressDisplay.ShowSuccess($"Plugin manifest is valid");
+                if (result.Manifest != null)
+                {
+                    Console.WriteLine($"  ID: {result.Manifest.Id}");
+                    Console.WriteLine($"  Name: {result.Manifest.DisplayName}");
+                    Console.WriteLine($"  Version: {result.Manifest.Version}");
+                    Console.WriteLine($"  Entry: {result.Manifest.EntryAssembly}");
+                }
+            }
+            else
+            {
+                LiveProgressDisplay.ShowError("Validation failed:");
+                foreach (var error in result.Errors)
+                    Console.WriteLine($"  [ERROR] {error}");
+            }
+
+            if (result.Warnings.Count > 0)
+            {
+                Console.WriteLine("Warnings:");
+                foreach (var warning in result.Warnings)
+                    Console.WriteLine($"  [WARN] {warning}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Validation failed: {ex.Message}");
+        }
+
+        await Task.CompletedTask;
+    }
+
+    // ============ Profile Commands ============
+
+    static async Task RunProfileExportCommand(string name, string? outputPath, string format)
+    {
+        try
+        {
+            var configService = new ConfigurationService();
+            var settings = await configService.LoadAsync();
+            var profileExporter = new ProfileExporter(CreateLogger<ProfileExporter>());
+
+            // Create a profile from the current mod library
+            var profile = new ModProfile
+            {
+                Name = name,
+                Description = $"Exported on {DateTime.Now:yyyy-MM-dd HH:mm}",
+                CreatedAt = DateTime.UtcNow,
+                Mods = new List<ProfileMod>()
+            };
+
+            // Scan the mods directory for installed mods
+            if (Directory.Exists(settings.ModsDirectory))
+            {
+                foreach (var gameDir in Directory.GetDirectories(settings.ModsDirectory))
+                {
+                    var gameDomain = Path.GetFileName(gameDir);
+                    foreach (var modDir in Directory.GetDirectories(gameDir))
+                    {
+                        var modName = Path.GetFileName(modDir);
+                        profile.Mods.Add(new ProfileMod
+                        {
+                            CanonicalId = $"{gameDomain}/{modName}",
+                            DisplayName = modName,
+                            Enabled = true
+                        });
+                    }
+                }
+            }
+
+            var lockfile = new ModLockfile
+            {
+                GeneratedAt = DateTime.UtcNow,
+                Mods = profile.Mods.ToDictionary(
+                    m => m.CanonicalId,
+                    m => new LockfileMod { Version = "unknown" }
+                )
+            };
+
+            // Determine output path
+            var extension = format.ToLowerInvariant() == "archive" ? ".zip" : ".json";
+            outputPath ??= Path.Combine(Environment.CurrentDirectory, $"{name}{extension}");
+
+            var exportFormat = format.ToLowerInvariant() == "archive" ? ExportFormat.Archive : ExportFormat.Json;
+            var options = new ExportOptions { Format = exportFormat };
+
+            var result = await profileExporter.ExportProfileAsync(profile, lockfile, outputPath, options);
+
+            if (result.Success)
+            {
+                LiveProgressDisplay.ShowSuccess($"Exported profile to: {result.OutputPath}");
+                Console.WriteLine($"  Mods: {profile.Mods.Count}");
+                Console.WriteLine($"  Size: {result.FileSize} bytes");
+            }
+            else
+            {
+                LiveProgressDisplay.ShowError($"Export failed: {result.Error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunProfileImportCommand(string path, bool resolve)
+    {
+        try
+        {
+            var profileExporter = new ProfileExporter(CreateLogger<ProfileExporter>());
+
+            LiveProgressDisplay.ShowInfo($"Importing profile from: {path}");
+            var result = await profileExporter.ImportProfileAsync(path);
+
+            if (result.Success)
+            {
+                LiveProgressDisplay.ShowSuccess($"Imported profile: {result.Profile?.Name}");
+                Console.WriteLine($"  Mods: {result.Profile?.Mods.Count ?? 0}");
+
+                if (result.ValidationWarnings.Count > 0)
+                {
+                    Console.WriteLine("Warnings:");
+                    foreach (var warning in result.ValidationWarnings)
+                        Console.WriteLine($"  [WARN] {warning}");
+                }
+
+                if (resolve)
+                {
+                    LiveProgressDisplay.ShowInfo("Dependency resolution not yet implemented");
+                }
+            }
+            else
+            {
+                LiveProgressDisplay.ShowError($"Import failed: {result.Error}");
+                if (result.ValidationErrors.Count > 0)
+                {
+                    foreach (var error in result.ValidationErrors)
+                        Console.WriteLine($"  [ERROR] {error}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Import failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunProfileListCommand()
+    {
+        try
+        {
+            var configDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config", "Modular", "profiles");
+
+            if (!Directory.Exists(configDir))
+            {
+                LiveProgressDisplay.ShowInfo("No profiles found");
+                return;
+            }
+
+            var profiles = Directory.GetFiles(configDir, "*.json")
+                .Concat(Directory.GetFiles(configDir, "*.zip"))
+                .Concat(Directory.GetFiles(configDir, "*.modpack"));
+
+            if (!profiles.Any())
+            {
+                LiveProgressDisplay.ShowInfo("No profiles found");
+                return;
+            }
+
+            Console.WriteLine("Available profiles:");
+            foreach (var profile in profiles)
+            {
+                var name = Path.GetFileNameWithoutExtension(profile);
+                var size = new FileInfo(profile).Length;
+                Console.WriteLine($"  - {name} ({size} bytes)");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Failed to list profiles: {ex.Message}");
+        }
+
+        await Task.CompletedTask;
+    }
+
+    // ============ Plugins Commands ============
+
+    static async Task RunPluginsListCommand(bool showMarketplace)
+    {
+        try
+        {
+            var pluginLoader = new PluginLoader();
+            var manifests = pluginLoader.DiscoverPlugins();
+
+            Console.WriteLine("Installed plugins:");
+            if (manifests.Count == 0)
+            {
+                Console.WriteLine("  (none)");
+            }
+            else
+            {
+                foreach (var manifest in manifests)
+                {
+                    Console.WriteLine($"  - {manifest.DisplayName} v{manifest.Version} ({manifest.Id})");
+                    if (!string.IsNullOrEmpty(manifest.Description))
+                        Console.WriteLine($"      {manifest.Description}");
+                }
+            }
+
+            if (showMarketplace)
+            {
+                var configService = new ConfigurationService();
+                var settings = await configService.LoadAsync();
+
+                if (string.IsNullOrEmpty(settings.PluginMarketplaceUrl))
+                {
+                    LiveProgressDisplay.ShowWarning("No marketplace URL configured");
+                    Console.WriteLine("Set 'plugin_marketplace_url' in config to enable marketplace");
+                }
+                else
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Marketplace plugins:");
+                    using var httpClient = new HttpClient();
+                    var marketplace = new PluginMarketplace(httpClient, PluginLoader.DefaultPluginDirectory, CreateLogger<PluginMarketplace>());
+                    var index = await marketplace.FetchIndexAsync(settings.PluginMarketplaceUrl);
+
+                    if (index == null || index.Plugins.Count == 0)
+                    {
+                        Console.WriteLine("  (none available)");
+                    }
+                    else
+                    {
+                        foreach (var plugin in index.Plugins)
+                        {
+                            var installed = manifests.Any(m => m.Id == plugin.Id);
+                            var status = installed ? "[installed]" : "";
+                            Console.WriteLine($"  - {plugin.Name} v{plugin.Version} ({plugin.Id}) {status}");
+                            if (!string.IsNullOrEmpty(plugin.Description))
+                                Console.WriteLine($"      {plugin.Description}");
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Failed to list plugins: {ex.Message}");
+        }
+    }
+
+    static async Task RunPluginsInstallCommand(string pluginId)
+    {
+        try
+        {
+            var configService = new ConfigurationService();
+            var settings = await configService.LoadAsync();
+
+            if (string.IsNullOrEmpty(settings.PluginMarketplaceUrl))
+            {
+                LiveProgressDisplay.ShowError("No marketplace URL configured");
+                Console.WriteLine("Set 'plugin_marketplace_url' in config to enable marketplace");
+                return;
+            }
+
+            using var httpClient = new HttpClient();
+            var marketplace = new PluginMarketplace(httpClient, PluginLoader.DefaultPluginDirectory, CreateLogger<PluginMarketplace>());
+
+            LiveProgressDisplay.ShowInfo($"Fetching marketplace index...");
+            var index = await marketplace.FetchIndexAsync(settings.PluginMarketplaceUrl);
+
+            if (index == null)
+            {
+                LiveProgressDisplay.ShowError("Failed to fetch marketplace index");
+                return;
+            }
+
+            var plugin = index.Plugins.FirstOrDefault(p => p.Id.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
+            if (plugin == null)
+            {
+                LiveProgressDisplay.ShowError($"Plugin not found: {pluginId}");
+                return;
+            }
+
+            LiveProgressDisplay.ShowInfo($"Installing {plugin.Name} v{plugin.Version}...");
+            var progress = new Progress<double>(p => Console.Write($"\rDownloading: {p:F0}%"));
+            var result = await marketplace.InstallPluginAsync(plugin, progress);
+
+            Console.WriteLine();
+            if (result.Success)
+            {
+                LiveProgressDisplay.ShowSuccess($"Installed {plugin.Name} to {result.InstalledPath}");
+            }
+            else
+            {
+                LiveProgressDisplay.ShowError($"Installation failed: {result.Error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Installation failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunPluginsUpdateCommand()
+    {
+        try
+        {
+            var configService = new ConfigurationService();
+            var settings = await configService.LoadAsync();
+
+            if (string.IsNullOrEmpty(settings.PluginMarketplaceUrl))
+            {
+                LiveProgressDisplay.ShowError("No marketplace URL configured");
+                return;
+            }
+
+            var pluginLoader = new PluginLoader();
+            var installed = pluginLoader.DiscoverPlugins();
+
+            using var httpClient = new HttpClient();
+            var marketplace = new PluginMarketplace(httpClient, PluginLoader.DefaultPluginDirectory, CreateLogger<PluginMarketplace>());
+
+            LiveProgressDisplay.ShowInfo("Checking for updates...");
+            var index = await marketplace.FetchIndexAsync(settings.PluginMarketplaceUrl);
+
+            if (index == null)
+            {
+                LiveProgressDisplay.ShowError("Failed to fetch marketplace index");
+                return;
+            }
+
+            var updates = await marketplace.CheckUpdatesAsync(index, installed);
+
+            if (updates.Count == 0)
+            {
+                LiveProgressDisplay.ShowSuccess("All plugins are up to date");
+                return;
+            }
+
+            Console.WriteLine("Available updates:");
+            foreach (var update in updates)
+            {
+                Console.WriteLine($"  - {update.PluginName}: {update.CurrentVersion} -> {update.AvailableVersion}");
+            }
+
+            Console.Write("Install updates? [y/N]: ");
+            var response = Console.ReadLine();
+            if (response?.ToLowerInvariant() == "y")
+            {
+                foreach (var update in updates)
+                {
+                    if (update.IndexEntry == null)
+                    {
+                        LiveProgressDisplay.ShowError($"Missing index entry for {update.PluginName}");
+                        continue;
+                    }
+                    LiveProgressDisplay.ShowInfo($"Updating {update.PluginName}...");
+                    var result = await marketplace.InstallPluginAsync(update.IndexEntry);
+                    if (result.Success)
+                        LiveProgressDisplay.ShowSuccess($"Updated {update.PluginName}");
+                    else
+                        LiveProgressDisplay.ShowError($"Failed to update {update.PluginName}: {result.Error}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Update check failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunPluginsRemoveCommand(string pluginId)
+    {
+        try
+        {
+            using var httpClient = new HttpClient();
+            var marketplace = new PluginMarketplace(httpClient, PluginLoader.DefaultPluginDirectory, CreateLogger<PluginMarketplace>());
+
+            LiveProgressDisplay.ShowInfo($"Removing plugin: {pluginId}");
+            var success = await marketplace.UninstallPluginAsync(pluginId);
+
+            if (success)
+            {
+                LiveProgressDisplay.ShowSuccess($"Removed plugin: {pluginId}");
+            }
+            else
+            {
+                LiveProgressDisplay.ShowError($"Plugin not found or could not be removed: {pluginId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Remove failed: {ex.Message}");
+        }
+    }
+
+    // ============ Telemetry Commands ============
+
+    static async Task RunTelemetrySummaryCommand(int days)
+    {
+        try
+        {
+            var configService = new ConfigurationService();
+            var settings = await configService.LoadAsync();
+
+            var telemetryPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config", "Modular", "telemetry");
+
+            var telemetryService = new TelemetryService(telemetryPath,
+                new TelemetryConfig { Enabled = settings.TelemetryEnabled },
+                CreateLogger<TelemetryService>());
+
+            var startDate = DateTime.UtcNow.AddDays(-days);
+            var summary = telemetryService.GetSummary(startDate, DateTime.UtcNow);
+
+            Console.WriteLine($"Telemetry Summary (last {days} days)");
+            Console.WriteLine($"================================");
+            Console.WriteLine($"Total events: {summary.TotalEvents}");
+            Console.WriteLine($"Downloads: {summary.TotalDownloads}");
+            Console.WriteLine($"Bytes downloaded: {summary.TotalBytesDownloaded:N0}");
+            Console.WriteLine($"Installer successes: {summary.InstallerSuccesses}");
+            Console.WriteLine($"Installer failures: {summary.InstallerFailures}");
+            Console.WriteLine($"Plugin crashes: {summary.PluginCrashes}");
+
+            if (summary.EventsByType.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Events by type:");
+                foreach (var (type, count) in summary.EventsByType)
+                    Console.WriteLine($"  {type}: {count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Failed to get summary: {ex.Message}");
+        }
+    }
+
+    static async Task RunTelemetryExportCommand(string? outputPath)
+    {
+        try
+        {
+            var telemetryPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config", "Modular", "telemetry");
+
+            outputPath ??= Path.Combine(Environment.CurrentDirectory, $"telemetry-export-{DateTime.Now:yyyyMMdd}.json");
+
+            if (!Directory.Exists(telemetryPath))
+            {
+                LiveProgressDisplay.ShowInfo("No telemetry data to export");
+                return;
+            }
+
+            // Export all telemetry files
+            var allData = new List<object>();
+            foreach (var file in Directory.GetFiles(telemetryPath, "*.json"))
+            {
+                var json = await File.ReadAllTextAsync(file);
+                var data = JsonSerializer.Deserialize<object>(json);
+                if (data != null)
+                    allData.Add(data);
+            }
+
+            var exportJson = JsonSerializer.Serialize(allData, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(outputPath, exportJson);
+
+            LiveProgressDisplay.ShowSuccess($"Exported telemetry to: {outputPath}");
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Export failed: {ex.Message}");
+        }
+    }
+
+    static async Task RunTelemetryClearCommand()
+    {
+        try
+        {
+            Console.Write("Are you sure you want to delete all telemetry data? [y/N]: ");
+            var response = Console.ReadLine();
+            if (response?.ToLowerInvariant() != "y")
+            {
+                LiveProgressDisplay.ShowInfo("Cancelled");
+                return;
+            }
+
+            var telemetryPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config", "Modular", "telemetry");
+
+            var telemetryService = new TelemetryService(telemetryPath);
+            telemetryService.ClearData();
+
+            LiveProgressDisplay.ShowSuccess("Telemetry data cleared");
+        }
+        catch (Exception ex)
+        {
+            LiveProgressDisplay.ShowError($"Failed to clear telemetry: {ex.Message}");
+        }
+
+        await Task.CompletedTask;
     }
 }
