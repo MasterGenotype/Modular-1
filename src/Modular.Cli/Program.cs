@@ -672,13 +672,17 @@ class Program
             ct);
     }
 
-    static ILogger<T>? CreateLogger<T>()
-    {
-        using var loggerFactory = LoggerFactory.Create(builder =>
+    // Static logger factory kept alive for the duration of the application
+    // to avoid disposing it while loggers are still in use
+    private static readonly Lazy<ILoggerFactory> _loggerFactory = new(() =>
+        LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.SetMinimumLevel(LogLevel.Information);
-        });
-        return loggerFactory.CreateLogger<T>();
+        }));
+
+    static ILogger<T>? CreateLogger<T>()
+    {
+        return _loggerFactory.Value.CreateLogger<T>();
     }
 }

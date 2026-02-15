@@ -11,6 +11,7 @@ namespace Modular.FluentHttp.Implementation;
 public class FluentClient : IFluentClient
 {
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private ILogger? _logger;
     private string _baseUrl = string.Empty;
     private string? _authScheme;
@@ -20,10 +21,11 @@ public class FluentClient : IFluentClient
 
     public FluentClient(HttpClient? httpClient = null)
     {
+        _ownsHttpClient = httpClient == null;
         _httpClient = httpClient ?? new HttpClient();
         // Set a default timeout of 30 seconds to prevent indefinite hangs
         // Only override if using a new HttpClient (default is 100 seconds which is too long)
-        if (httpClient == null)
+        if (_ownsHttpClient)
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
@@ -177,6 +179,10 @@ public class FluentClient : IFluentClient
     {
         if (!_disposed)
         {
+            if (_ownsHttpClient)
+            {
+                _httpClient.Dispose();
+            }
             _disposed = true;
         }
     }

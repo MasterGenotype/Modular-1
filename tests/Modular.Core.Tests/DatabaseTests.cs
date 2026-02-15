@@ -29,7 +29,7 @@ public class DatabaseTests : IDisposable
             ModId = 123,
             FileId = 456,
             Filename = "test.zip",
-            Status = "success"
+            Status = DownloadStatus.Success
         };
 
         db.AddRecord(record);
@@ -48,7 +48,7 @@ public class DatabaseTests : IDisposable
             GameDomain = "skyrim",
             ModId = 123,
             FileId = 456,
-            Status = "success"
+            Status = DownloadStatus.Success
         });
 
         db.IsDownloaded("skyrim", 123, 456).Should().BeTrue();
@@ -63,7 +63,7 @@ public class DatabaseTests : IDisposable
             GameDomain = "skyrim",
             ModId = 123,
             FileId = 456,
-            Status = "failed"
+            Status = DownloadStatus.Failed
         });
 
         db.IsDownloaded("skyrim", 123, 456).Should().BeFalse();
@@ -78,7 +78,7 @@ public class DatabaseTests : IDisposable
             GameDomain = "skyrim",
             ModId = 1,
             FileId = 1,
-            Status = "success"
+            Status = DownloadStatus.Success
         });
         await db1.SaveAsync();
 
@@ -97,13 +97,13 @@ public class DatabaseTests : IDisposable
             GameDomain = "skyrim",
             ModId = 123,
             FileId = 456,
-            Status = "success"
+            Status = DownloadStatus.Success
         });
 
         db.UpdateVerification("skyrim", 123, 456, "abc123", true);
 
         var record = db.FindRecord("skyrim", 123, 456);
         record!.Md5Actual.Should().Be("abc123");
-        record.Status.Should().Be("verified");
+        record.Status.Should().Be(DownloadStatus.Verified);
     }
 }

@@ -38,7 +38,7 @@ public class DownloadRecord
     public DateTime DownloadTime { get; set; }
 
     [JsonPropertyName("status")]
-    public string Status { get; set; } = string.Empty; // "success", "verified", "failed"
+    public DownloadStatus Status { get; set; } = DownloadStatus.Pending;
 
     [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }

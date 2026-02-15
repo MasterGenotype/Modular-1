@@ -216,25 +216,26 @@ public class TelemetryService
             startDate ??= DateTime.UtcNow.AddDays(-30);
             endDate ??= DateTime.UtcNow;
 
+            TelemetryExport export;
             lock (_lock)
             {
                 var events = LoadEventsInRange(startDate.Value, endDate.Value);
 
-                var export = new TelemetryExport
+                export = new TelemetryExport
                 {
                     ExportedAt = DateTime.UtcNow,
                     StartDate = startDate.Value,
                     EndDate = endDate.Value,
                     Events = events
                 };
-
-                var json = JsonSerializer.Serialize(export, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-
-                File.WriteAllText(outputPath, json);
             }
+
+            var json = JsonSerializer.Serialize(export, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            await File.WriteAllTextAsync(outputPath, json);
 
             _logger?.LogInformation("Exported telemetry data to {Path}", outputPath);
             return true;

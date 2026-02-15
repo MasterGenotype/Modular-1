@@ -100,7 +100,7 @@ public class PluginMarketplace
     /// <summary>
     /// Checks for plugin updates.
     /// </summary>
-    public async Task<List<PluginUpdate>> CheckUpdatesAsync(
+    public Task<List<PluginUpdate>> CheckUpdatesAsync(
         PluginIndex index,
         List<PluginManifest> installedPlugins,
         CancellationToken ct = default)
@@ -130,7 +130,7 @@ public class PluginMarketplace
             }
         }
 
-        return updates;
+        return Task.FromResult(updates);
     }
 
     /// <summary>

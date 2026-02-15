@@ -101,7 +101,7 @@ public class DownloadDatabase
     public bool IsDownloaded(string gameDomain, int modId, int fileId)
     {
         var record = FindRecord(gameDomain, modId, fileId);
-        return record != null && (record.Status == "success" || record.Status == "verified");
+        return record != null && (record.Status == DownloadStatus.Success || record.Status == DownloadStatus.Verified);
     }
 
     /// <summary>
@@ -124,7 +124,7 @@ public class DownloadDatabase
             if (record != null)
             {
                 record.Md5Actual = md5Actual;
-                record.Status = verified ? "verified" : "hash_mismatch";
+                record.Status = verified ? DownloadStatus.Verified : DownloadStatus.HashMismatch;
             }
         }
     }

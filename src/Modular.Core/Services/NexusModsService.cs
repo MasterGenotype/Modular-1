@@ -212,7 +212,7 @@ public class NexusModsService
                     Md5Expected = file.Md5 ?? string.Empty,
                     FileSize = new FileInfo(outputPath).Length,
                     DownloadTime = DateTime.UtcNow,
-                    Status = "success"
+                    Status = DownloadStatus.Success
                 };
 
                 // Verify MD5 if enabled
@@ -220,7 +220,7 @@ public class NexusModsService
                 {
                     var actualMd5 = await Md5Calculator.CalculateMd5Async(outputPath, ct);
                     record.Md5Actual = actualMd5;
-                    record.Status = actualMd5.Equals(file.Md5, StringComparison.OrdinalIgnoreCase) ? "verified" : "hash_mismatch";
+                    record.Status = actualMd5.Equals(file.Md5, StringComparison.OrdinalIgnoreCase) ? DownloadStatus.Verified : DownloadStatus.HashMismatch;
                 }
 
                 _database.AddRecord(record);
@@ -235,7 +235,7 @@ public class NexusModsService
                     FileId = fileId,
                     Filename = file.FileName,
                     DownloadTime = DateTime.UtcNow,
-                    Status = "failed",
+                    Status = DownloadStatus.Failed,
                     ErrorMessage = ex.Message
                 });
             }
