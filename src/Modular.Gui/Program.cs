@@ -11,6 +11,7 @@ using Modular.Core.Services;
 using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
 using System;
+using System.Threading.Tasks;
 
 namespace Modular.Gui;
 
@@ -18,21 +19,24 @@ sealed class Program
 {
     public static IServiceProvider? Services { get; private set; }
 
+    // Cached instances loaded during async initialization
+    private static AppSettings? _settings;
+    private static DownloadDatabase? _database;
+    private static ModMetadataCache? _metadataCache;
+    private static DownloadHistoryService? _downloadHistory;
+
     [STAThread]
     public static void Main(string[] args)
     {
         try
         {
+            // Run async initialization on a background thread to avoid deadlock issues
+            // This ensures async operations complete before any UI context is created
+            Task.Run(InitializeServicesAsync).GetAwaiter().GetResult();
+
+            // Build DI container with pre-loaded instances
             Services = ConfigureServices();
-            
-            // Pre-resolve all singletons before Avalonia starts to avoid deadlocks
-            // These services load data synchronously which would deadlock on UI thread
-            _ = Services.GetRequiredService<AppSettings>();
-            _ = Services.GetRequiredService<DownloadDatabase>();
-            _ = Services.GetRequiredService<ModMetadataCache>();
-            _ = Services.GetRequiredService<BackendRegistry>();
-            _ = Services.GetRequiredService<DownloadHistoryService>();
-            
+
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
         catch (Exception ex)
@@ -40,6 +44,35 @@ sealed class Program
             Console.Error.WriteLine($"Fatal error: {ex}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Performs async initialization on a background thread before the UI starts.
+    /// This avoids deadlock risks from blocking async calls on the UI thread.
+    /// </summary>
+    private static async Task InitializeServicesAsync()
+    {
+        // Load configuration
+        var configService = new ConfigurationService();
+        _settings = await configService.LoadAsync();
+
+        // Load database
+        _database = new DownloadDatabase(_settings.DatabasePath);
+        await _database.LoadAsync();
+
+        // Load metadata cache
+        var cachePath = Path.Combine(
+            Path.GetDirectoryName(_settings.DatabasePath) ?? Environment.CurrentDirectory,
+            "metadata_cache.json");
+        _metadataCache = new ModMetadataCache(cachePath);
+        await _metadataCache.LoadAsync();
+
+        // Load download history
+        var historyPath = Path.Combine(
+            Path.GetDirectoryName(_settings.DatabasePath) ?? Environment.CurrentDirectory,
+            "download_history.json");
+        _downloadHistory = new DownloadHistoryService(historyPath);
+        await _downloadHistory.LoadAsync();
     }
 
     public static AppBuilder BuildAvaloniaApp()
@@ -58,32 +91,11 @@ sealed class Program
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        // Core services - configuration
+        // Core services - use pre-loaded instances to avoid async-over-sync
         services.AddSingleton<ConfigurationService>();
-        services.AddSingleton(sp =>
-        {
-            var configService = sp.GetRequiredService<ConfigurationService>();
-            return configService.LoadAsync().GetAwaiter().GetResult();
-        });
-
-        // Core services - database and rate limiting
-        services.AddSingleton(sp =>
-        {
-            var settings = sp.GetRequiredService<AppSettings>();
-            var db = new DownloadDatabase(settings.DatabasePath);
-            db.LoadAsync().GetAwaiter().GetResult();
-            return db;
-        });
-        services.AddSingleton(sp =>
-        {
-            var settings = sp.GetRequiredService<AppSettings>();
-            var cachePath = Path.Combine(
-                Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
-                "metadata_cache.json");
-            var cache = new ModMetadataCache(cachePath);
-            cache.LoadAsync().GetAwaiter().GetResult();
-            return cache;
-        });
+        services.AddSingleton(_settings!);
+        services.AddSingleton(_database!);
+        services.AddSingleton(_metadataCache!);
         services.AddSingleton<IRateLimiter, NexusRateLimiter>();
 
         // Backend services
@@ -113,18 +125,9 @@ sealed class Program
         // Other core services
         services.AddSingleton<IRenameService, RenameService>();
 
-        // GUI services
+        // GUI services - use pre-loaded instance
         services.AddSingleton<IDialogService, DialogService>();
-        services.AddSingleton(sp =>
-        {
-            var settings = sp.GetRequiredService<AppSettings>();
-            var historyPath = Path.Combine(
-                Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
-                "download_history.json");
-            var service = new DownloadHistoryService(historyPath);
-            service.LoadAsync().GetAwaiter().GetResult();
-            return service;
-        });
+        services.AddSingleton(_downloadHistory!);
         services.AddSingleton(sp =>
         {
             var settings = sp.GetRequiredService<AppSettings>();
