@@ -172,15 +172,16 @@ class Program
     static async Task RunCommandMode(string domain, string[] categories, bool dryRun, bool force, bool organize, bool verbose)
     {
         using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
-        };
-
+        ConsoleCancelEventHandler? cancelHandler = null;
         try
         {
+            cancelHandler = (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+                LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+            };
+            Console.CancelKeyPress += cancelHandler;
             var (settings, rateLimiter, database, metadataCache) = await InitializeServices();
             settings.Verbose = verbose;
 
@@ -238,20 +239,26 @@ class Program
         {
             LiveProgressDisplay.ShowError(ex.Message);
         }
+        finally
+        {
+            if (cancelHandler != null)
+                Console.CancelKeyPress -= cancelHandler;
+        }
     }
 
     static async Task RunRenameCommand(string? domain, bool organize)
     {
         using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
-        };
-
+        ConsoleCancelEventHandler? cancelHandler = null;
         try
         {
+            cancelHandler = (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+                LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+            };
+            Console.CancelKeyPress += cancelHandler;
             var (settings, rateLimiter, _, metadataCache) = await InitializeServices();
 
             var renameService = new RenameService(settings, rateLimiter, metadataCache, CreateLogger<RenameService>());
@@ -294,20 +301,26 @@ class Program
         {
             LiveProgressDisplay.ShowError(ex.Message);
         }
+        finally
+        {
+            if (cancelHandler != null)
+                Console.CancelKeyPress -= cancelHandler;
+        }
     }
 
     static async Task RunFetchCommand(string? domain)
     {
         using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
-        };
-
+        ConsoleCancelEventHandler? cancelHandler = null;
         try
         {
+            cancelHandler = (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+                LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+            };
+            Console.CancelKeyPress += cancelHandler;
             var (settings, rateLimiter, _, metadataCache) = await InitializeServices();
             var renameService = new RenameService(settings, rateLimiter, metadataCache, CreateLogger<RenameService>());
 
@@ -345,6 +358,11 @@ class Program
         catch (Exception ex)
         {
             LiveProgressDisplay.ShowError(ex.Message);
+        }
+        finally
+        {
+            if (cancelHandler != null)
+                Console.CancelKeyPress -= cancelHandler;
         }
     }
 
@@ -494,15 +512,16 @@ class Program
         bool verbose)
     {
         using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-            LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
-        };
-
+        ConsoleCancelEventHandler? cancelHandler = null;
         try
         {
+            cancelHandler = (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+                LiveProgressDisplay.ShowWarning("Cancellation requested, cleaning up...");
+            };
+            Console.CancelKeyPress += cancelHandler;
             var (settings, rateLimiter, database, metadataCache) = await InitializeServicesMinimal();
             settings.Verbose = verbose;
 
@@ -614,6 +633,11 @@ class Program
         catch (Exception ex)
         {
             LiveProgressDisplay.ShowError(ex.Message);
+        }
+        finally
+        {
+            if (cancelHandler != null)
+                Console.CancelKeyPress -= cancelHandler;
         }
     }
 

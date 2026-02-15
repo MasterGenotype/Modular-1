@@ -43,8 +43,11 @@ public interface IFluentClient : IDisposable
     IRateLimiter? RateLimiter { get; }
 
     // Timeouts
-    IFluentClient SetConnectionTimeout(TimeSpan timeout);
-    IFluentClient SetRequestTimeout(TimeSpan timeout);
+    /// <summary>
+    /// Sets the timeout for HTTP requests. This applies to the entire request lifecycle
+    /// including connection establishment and data transfer.
+    /// </summary>
+    IFluentClient SetTimeout(TimeSpan timeout);
 
     // Logging
     IFluentClient SetLogger(ILogger? logger);

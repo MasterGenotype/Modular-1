@@ -81,8 +81,11 @@ public class FluentClient : IFluentClient
     public IFluentClient DisableRetries() { _retryConfig = new DefaultRetryConfig { MaxRetries = 0 }; return this; }
 
     public IFluentClient SetRateLimiter(IRateLimiter? rateLimiter) { RateLimiter = rateLimiter; return this; }
-    public IFluentClient SetConnectionTimeout(TimeSpan timeout) { _httpClient.Timeout = timeout; return this; }
-    public IFluentClient SetRequestTimeout(TimeSpan timeout) { _httpClient.Timeout = timeout; return this; }
+    /// <summary>
+    /// Sets the timeout for HTTP requests. This applies to the entire request lifecycle
+    /// including connection establishment and data transfer.
+    /// </summary>
+    public IFluentClient SetTimeout(TimeSpan timeout) { _httpClient.Timeout = timeout; return this; }
     public IFluentClient SetLogger(ILogger? logger) { _logger = logger; return this; }
 
     internal async Task<IResponse> ExecuteAsync(FluentRequest request, string url, HttpMethod method,

@@ -394,8 +394,7 @@ public interface IFluentClient : IDisposable
     IFluentClient SetRateLimiter(IRateLimiter rateLimiter);
 
     // Timeouts
-    IFluentClient SetConnectionTimeout(TimeSpan timeout);
-    IFluentClient SetRequestTimeout(TimeSpan timeout);
+    IFluentClient SetTimeout(TimeSpan timeout);
 
     // Logging
     IFluentClient SetLogger(ILogger logger);

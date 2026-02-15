@@ -461,7 +461,7 @@ var client = FluentClientFactory.Create("https://api.example.com")
     .SetUserAgent("Modular/1.0")
     .SetBearerAuth(token)
     .SetRetryPolicy(maxRetries: 3, initialDelayMs: 1000)
-    .SetConnectionTimeout(TimeSpan.FromSeconds(30))
+    .SetTimeout(TimeSpan.FromSeconds(30))
     .SetRateLimiter(rateLimiter);
 ```
 

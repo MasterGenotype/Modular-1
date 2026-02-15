@@ -35,11 +35,11 @@ public class DownloadEngine
     public async Task<DownloadResult> DownloadAsync(
         string url,
         string outputPath,
-        DownloadOptions? options = null,
-        IProgress<DownloadProgress>? progress = null,
+        FileDownloadOptions? options = null,
+        IProgress<FileDownloadProgress>? progress = null,
         CancellationToken ct = default)
     {
-        options ??= new DownloadOptions();
+        options ??= new FileDownloadOptions();
         var result = new DownloadResult { Url = url, OutputPath = outputPath };
 
         try
@@ -159,8 +159,8 @@ public class DownloadEngine
         string outputPath,
         long resumePosition,
         long totalBytes,
-        DownloadOptions options,
-        IProgress<DownloadProgress>? progress,
+        FileDownloadOptions options,
+        IProgress<FileDownloadProgress>? progress,
         CancellationToken ct)
     {
         var directory = Path.GetDirectoryName(outputPath);
@@ -191,7 +191,7 @@ public class DownloadEngine
                 var speed = elapsed > 0 ? totalRead / elapsed : 0;
                 var eta = speed > 0 && totalBytes > 0 ? (TimeSpan?)TimeSpan.FromSeconds((totalBytes - totalRead) / speed) : null;
 
-                progress?.Report(new DownloadProgress
+                progress?.Report(new FileDownloadProgress
                 {
                     BytesDownloaded = totalRead,
                     TotalBytes = totalBytes,
@@ -205,7 +205,7 @@ public class DownloadEngine
         }
 
         // Final progress update
-        progress?.Report(new DownloadProgress
+        progress?.Report(new FileDownloadProgress
         {
             BytesDownloaded = totalRead,
             TotalBytes = totalBytes,
@@ -241,9 +241,10 @@ public class DownloadEngine
 }
 
 /// <summary>
-/// Options for download operations.
+/// Options for file download operations.
+/// Distinct from Modular.Sdk.Backends.DownloadOptions which is for backend-level download configuration.
 /// </summary>
-public class DownloadOptions
+public class FileDownloadOptions
 {
     /// <summary>
     /// Allow resuming interrupted downloads.
@@ -295,9 +296,10 @@ public class DownloadResult
 }
 
 /// <summary>
-/// Progress information for an active download.
+/// Progress information for an active file download.
+/// Distinct from Modular.Sdk.Backends.DownloadProgress which is for backend-level operation progress.
 /// </summary>
-public class DownloadProgress
+public class FileDownloadProgress
 {
     public long BytesDownloaded { get; set; }
     public long TotalBytes { get; set; }

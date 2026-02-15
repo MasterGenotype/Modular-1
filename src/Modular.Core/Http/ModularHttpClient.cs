@@ -220,7 +220,9 @@ public class ModularHttpClient : IDisposable
     {
         if (!_disposed)
         {
-            // Note: We don't dispose _httpClient as it may be managed by IHttpClientFactory
+            // Note: We don't dispose _httpClient as it's injected via constructor.
+            // The caller that creates the HttpClient is responsible for its lifecycle.
+            // This class is a thin wrapper providing retry and rate limiting logic.
             _disposed = true;
         }
     }

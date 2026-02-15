@@ -44,7 +44,7 @@ public class DownloadQueue
     public async Task<string> EnqueueAsync(QueuedDownload download)
     {
         download.Id = Guid.NewGuid().ToString();
-        download.Status = DownloadStatus.Pending;
+        download.Status = QueueItemStatus.Pending;
         download.QueuedAt = DateTime.UtcNow;
 
         lock (_lock)
@@ -70,7 +70,7 @@ public class DownloadQueue
                 return false;
 
             // Cancel if in progress
-            if (download.Status == DownloadStatus.InProgress && download.CancellationSource != null)
+            if (download.Status == QueueItemStatus.InProgress && download.CancellationSource != null)
             {
                 download.CancellationSource.Cancel();
             }
@@ -90,10 +90,10 @@ public class DownloadQueue
         lock (_lock)
         {
             var download = _queue.FirstOrDefault(d => d.Id == downloadId);
-            if (download != null && download.Status == DownloadStatus.InProgress)
+            if (download != null && download.Status == QueueItemStatus.InProgress)
             {
                 download.CancellationSource?.Cancel();
-                download.Status = DownloadStatus.Paused;
+                download.Status = QueueItemStatus.Paused;
             }
         }
     }
@@ -106,9 +106,9 @@ public class DownloadQueue
         lock (_lock)
         {
             var download = _queue.FirstOrDefault(d => d.Id == downloadId);
-            if (download != null && download.Status == DownloadStatus.Paused)
+            if (download != null && download.Status == QueueItemStatus.Paused)
             {
-                download.Status = DownloadStatus.Pending;
+                download.Status = QueueItemStatus.Pending;
             }
         }
 
@@ -133,7 +133,7 @@ public class DownloadQueue
     {
         lock (_lock)
         {
-            return _queue.Count(d => d.Status == DownloadStatus.Pending || d.Status == DownloadStatus.Paused);
+            return _queue.Count(d => d.Status == QueueItemStatus.Pending || d.Status == QueueItemStatus.Paused);
         }
     }
 
@@ -183,7 +183,7 @@ public class DownloadQueue
             lock (_lock)
             {
                 download = _queue
-                    .Where(d => d.Status == DownloadStatus.Pending)
+                    .Where(d => d.Status == QueueItemStatus.Pending)
                     .OrderBy(d => d.Priority)
                     .ThenBy(d => d.QueuedAt)
                     .FirstOrDefault();
@@ -206,7 +206,7 @@ public class DownloadQueue
     /// </summary>
     private async Task ProcessDownloadAsync(QueuedDownload download, CancellationToken ct)
     {
-        download.Status = DownloadStatus.InProgress;
+        download.Status = QueueItemStatus.InProgress;
         download.StartedAt = DateTime.UtcNow;
         download.CancellationSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
@@ -214,7 +214,7 @@ public class DownloadQueue
 
         try
         {
-            var progress = new Progress<DownloadProgress>(p =>
+            var progress = new Progress<FileDownloadProgress>(p =>
             {
                 download.BytesDownloaded = p.BytesDownloaded;
                 download.TotalBytes = p.TotalBytes;
@@ -236,7 +236,7 @@ public class DownloadQueue
 
             if (result.Success)
             {
-                download.Status = DownloadStatus.Completed;
+                download.Status = QueueItemStatus.Completed;
                 download.CompletedAt = DateTime.UtcNow;
                 download.RetryCount = 0;
 
@@ -244,7 +244,7 @@ public class DownloadQueue
             }
             else if (result.Cancelled)
             {
-                download.Status = DownloadStatus.Paused;
+                download.Status = QueueItemStatus.Paused;
                 _logger?.LogInformation("Download paused: {Name}", download.FileName);
             }
             else
@@ -281,12 +281,12 @@ public class DownloadQueue
 
         if (download.RetryCount >= download.MaxRetries)
         {
-            download.Status = DownloadStatus.Failed;
+            download.Status = QueueItemStatus.Failed;
             _logger?.LogError("Download failed after {Count} retries: {Name}", download.RetryCount, download.FileName);
         }
         else
         {
-            download.Status = DownloadStatus.Pending;
+            download.Status = QueueItemStatus.Pending;
             
             // Exponential backoff: 2^retry * base delay
             var delay = TimeSpan.FromSeconds(Math.Pow(2, download.RetryCount) * 5);
@@ -357,8 +357,8 @@ public class DownloadQueue
                     foreach (var download in downloads)
                     {
                         // Reset in-progress downloads to pending
-                        if (download.Status == DownloadStatus.InProgress)
-                            download.Status = DownloadStatus.Pending;
+                        if (download.Status == QueueItemStatus.InProgress)
+                            download.Status = QueueItemStatus.Pending;
 
                         _queue.Add(download);
                     }
@@ -398,7 +398,7 @@ public class QueuedDownload
     public long BytesDownloaded { get; set; }
 
     [JsonPropertyName("status")]
-    public DownloadStatus Status { get; set; }
+    public QueueItemStatus Status { get; set; }
 
     [JsonPropertyName("priority")]
     public int Priority { get; set; } // Lower = higher priority
@@ -428,16 +428,17 @@ public class QueuedDownload
     public double Speed { get; set; }
 
     [JsonPropertyName("options")]
-    public DownloadOptions? Options { get; set; }
+    public FileDownloadOptions? Options { get; set; }
 
     [JsonIgnore]
     public CancellationTokenSource? CancellationSource { get; set; }
 }
 
 /// <summary>
-/// Download status.
+/// Status of a queued download item.
+/// Distinct from Modular.Core.Database.DownloadStatus which tracks database record state.
 /// </summary>
-public enum DownloadStatus
+public enum QueueItemStatus
 {
     Pending,
     InProgress,
@@ -452,7 +453,7 @@ public enum DownloadStatus
 public class DownloadProgressEventArgs : EventArgs
 {
     public string DownloadId { get; set; } = string.Empty;
-    public DownloadProgress Progress { get; set; } = new();
+    public FileDownloadProgress Progress { get; set; } = new();
 }
 
 /// <summary>
