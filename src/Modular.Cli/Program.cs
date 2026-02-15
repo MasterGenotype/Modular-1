@@ -12,10 +12,6 @@ using Modular.Core.Database;
 using Modular.Core.RateLimiting;
 using Modular.Core.Services;
 
-// Legacy commands still use old services for backward compatibility
-// TODO: Migrate remaining commands to use backend system
-#pragma warning disable CS0618 // Type or member is obsolete
-
 namespace Modular.Cli;
 
 class Program
@@ -64,12 +60,6 @@ class Program
         }, domainArg, organizeOption);
         rootCommand.AddCommand(renameCommand);
 
-        var gameBananaCommand = new Command("gamebanana", "Download mods from GameBanana (legacy, use 'download --backend gamebanana' instead)");
-        gameBananaCommand.SetHandler(async () =>
-        {
-            await RunGameBananaCommand();
-        });
-        rootCommand.AddCommand(gameBananaCommand);
 
         // Generic download command - works with any backend
         var downloadCommand = new Command("download", "Download mods from a backend");
@@ -192,29 +182,35 @@ class Program
         try
         {
             var (settings, rateLimiter, database, metadataCache) = await InitializeServices();
-
-            if (categories.Length > 0)
-                settings.DefaultCategories = categories.ToList();
             settings.Verbose = verbose;
 
-            var nexusService = new NexusModsService(settings, rateLimiter, database,
-                verbose ? CreateLogger<NexusModsService>() : null);
+            var backend = new NexusModsBackend(settings, rateLimiter, database, metadataCache,
+                verbose ? CreateLogger<NexusModsBackend>() : null);
             var renameService = new RenameService(settings, rateLimiter, metadataCache,
                 verbose ? CreateLogger<RenameService>() : null);
 
-            // Download mods - scanning phase with status output
-            await nexusService.DownloadFilesAsync(
-                domain,
-                progress: new Progress<(string status, int completed, int total)>(p =>
-                {
-                    // Progress updates go to console during download phase
-                    if (p.total > 0)
-                        Console.WriteLine($"[{p.completed}/{p.total}] {p.status}");
-                }),
-                statusCallback: status => Console.WriteLine($"[SCAN] {status}"),
-                dryRun: dryRun,
-                force: force
-            );
+            // Build download options
+            var options = new DownloadOptions
+            {
+                DryRun = dryRun,
+                Force = force,
+                Filter = categories.Length > 0
+                    ? new FileFilter { Categories = categories.ToList() }
+                    : FileFilter.MainAndOptional,
+                VerifyDownloads = settings.VerifyDownloads,
+                StatusCallback = status => Console.WriteLine($"[SCAN] {status}")
+            };
+
+            // Download mods using the backend
+            var progress = new Progress<DownloadProgress>(p =>
+            {
+                if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
+                    Console.WriteLine($"[{p.Completed}/{p.Total}] {p.Status}");
+                else if (p.Phase == DownloadPhase.Scanning)
+                    Console.WriteLine($"[SCAN] {p.Status}");
+            });
+
+            await backend.DownloadModsAsync(settings.ModsDirectory, domain, options, progress, cts.Token);
 
             // Auto-rename if enabled
             if (settings.AutoRename && !dryRun)
@@ -345,31 +341,6 @@ class Program
         catch (OperationCanceledException)
         {
             LiveProgressDisplay.ShowWarning("Operation cancelled by user.");
-        }
-        catch (Exception ex)
-        {
-            LiveProgressDisplay.ShowError(ex.Message);
-        }
-    }
-
-    static async Task RunGameBananaCommand()
-    {
-        try
-        {
-            var configService = new ConfigurationService();
-            var settings = await configService.LoadAsync();
-            configService.Validate(settings, requireGameBananaId: true);
-
-            var gbService = new GameBananaService(settings, CreateLogger<GameBananaService>());
-
-            var outputDir = Path.Combine(settings.ModsDirectory, "gamebanana");
-
-            await LiveProgressDisplay.RunWithProgressAsync("Downloading GameBanana mods", async progress =>
-            {
-                await gbService.DownloadAllSubscribedModsAsync(outputDir, progress);
-            });
-
-            LiveProgressDisplay.ShowSuccess("GameBanana downloads complete");
         }
         catch (Exception ex)
         {

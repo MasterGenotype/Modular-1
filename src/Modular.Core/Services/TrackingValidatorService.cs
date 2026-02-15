@@ -1,12 +1,8 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Models;
-using Modular.Core.RateLimiting;
-using Modular.FluentHttp.Implementation;
-
-// TODO: Migrate TrackingValidatorService to use NexusModsBackend instead of NexusModsService
-#pragma warning disable CS0618 // Type or member is obsolete
 
 namespace Modular.Core.Services;
 
@@ -16,16 +12,16 @@ namespace Modular.Core.Services;
 public partial class TrackingValidatorService
 {
     private readonly AppSettings _settings;
-    private readonly NexusModsService _nexusService;
+    private readonly NexusModsBackend _nexusBackend;
     private readonly ILogger<TrackingValidatorService>? _logger;
 
     [GeneratedRegex(@"/mods/(\d+)", RegexOptions.Compiled)]
     private static partial Regex ModIdRegex();
 
-    public TrackingValidatorService(AppSettings settings, NexusModsService nexusService, ILogger<TrackingValidatorService>? logger = null)
+    public TrackingValidatorService(AppSettings settings, NexusModsBackend nexusBackend, ILogger<TrackingValidatorService>? logger = null)
     {
         _settings = settings;
-        _nexusService = nexusService;
+        _nexusBackend = nexusBackend;
         _logger = logger;
     }
 
@@ -36,9 +32,9 @@ public partial class TrackingValidatorService
     {
         var result = new ValidationResult { GameDomain = gameDomain };
 
-        // Get mods from API
-        var apiMods = await _nexusService.GetTrackedModsForDomainAsync(gameDomain, ct);
-        result.ApiMods = apiMods.ToHashSet();
+        // Get mods from API via backend
+        var userMods = await _nexusBackend.GetUserModsAsync(gameDomain, ct);
+        result.ApiMods = userMods.Select(m => int.Parse(m.ModId)).ToHashSet();
 
         // Get mods from web (would require web scraping with cookies)
         // For now, return API-only results
@@ -89,7 +85,7 @@ public partial class TrackingValidatorService
     /// </summary>
     public async Task<bool> IsModTrackedWithWarningAsync(string gameDomain, int modId, CancellationToken ct = default)
     {
-        var isTracked = await _nexusService.IsModTrackedAsync(gameDomain, modId, ct);
+        var isTracked = await _nexusBackend.IsModTrackedAsync(gameDomain, modId, ct);
         if (!isTracked)
         {
             _logger?.LogWarning("Mod {ModId} is NOT in tracked list. Skipping.", modId);
