@@ -280,7 +280,7 @@ public class DiagnosticService
             DisplayName = p.Manifest.DisplayName,
             Version = p.Manifest.Version,
             Author = p.Manifest.Author,
-            AssemblyPath = p.Assembly.Location,
+            AssemblyPath = AppContext.BaseDirectory,
             InstallerCount = p.Installers.Count,
             EnricherCount = p.Enrichers.Count,
             UiExtensionCount = p.UiExtensions.Count
