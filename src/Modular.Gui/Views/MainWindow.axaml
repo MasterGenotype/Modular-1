@@ -88,7 +88,7 @@
             <Border Grid.Column="1" Padding="20">
                 <Grid>
                     <!-- Configuration Warning -->
-                    <Border IsVisible="{Binding !IsConfigured}"
+                    <Border IsVisible="{Binding ShowConfigurationWarning}"
                             Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                             CornerRadius="8" Padding="20" VerticalAlignment="Top">
                         <StackPanel Spacing="10">
@@ -103,7 +103,7 @@
                     </Border>
 
                     <!-- Page Content -->
-                    <DockPanel IsVisible="{Binding IsConfigured}">
+                    <DockPanel IsVisible="{Binding ShowPageContent}">
                         <TextBlock DockPanel.Dock="Top" Text="{Binding SelectedPage}" FontSize="28" FontWeight="Bold" Margin="0,0,0,20"/>
 
                         <!-- Content based on CurrentViewModel -->
@@ -129,12 +129,12 @@
                     </DockPanel>
 
                     <!-- Placeholder for pages without ViewModels yet -->
-                    <Border IsVisible="{Binding IsConfigured}"
+                    <Border IsVisible="{Binding ShowPageContent}"
                             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                             CornerRadius="8" Padding="40" MinHeight="400">
                         <Border.IsVisible>
                             <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                <Binding Path="IsConfigured"/>
+                                <Binding Path="ShowPageContent"/>
                                 <Binding Path="CurrentViewModel" Converter="{x:Static ObjectConverters.IsNull}"/>
                             </MultiBinding>
                         </Border.IsVisible>

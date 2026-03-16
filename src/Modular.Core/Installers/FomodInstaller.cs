@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Utilities;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -155,9 +156,8 @@ public class FomodInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var destPath = Path.Combine(
-                    Path.GetDirectoryName(plan.SourcePath) ?? string.Empty,
-                    entry.Name);
+                var targetDir = Path.GetDirectoryName(plan.SourcePath) ?? string.Empty;
+                var destPath = PathSanitizer.SanitizeEntryPath(entry.Name, targetDir);
 
                 var destDir = Path.GetDirectoryName(destPath);
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))

@@ -33,6 +33,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _configurationError = string.Empty;
 
     [ObservableProperty]
+    private bool _showConfigurationWarning;
+
+    [ObservableProperty]
+    private bool _showPageContent;
+
+    [ObservableProperty]
     private ViewModelBase? _currentViewModel;
 
     // Child ViewModels
@@ -52,6 +58,7 @@ public partial class MainWindowViewModel : ViewModelBase
         LibraryViewModel = new LibraryViewModel();
         CurrentViewModel = ModListViewModel;
         CheckConfiguration();
+        UpdateVisibility();
     }
 
     // DI constructor
@@ -79,6 +86,7 @@ public partial class MainWindowViewModel : ViewModelBase
         CurrentViewModel = ModListViewModel;
 
         CheckConfiguration();
+        UpdateVisibility();
         UpdateRateLimitInfo();
 
         // Set up timer to update rate limit info periodically
@@ -91,6 +99,16 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(UpdateRateLimitInfo);
     }
+
+    private void UpdateVisibility()
+    {
+        var isSettings = SelectedPage == "Settings";
+        ShowConfigurationWarning = !IsConfigured && !isSettings;
+        ShowPageContent = IsConfigured || isSettings;
+    }
+
+    partial void OnIsConfiguredChanged(bool value) => UpdateVisibility();
+    partial void OnSelectedPageChanged(string value) => UpdateVisibility();
 
     private void CheckConfiguration()
     {

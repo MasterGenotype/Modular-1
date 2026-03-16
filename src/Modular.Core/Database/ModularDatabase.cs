@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -196,16 +196,135 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 
     private static async Task MigrateSchemaAsync(SqliteConnection connection, int fromVersion)
     {
-        // Migration logic for future schema versions
-        // Example:
-        // if (fromVersion < 2)
-        // {
-        //     await using var cmd = connection.CreateCommand();
-        //     cmd.CommandText = "ALTER TABLE downloads ADD COLUMN new_column TEXT;";
-        //     await cmd.ExecuteNonQueryAsync();
-        // }
+        await using var transaction = await connection.BeginTransactionAsync();
 
-        await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
+        try
+        {
+            if (fromVersion < 2)
+            {
+                await MigrateToV2Async(connection, (SqliteTransaction)transaction);
+            }
+
+            await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task MigrateToV2Async(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        // Game detection tables
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS detected_games (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    steam_appid INTEGER NOT NULL,
+                    display_name TEXT,
+                    install_path TEXT NOT NULL,
+                    library_root TEXT NOT NULL,
+                    size_bytes INTEGER,
+                    first_seen_utc TEXT NOT NULL,
+                    last_seen_utc TEXT NOT NULL,
+                    UNIQUE(steam_appid, library_root)
+                );
+                CREATE INDEX IF NOT EXISTS idx_detected_games_appid ON detected_games(steam_appid);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS engine_detection (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    steam_appid INTEGER NOT NULL,
+                    library_root TEXT NOT NULL,
+                    engine_family TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    evidence_json TEXT,
+                    detector_name TEXT NOT NULL,
+                    detected_at_utc TEXT NOT NULL,
+                    UNIQUE(steam_appid, library_root)
+                );
+                CREATE INDEX IF NOT EXISTS idx_engine_detection_appid ON engine_detection(steam_appid);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Archive management tables
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS archive (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    mtime TEXT,
+                    sha256 TEXT,
+                    format TEXT,
+                    entry_count INTEGER NOT NULL DEFAULT 0,
+                    scanned_at_utc TEXT NOT NULL,
+                    UNIQUE(path)
+                );
+                CREATE TABLE IF NOT EXISTS archive_entry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    archive_id INTEGER NOT NULL REFERENCES archive(id) ON DELETE CASCADE,
+                    inner_path TEXT NOT NULL,
+                    entry_type TEXT NOT NULL DEFAULT 'file',
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    compressed_bytes INTEGER NOT NULL DEFAULT 0,
+                    crc32 INTEGER,
+                    sha256 TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_archive_entry_archive ON archive_entry(archive_id);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Blob store table
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS blob (
+                    sha256 TEXT PRIMARY KEY NOT NULL,
+                    storage_path TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    ref_count INTEGER NOT NULL DEFAULT 1,
+                    created_at_utc TEXT NOT NULL
+                );
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Changeset tracking table
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS changeset (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    changeset_id TEXT NOT NULL UNIQUE,
+                    state TEXT NOT NULL DEFAULT 'planned',
+                    mod_id TEXT,
+                    archive_path TEXT,
+                    target_directory TEXT,
+                    operations_json TEXT,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_changeset_state ON changeset(state);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()

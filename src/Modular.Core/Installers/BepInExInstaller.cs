@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Utilities;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -173,9 +174,8 @@ public class BepInExInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var destPath = Path.Combine(
-                    Path.GetDirectoryName(plan.SourcePath) ?? string.Empty,
-                    operation.DestinationPath);
+                var targetDir = Path.GetDirectoryName(plan.SourcePath) ?? string.Empty;
+                var destPath = PathSanitizer.SanitizeEntryPath(operation.DestinationPath, targetDir);
 
                 // Create directory
                 var destDir = Path.GetDirectoryName(destPath);

@@ -94,6 +94,17 @@ public class InstallContext
     public bool CreateBackups { get; set; } = true;
 
     /// <summary>
+    /// Optional staging directory for two-phase installation.
+    /// When set, installers should extract to this directory first, then commit.
+    /// </summary>
+    public string? StagingDirectory { get; set; }
+
+    /// <summary>
+    /// Conflict resolution policy for overlapping files.
+    /// </summary>
+    public ConflictPolicy ConflictPolicy { get; set; } = ConflictPolicy.FailOnConflict;
+
+    /// <summary>
     /// Additional metadata.
     /// </summary>
     public Dictionary<string, object> Metadata { get; set; } = new();
@@ -141,6 +152,11 @@ public class InstallPlan
 public class FileOperation
 {
     /// <summary>
+    /// Unique identifier for this operation within a plan.
+    /// </summary>
+    public string OperationId { get; set; } = Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>
     /// Type of operation.
     /// </summary>
     public FileOperationType Type { get; set; }
@@ -164,6 +180,11 @@ public class FileOperation
     /// Whether this is a critical file.
     /// </summary>
     public bool IsCritical { get; set; }
+
+    /// <summary>
+    /// IDs of operations that must complete before this one (dependency edges).
+    /// </summary>
+    public List<string> DependsOn { get; set; } = new();
 }
 
 /// <summary>
@@ -187,7 +208,31 @@ public enum FileOperationType
     Merge,
 
     /// <summary>Create symbolic link.</summary>
-    Symlink
+    Symlink,
+
+    /// <summary>Delete a file or directory.</summary>
+    Delete,
+
+    /// <summary>Set file metadata (timestamps, permissions).</summary>
+    SetMetadata,
+
+    /// <summary>Verify file integrity.</summary>
+    Verify
+}
+
+/// <summary>
+/// Policy for handling file conflicts during installation.
+/// </summary>
+public enum ConflictPolicy
+{
+    /// <summary>Fail immediately when a conflict is detected.</summary>
+    FailOnConflict,
+
+    /// <summary>Last writer wins — overwrite existing files using deterministic ordering.</summary>
+    LastWriterWins,
+
+    /// <summary>Prompt the user for each conflict.</summary>
+    AskUser
 }
 
 /// <summary>

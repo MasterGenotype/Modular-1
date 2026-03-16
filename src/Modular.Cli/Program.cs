@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Modular.Cli.Commands;
 using Modular.Cli.Commands.Diagnostics;
+using Modular.Cli.Commands.GameDetection;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
 using Modular.Cli.Commands.Telemetry;
@@ -104,6 +105,18 @@ class Program
                     .WithDescription("Remove an installed plugin")
                     .WithExample("plugins", "remove", "my-plugin");
             });
+
+            // Game detection commands
+            config.AddCommand<DetectGamesCommand>("detect-games")
+                .WithDescription("Scan for installed Steam games")
+                .WithExample("detect-games")
+                .WithExample("detect-games", "--engines")
+                .WithExample("detect-games", "--engines", "--verbose");
+
+            config.AddCommand<DetectEngineCommand>("detect-engine")
+                .WithDescription("Detect game engine for a specific game")
+                .WithExample("detect-engine", "730")
+                .WithExample("detect-engine", "/path/to/game", "--all");
 
             // Telemetry command group
             config.AddBranch("telemetry", telemetry =>
