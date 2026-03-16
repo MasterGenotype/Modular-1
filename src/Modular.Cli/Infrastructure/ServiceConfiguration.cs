@@ -82,6 +82,7 @@ public sealed class RuntimeServices : IDisposable
     public required ModMetadataCache MetadataCache { get; init; }
     public required ConfigurationService ConfigService { get; init; }
     public ILoggerFactory? LoggerFactory { get; init; }
+    public TelemetryService Telemetry { get; init; } = null!;
 
     /// <summary>
     /// Initializes runtime services without requiring NexusMods API key.
@@ -103,6 +104,11 @@ public sealed class RuntimeServices : IDisposable
         var metadataCache = new ModMetadataCache(settings.MetadataCachePath);
         await metadataCache.LoadAsync();
 
+        var telemetry = new TelemetryService(
+            settings.TelemetryPath,
+            new TelemetryConfig { Enabled = settings.TelemetryEnabled },
+            loggerFactory?.CreateLogger<TelemetryService>());
+
         return new RuntimeServices
         {
             Settings = settings,
@@ -110,7 +116,8 @@ public sealed class RuntimeServices : IDisposable
             Database = database,
             MetadataCache = metadataCache,
             ConfigService = configService,
-            LoggerFactory = loggerFactory
+            LoggerFactory = loggerFactory,
+            Telemetry = telemetry
         };
     }
 
@@ -152,6 +159,11 @@ public sealed class RuntimeServices : IDisposable
         var metadataCache = new ModMetadataCache(settings.MetadataCachePath);
         await metadataCache.LoadAsync();
 
+        var telemetry = new TelemetryService(
+            settings.TelemetryPath,
+            new TelemetryConfig { Enabled = settings.TelemetryEnabled },
+            loggerFactory?.CreateLogger<TelemetryService>());
+
         return new RuntimeServices
         {
             Settings = settings,
@@ -159,7 +171,8 @@ public sealed class RuntimeServices : IDisposable
             Database = database,
             MetadataCache = metadataCache,
             ConfigService = configService,
-            LoggerFactory = loggerFactory
+            LoggerFactory = loggerFactory,
+            Telemetry = telemetry
         };
     }
 

@@ -1,9 +1,6 @@
 using System.ComponentModel;
-using Microsoft.Extensions.Logging;
 using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
-using Modular.Core.Configuration;
-using Modular.Core.Telemetry;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands.Telemetry;
@@ -25,23 +22,14 @@ public sealed class TelemetrySummaryCommand : AsyncCommand<TelemetrySummaryComma
     {
         try
         {
-            var configService = new ConfigurationService();
-            var appSettings = await configService.LoadAsync();
-
-            var telemetryPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".config", "Modular", "telemetry");
-
-            using var loggerFactory = ServiceConfiguration.CreateLoggerFactory(appSettings.Verbose);
-            var telemetryService = new TelemetryService(telemetryPath,
-                new TelemetryConfig { Enabled = appSettings.TelemetryEnabled },
-                loggerFactory.CreateLogger<TelemetryService>());
+            using var services = await RuntimeServices.InitializeMinimalAsync();
 
             var startDate = DateTime.UtcNow.AddDays(-settings.Days);
-            var summary = telemetryService.GetSummary(startDate, DateTime.UtcNow);
+            var summary = services.Telemetry.GetSummary(startDate, DateTime.UtcNow);
 
             Console.WriteLine($"Telemetry Summary (last {settings.Days} days)");
             Console.WriteLine("================================");
+            Console.WriteLine($"Telemetry enabled: {services.Settings.TelemetryEnabled}");
             Console.WriteLine($"Total events: {summary.TotalEvents}");
             Console.WriteLine($"Downloads: {summary.TotalDownloads}");
             Console.WriteLine($"Bytes downloaded: {summary.TotalBytesDownloaded:N0}");

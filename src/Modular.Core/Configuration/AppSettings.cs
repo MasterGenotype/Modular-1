@@ -138,4 +138,12 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("telemetry_enabled")]
     public bool TelemetryEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Path to the telemetry data directory.
+    /// </summary>
+    [JsonPropertyName("telemetry_path")]
+    public string TelemetryPath { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".config", "Modular", "telemetry");
 }

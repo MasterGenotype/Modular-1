@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using System.Text.Json;
+using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
 using Spectre.Console.Cli;
 
@@ -15,39 +15,31 @@ public sealed class TelemetryExportCommand : AsyncCommand<TelemetryExportCommand
         [CommandOption("--output")]
         [Description("Output file path")]
         public string? OutputPath { get; init; }
+
+        [CommandOption("--days")]
+        [Description("Number of days to export")]
+        [DefaultValue(30)]
+        public int Days { get; init; } = 30;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         try
         {
-            var telemetryPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".config", "Modular", "telemetry");
+            using var services = await RuntimeServices.InitializeMinimalAsync();
 
-            var outputPath = settings.OutputPath ?? Path.Combine(Environment.CurrentDirectory, $"telemetry-export-{DateTime.Now:yyyyMMdd}.json");
+            var outputPath = settings.OutputPath
+                ?? Path.Combine(Environment.CurrentDirectory, $"telemetry-export-{DateTime.Now:yyyyMMdd}.json");
 
-            if (!Directory.Exists(telemetryPath))
-            {
-                LiveProgressDisplay.ShowInfo("No telemetry data to export");
-                return 0;
-            }
+            var startDate = DateTime.UtcNow.AddDays(-settings.Days);
+            var success = await services.Telemetry.ExportDataAsync(outputPath, startDate, DateTime.UtcNow);
 
-            // Export all telemetry files
-            var allData = new List<object>();
-            foreach (var file in Directory.GetFiles(telemetryPath, "*.json"))
-            {
-                var json = await File.ReadAllTextAsync(file);
-                var data = JsonSerializer.Deserialize<object>(json);
-                if (data != null)
-                    allData.Add(data);
-            }
+            if (success)
+                LiveProgressDisplay.ShowSuccess($"Exported telemetry to: {outputPath}");
+            else
+                LiveProgressDisplay.ShowError("Export failed");
 
-            var exportJson = JsonSerializer.Serialize(allData, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(outputPath, exportJson);
-
-            LiveProgressDisplay.ShowSuccess($"Exported telemetry to: {outputPath}");
-            return 0;
+            return success ? 0 : 1;
         }
         catch (Exception ex)
         {
