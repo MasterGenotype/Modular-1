@@ -38,6 +38,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _showPageContent;
 
+    private bool _warningDismissed;
+
     [ObservableProperty]
     private ViewModelBase? _currentViewModel;
 
@@ -103,8 +105,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private void UpdateVisibility()
     {
         var isSettings = SelectedPage == "Settings";
-        ShowConfigurationWarning = !IsConfigured && !isSettings;
-        ShowPageContent = IsConfigured || isSettings;
+        ShowConfigurationWarning = !IsConfigured && !isSettings && !_warningDismissed;
+        ShowPageContent = IsConfigured || isSettings || _warningDismissed;
     }
 
     partial void OnIsConfiguredChanged(bool value) => UpdateVisibility();
@@ -164,6 +166,13 @@ public partial class MainWindowViewModel : ViewModelBase
             "Settings" => SettingsViewModel,
             _ => ModListViewModel
         };
+    }
+
+    [RelayCommand]
+    private void DismissWarning()
+    {
+        _warningDismissed = true;
+        UpdateVisibility();
     }
 
     [RelayCommand]

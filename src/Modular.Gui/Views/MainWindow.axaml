@@ -92,13 +92,22 @@
                             Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                             CornerRadius="8" Padding="20" VerticalAlignment="Top">
                         <StackPanel Spacing="10">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="AlertCircle" Width="24" Height="24" Foreground="Orange"/>
-                                <TextBlock Text="Configuration Required" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
-                            </StackPanel>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                                    <mi:MaterialIcon Kind="AlertCircle" Width="24" Height="24" Foreground="Orange"/>
+                                    <TextBlock Text="Configuration Required" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Command="{Binding DismissWarningCommand}"
+                                        Background="Transparent" BorderThickness="0" Padding="4" Cursor="Hand"
+                                        ToolTip.Tip="Dismiss">
+                                    <mi:MaterialIcon Kind="Close" Width="18" Height="18"/>
+                                </Button>
+                            </Grid>
                             <TextBlock Text="{Binding ConfigurationError}" TextWrapping="Wrap"/>
-                            <Button Content="Open Settings" Command="{Binding NavigateToCommand}" CommandParameter="Settings"
-                                    HorizontalAlignment="Left"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="Open Settings" Command="{Binding NavigateToCommand}" CommandParameter="Settings"/>
+                                <Button Content="Dismiss" Command="{Binding DismissWarningCommand}"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
