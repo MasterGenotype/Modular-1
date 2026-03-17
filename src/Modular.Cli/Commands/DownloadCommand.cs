@@ -142,7 +142,20 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 }
 
                 LiveProgressDisplay.ShowInfo($"Downloading from {backend.DisplayName}...");
-                await RunBackendDownloadAsync(backend, services, gameDomain, options, cts.Token);
+                var downloadStart = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await RunBackendDownloadAsync(backend, services, gameDomain, options, cts.Token);
+                    downloadStart.Stop();
+                    services.Telemetry.RecordDownload(backend.Id, 0, downloadStart.Elapsed, true);
+                }
+                catch (Exception ex)
+                {
+                    downloadStart.Stop();
+                    services.Telemetry.RecordDownload(backend.Id, 0, downloadStart.Elapsed, false);
+                    LiveProgressDisplay.ShowError($"Download from {backend.DisplayName} failed: {ex.Message}");
+                    continue;
+                }
 
                 // Auto-rename for NexusMods if enabled
                 if (backend.Id == "nexusmods" && services.Settings.AutoRename && !settings.DryRun && !string.IsNullOrEmpty(gameDomain))

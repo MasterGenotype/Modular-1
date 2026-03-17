@@ -6,6 +6,7 @@ using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Dependencies;
 using Modular.Core.Diagnostics;
 using Modular.Core.Plugins;
 using Modular.Core.Profiles;
@@ -81,6 +82,7 @@ public sealed class RuntimeServices : IDisposable
     public required ModMetadataCache MetadataCache { get; init; }
     public required ConfigurationService ConfigService { get; init; }
     public ILoggerFactory? LoggerFactory { get; init; }
+    public TelemetryService Telemetry { get; init; } = null!;
 
     /// <summary>
     /// Initializes runtime services without requiring NexusMods API key.
@@ -102,6 +104,11 @@ public sealed class RuntimeServices : IDisposable
         var metadataCache = new ModMetadataCache(settings.MetadataCachePath);
         await metadataCache.LoadAsync();
 
+        var telemetry = new TelemetryService(
+            settings.TelemetryPath,
+            new TelemetryConfig { Enabled = settings.TelemetryEnabled },
+            loggerFactory?.CreateLogger<TelemetryService>());
+
         return new RuntimeServices
         {
             Settings = settings,
@@ -109,7 +116,8 @@ public sealed class RuntimeServices : IDisposable
             Database = database,
             MetadataCache = metadataCache,
             ConfigService = configService,
-            LoggerFactory = loggerFactory
+            LoggerFactory = loggerFactory,
+            Telemetry = telemetry
         };
     }
 
@@ -151,6 +159,11 @@ public sealed class RuntimeServices : IDisposable
         var metadataCache = new ModMetadataCache(settings.MetadataCachePath);
         await metadataCache.LoadAsync();
 
+        var telemetry = new TelemetryService(
+            settings.TelemetryPath,
+            new TelemetryConfig { Enabled = settings.TelemetryEnabled },
+            loggerFactory?.CreateLogger<TelemetryService>());
+
         return new RuntimeServices
         {
             Settings = settings,
@@ -158,7 +171,8 @@ public sealed class RuntimeServices : IDisposable
             Database = database,
             MetadataCache = metadataCache,
             ConfigService = configService,
-            LoggerFactory = loggerFactory
+            LoggerFactory = loggerFactory,
+            Telemetry = telemetry
         };
     }
 
@@ -196,6 +210,42 @@ public sealed class RuntimeServices : IDisposable
         }
 
         return registry;
+    }
+
+    /// <summary>
+    /// Creates an aggregate version provider with all enabled backend providers.
+    /// </summary>
+    public AggregateVersionProvider CreateVersionProvider(string defaultGameDomain = "")
+    {
+        var provider = new AggregateVersionProvider(LoggerFactory?.CreateLogger<AggregateVersionProvider>());
+
+        if (Settings.EnabledBackends.Contains("nexusmods", StringComparer.OrdinalIgnoreCase))
+        {
+            var nexusBackend = new NexusModsBackend(
+                Settings,
+                RateLimiter,
+                Database,
+                MetadataCache,
+                LoggerFactory?.CreateLogger<NexusModsBackend>());
+
+            provider.Register("nexusmods", new NexusModsVersionProvider(
+                nexusBackend,
+                defaultGameDomain,
+                LoggerFactory?.CreateLogger<NexusModsVersionProvider>()));
+        }
+
+        if (Settings.EnabledBackends.Contains("gamebanana", StringComparer.OrdinalIgnoreCase))
+        {
+            var gbBackend = new GameBananaBackend(
+                Settings,
+                LoggerFactory?.CreateLogger<GameBananaBackend>());
+
+            provider.Register("gamebanana", new GameBananaVersionProvider(
+                gbBackend,
+                LoggerFactory?.CreateLogger<GameBananaVersionProvider>()));
+        }
+
+        return provider;
     }
 
     public void Dispose()

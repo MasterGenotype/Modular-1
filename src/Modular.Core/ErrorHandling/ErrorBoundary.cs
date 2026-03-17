@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Telemetry;
 
 namespace Modular.Core.ErrorHandling;
 
@@ -9,11 +10,16 @@ public class ErrorBoundary
 {
     private readonly ILogger? _logger;
     private readonly ErrorBoundaryPolicy _policy;
+    private readonly TelemetryService? _telemetry;
 
-    public ErrorBoundary(ErrorBoundaryPolicy policy, ILogger? logger = null)
+    public ErrorBoundary(
+        ErrorBoundaryPolicy policy,
+        ILogger? logger = null,
+        TelemetryService? telemetry = null)
     {
         _policy = policy;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <summary>
@@ -195,12 +201,14 @@ public class ErrorBoundary
         {
             case ErrorSeverity.Critical:
                 _logger?.LogCritical(ex, "Critical error in {Operation}", operationName);
+                _telemetry?.RecordPluginCrash(operationName, ex);
                 if (_policy.ThrowOnCriticalError)
                     throw new ErrorBoundaryException($"Critical error in {operationName}", ex);
                 break;
 
             case ErrorSeverity.Error:
                 _logger?.LogError(ex, "Error in {Operation}", operationName);
+                _telemetry?.RecordPluginCrash(operationName, ex);
                 break;
 
             case ErrorSeverity.Warning:

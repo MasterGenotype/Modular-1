@@ -131,10 +131,29 @@ public class VersionRange
             return true;
         }
 
-        // Wildcard: 1.x, 1.2.x, * (not implemented yet - treat as any)
-        if (constraint == "*" || constraint.Contains('x') || constraint.Contains('X'))
+        // Wildcard: *, 1.x, 1.2.x, 1.X, 1.2.X, 1.*, 1.2.*
+        if (constraint == "*")
         {
             result = new VersionConstraint(ConstraintType.Any, null);
+            return true;
+        }
+
+        var wildcardMatch = Regex.Match(constraint, @"^(\d+)\.[xX*](?:\.[xX*])?$");
+        if (wildcardMatch.Success)
+        {
+            // 1.x or 1.* → >=1.0.0 <2.0.0
+            var major = int.Parse(wildcardMatch.Groups[1].Value);
+            result = new VersionConstraint(ConstraintType.WildcardMinor, new SemanticVersion(major, 0, 0));
+            return true;
+        }
+
+        wildcardMatch = Regex.Match(constraint, @"^(\d+)\.(\d+)\.[xX*]$");
+        if (wildcardMatch.Success)
+        {
+            // 1.2.x or 1.2.* → >=1.2.0 <1.3.0
+            var major = int.Parse(wildcardMatch.Groups[1].Value);
+            var minor = int.Parse(wildcardMatch.Groups[2].Value);
+            result = new VersionConstraint(ConstraintType.WildcardPatch, new SemanticVersion(major, minor, 0));
             return true;
         }
 
@@ -189,6 +208,8 @@ internal class VersionConstraint
             ConstraintType.LessThanOrEqual => version <= Version!,
             ConstraintType.Tilde => IsSatisfiedByTilde(version),
             ConstraintType.Caret => IsSatisfiedByCaret(version),
+            ConstraintType.WildcardMinor => IsSatisfiedByWildcardMinor(version),
+            ConstraintType.WildcardPatch => IsSatisfiedByWildcardPatch(version),
             ConstraintType.Any => true,
             _ => false
         };
@@ -234,6 +255,25 @@ internal class VersionConstraint
         }
     }
 
+    private bool IsSatisfiedByWildcardMinor(SemanticVersion version)
+    {
+        // 1.x := >=1.0.0 <2.0.0
+        if (Version is null) return false;
+
+        if (version.Major != Version.Major) return false;
+        return version >= Version;
+    }
+
+    private bool IsSatisfiedByWildcardPatch(SemanticVersion version)
+    {
+        // 1.2.x := >=1.2.0 <1.3.0
+        if (Version is null) return false;
+
+        if (version.Major != Version.Major) return false;
+        if (version.Minor != Version.Minor) return false;
+        return version >= Version;
+    }
+
     public override string ToString()
     {
         return Type switch
@@ -245,6 +285,8 @@ internal class VersionConstraint
             ConstraintType.LessThanOrEqual => $"<={Version}",
             ConstraintType.Tilde => $"~{Version}",
             ConstraintType.Caret => $"^{Version}",
+            ConstraintType.WildcardMinor => $"{Version!.Major}.x",
+            ConstraintType.WildcardPatch => $"{Version!.Major}.{Version.Minor}.x",
             ConstraintType.Any => "*",
             _ => ""
         };
@@ -260,5 +302,7 @@ internal enum ConstraintType
     LessThanOrEqual,
     Tilde,
     Caret,
+    WildcardMinor,
+    WildcardPatch,
     Any
 }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Telemetry;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -10,10 +11,14 @@ public class InstallerManager
 {
     private readonly List<IModInstaller> _installers;
     private readonly ILogger<InstallerManager>? _logger;
+    private readonly TelemetryService? _telemetry;
 
-    public InstallerManager(ILogger<InstallerManager>? logger = null)
+    public InstallerManager(
+        ILogger<InstallerManager>? logger = null,
+        TelemetryService? telemetry = null)
     {
         _logger = logger;
+        _telemetry = telemetry;
         _installers = new List<IModInstaller>();
 
         // Register built-in installers (they'll create their own loggers)
@@ -146,7 +151,13 @@ public class InstallerManager
             "Executing installation with {InstallerId}: {FileCount} files, {Size:N0} bytes",
             installer.InstallerId, plan.Operations.Count, plan.TotalBytes);
 
-        return await installer.InstallAsync(plan, progress, ct);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await installer.InstallAsync(plan, progress, ct);
+        stopwatch.Stop();
+
+        _telemetry?.RecordInstallerResult(installer.InstallerId, result.Success, stopwatch.Elapsed);
+
+        return result;
     }
 
     /// <summary>
@@ -173,7 +184,13 @@ public class InstallerManager
         var plan = await selection.Installer.AnalyzeAsync(archivePath, context, ct);
 
         // Execute
-        return await selection.Installer.InstallAsync(plan, progress, ct);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await selection.Installer.InstallAsync(plan, progress, ct);
+        stopwatch.Stop();
+
+        _telemetry?.RecordInstallerResult(selection.Installer.InstallerId, result.Success, stopwatch.Elapsed);
+
+        return result;
     }
 
     /// <summary>

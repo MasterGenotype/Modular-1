@@ -1,5 +1,5 @@
+using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
-using Modular.Core.Telemetry;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands.Telemetry;
@@ -9,7 +9,7 @@ namespace Modular.Cli.Commands.Telemetry;
 /// </summary>
 public sealed class TelemetryClearCommand : AsyncCommand
 {
-    public override Task<int> ExecuteAsync(CommandContext context)
+    public override async Task<int> ExecuteAsync(CommandContext context)
     {
         try
         {
@@ -18,23 +18,19 @@ public sealed class TelemetryClearCommand : AsyncCommand
             if (response?.ToLowerInvariant() != "y")
             {
                 LiveProgressDisplay.ShowInfo("Cancelled");
-                return Task.FromResult(0);
+                return 0;
             }
 
-            var telemetryPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".config", "Modular", "telemetry");
-
-            var telemetryService = new TelemetryService(telemetryPath);
-            telemetryService.ClearData();
+            using var services = await RuntimeServices.InitializeMinimalAsync();
+            services.Telemetry.ClearData();
 
             LiveProgressDisplay.ShowSuccess("Telemetry data cleared");
-            return Task.FromResult(0);
+            return 0;
         }
         catch (Exception ex)
         {
             LiveProgressDisplay.ShowError($"Failed to clear telemetry: {ex.Message}");
-            return Task.FromResult(1);
+            return 1;
         }
     }
 }
