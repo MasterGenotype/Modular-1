@@ -106,6 +106,23 @@ class Program
                     .WithExample("plugins", "remove", "my-plugin");
             });
 
+            // Mod installation commands
+            config.AddCommand<InstallCommand>("install")
+                .WithDescription("Install a mod archive to a game directory")
+                .WithExample("install", "mod.zip", "--game", "730")
+                .WithExample("install", "mod.zip", "--game", "Counter-Strike")
+                .WithExample("install", "mod.zip", "--game", "/path/to/game", "--dry-run")
+                .WithExample("install", "mod.zip", "--game", "730", "--force");
+
+            config.AddCommand<UninstallCommand>("uninstall")
+                .WithDescription("Uninstall a previously installed mod by changeset ID")
+                .WithExample("uninstall", "a1b2c3d4e5f6");
+
+            config.AddCommand<ListInstalledCommand>("installed")
+                .WithDescription("List installed mods")
+                .WithExample("installed")
+                .WithExample("installed", "--game", "730");
+
             // Game detection commands
             config.AddCommand<DetectGamesCommand>("detect-games")
                 .WithDescription("Scan for installed Steam games")
