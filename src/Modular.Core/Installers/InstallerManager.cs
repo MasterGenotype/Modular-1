@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Installers.Steam;
 using Modular.Core.Telemetry;
 using Modular.Sdk.Installers;
 
@@ -25,6 +26,7 @@ public class InstallerManager
         RegisterInstaller(new LooseFileInstaller());
         RegisterInstaller(new FomodInstaller());
         RegisterInstaller(new BepInExInstaller());
+        RegisterInstaller(new SteamModInstaller());
     }
 
     /// <summary>

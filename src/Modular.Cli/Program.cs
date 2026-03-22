@@ -118,6 +118,13 @@ class Program
                 .WithExample("detect-engine", "730")
                 .WithExample("detect-engine", "/path/to/game", "--all");
 
+            // Steam mod installer command
+            config.AddCommand<SteamInstallCommand>("steam-install")
+                .WithDescription("Install Steam game mods with dependency resolution")
+                .WithExample("steam-install", "/path/to/game", "--manifest", "mods.json")
+                .WithExample("steam-install", "/path/to/game", "--archive", "mod.zip")
+                .WithExample("steam-install", "/path/to/game", "--manifest", "mods.json", "--dry-run");
+
             // Telemetry command group
             config.AddBranch("telemetry", telemetry =>
             {
