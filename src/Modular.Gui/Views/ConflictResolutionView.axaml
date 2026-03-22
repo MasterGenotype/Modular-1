@@ -1,0 +1,119 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.ConflictResolutionView"
+             x:DataType="vm:ConflictResolutionViewModel">
+
+    <Design.DataContext>
+        <vm:ConflictResolutionViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="File Conflict Detection" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Command="{Binding ScanConflictsCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    <TextBlock Text="Scan for Conflicts"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Summary Bar -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <StackPanel Orientation="Horizontal" Spacing="30">
+                <StackPanel>
+                    <TextBlock Text="Overwrites" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding OverwriteCount}" FontSize="20" FontWeight="Bold" Foreground="OrangeRed"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="Identical" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding IdenticalCount}" FontSize="20" FontWeight="Bold" Foreground="Green"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="Merge Candidates" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding MergeCandidateCount}" FontSize="20" FontWeight="Bold" Foreground="DodgerBlue"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Conflicts List + Details -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,300">
+            <!-- Conflicts List -->
+            <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10" Margin="0,0,10,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Detected Conflicts" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <ListBox ItemsSource="{Binding Conflicts}" SelectedItem="{Binding SelectedConflict}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ConflictItem">
+                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="5">
+                                    <Border Grid.Column="0" Padding="5,2" CornerRadius="3" Margin="0,0,10,0"
+                                            Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                                        <TextBlock Text="{Binding TypeLabel}" FontSize="10" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding GamePath}" FontFamily="Consolas" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding ConflictingMods}" FontSize="11" Opacity="0.6"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding Resolution}" FontSize="11"
+                                               Foreground="Green" VerticalAlignment="Center"
+                                               IsVisible="{Binding Resolution, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Resolution Panel -->
+            <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10"
+                    IsVisible="{Binding SelectedConflict, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Resolution" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding SelectedConflict.GamePath}" FontFamily="Consolas" FontSize="11"
+                               TextWrapping="Wrap"/>
+
+                    <TextBlock Text="Provided by:" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                    <ItemsControl ItemsSource="{Binding ConflictingProviders}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,3">
+                                    <mi:MaterialIcon Kind="Package" Width="14" Height="14" Opacity="0.5"/>
+                                    <TextBlock Text="{Binding}" FontSize="12"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Choose resolution:" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                    <StackPanel Spacing="5">
+                        <Button Command="{Binding SetResolutionCommand}" CommandParameter="Keep First"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                            <TextBlock Text="Keep First (earliest install wins)"/>
+                        </Button>
+                        <Button Command="{Binding SetResolutionCommand}" CommandParameter="Keep Last"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                            <TextBlock Text="Keep Last (latest install wins)"/>
+                        </Button>
+                        <Button Command="{Binding SetResolutionCommand}" CommandParameter="Skip"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                            <TextBlock Text="Skip (do not install conflicting file)"/>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

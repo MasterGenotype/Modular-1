@@ -71,6 +71,40 @@
                                 <TextBlock Text="Library" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+
+                        <Separator Margin="5,10" Opacity="0.3"/>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Installed"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="PackageVariantClosed" Width="20" Height="20"/>
+                                <TextBlock Text="Installed" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Dependencies"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="GraphOutline" Width="20" Height="20"/>
+                                <TextBlock Text="Dependencies" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Conflicts"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="AlertCircleOutline" Width="20" Height="20"/>
+                                <TextBlock Text="Conflicts" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Staging"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="FileEye" Width="20" Height="20"/>
+                                <TextBlock Text="Staging" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
 
                     <!-- Settings at Bottom -->
@@ -123,6 +157,18 @@
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:LibraryViewModel">
                                     <views:LibraryView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:InstalledModsViewModel">
+                                    <views:InstalledModsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:DependencyGraphViewModel">
+                                    <views:DependencyGraphView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:ConflictResolutionViewModel">
+                                    <views:ConflictResolutionView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:StagingPreviewViewModel">
+                                    <views:StagingPreviewView/>
                                 </DataTemplate>
                             </ContentControl.DataTemplates>
                         </ContentControl>

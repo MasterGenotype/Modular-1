@@ -37,6 +37,11 @@ public class ResolutionResult
     /// Resolution graph showing the full dependency tree.
     /// </summary>
     public DependencyGraph? Graph { get; set; }
+
+    /// <summary>
+    /// Optional dependencies that could not be satisfied (informational).
+    /// </summary>
+    public List<OptionalDependencyFailure> OptionalFailures { get; set; } = new();
 }
 
 /// <summary>

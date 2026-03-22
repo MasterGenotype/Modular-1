@@ -49,6 +49,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public SettingsViewModel? SettingsViewModel { get; }
     public GameBananaViewModel? GameBananaViewModel { get; }
     public LibraryViewModel? LibraryViewModel { get; }
+    public InstalledModsViewModel? InstalledModsViewModel { get; }
+    public DependencyGraphViewModel? DependencyGraphViewModel { get; }
+    public ConflictResolutionViewModel? ConflictResolutionViewModel { get; }
+    public StagingPreviewViewModel? StagingPreviewViewModel { get; }
 
     // Parameterless constructor for designer
     public MainWindowViewModel()
@@ -58,6 +62,10 @@ public partial class MainWindowViewModel : ViewModelBase
         SettingsViewModel = new SettingsViewModel();
         GameBananaViewModel = new GameBananaViewModel();
         LibraryViewModel = new LibraryViewModel();
+        InstalledModsViewModel = new InstalledModsViewModel();
+        DependencyGraphViewModel = new DependencyGraphViewModel();
+        ConflictResolutionViewModel = new ConflictResolutionViewModel();
+        StagingPreviewViewModel = new StagingPreviewViewModel();
         CurrentViewModel = ModListViewModel;
         CheckConfiguration();
         UpdateVisibility();
@@ -173,6 +181,10 @@ public partial class MainWindowViewModel : ViewModelBase
             "GameBanana" => GameBananaViewModel,
             "Downloads" => DownloadQueueViewModel,
             "Library" => LibraryViewModel,
+            "Installed" => InstalledModsViewModel,
+            "Dependencies" => DependencyGraphViewModel,
+            "Conflicts" => ConflictResolutionViewModel,
+            "Staging" => StagingPreviewViewModel,
             "Settings" => SettingsViewModel,
             _ => ModListViewModel
         };

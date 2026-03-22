@@ -1,0 +1,103 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.InstalledModsView"
+             x:DataType="vm:InstalledModsViewModel">
+
+    <Design.DataContext>
+        <vm:InstalledModsViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="Installed Mods" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Command="{Binding RefreshListCommand}" ToolTip.Tip="Refresh">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                        <TextBlock Text="Refresh"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Content - Two Column Layout -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,300">
+            <!-- Mods List -->
+            <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10" Margin="0,0,10,0">
+                <DockPanel>
+                    <ListBox ItemsSource="{Binding InstalledMods}"
+                             SelectedItem="{Binding SelectedMod}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:InstalledModItem">
+                                <Grid ColumnDefinitions="*,Auto" Margin="5">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding ModName}" FontWeight="SemiBold"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="15">
+                                            <TextBlock FontSize="11" Opacity="0.6">
+                                                <Run Text="v"/>
+                                                <Run Text="{Binding Version}"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="11" Opacity="0.6" Text="{Binding GameDomain}"/>
+                                            <TextBlock FontSize="11" Opacity="0.6">
+                                                <Run Text="{Binding FileCount}"/>
+                                                <Run Text=" files"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding InstalledAt}"
+                                               FontSize="11" Opacity="0.5" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Details Panel -->
+            <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="10">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Installed Files" FontWeight="SemiBold" Margin="0,0,0,10"/>
+
+                    <!-- Actions -->
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="5" Margin="0,10,0,0"
+                                IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Button Command="{Binding VerifySelectedCommand}" ToolTip.Tip="Verify files" Padding="8">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="CheckCircle" Width="14" Height="14"/>
+                                <TextBlock Text="Verify"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding UninstallSelectedCommand}" ToolTip.Tip="Uninstall mod" Padding="8">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                <TextBlock Text="Uninstall"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding SelectedModFiles}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <mi:MaterialIcon Kind="File" Width="14" Height="14" Opacity="0.5"/>
+                                    <TextBlock Text="{Binding}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

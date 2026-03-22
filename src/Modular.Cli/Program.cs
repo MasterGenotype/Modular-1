@@ -118,6 +118,38 @@ class Program
                 .WithExample("detect-engine", "730")
                 .WithExample("detect-engine", "/path/to/game", "--all");
 
+            // Mod installation commands
+            config.AddCommand<InstallCommand>("install")
+                .WithDescription("Install a mod archive into a game directory")
+                .WithExample("install", "./my-mod.zip", "/path/to/game")
+                .WithExample("install", "./my-mod.zip", "/path/to/game", "--mod-id", "my-mod", "--dry-run")
+                .WithExample("install", "./my-mod.7z", "/path/to/game", "--conflict-policy", "overwrite");
+
+            config.AddCommand<UninstallCommand>("uninstall")
+                .WithDescription("Uninstall a previously installed mod")
+                .WithExample("uninstall", "my-mod")
+                .WithExample("uninstall", "my-mod", "--dry-run");
+
+            config.AddCommand<ListInstalledCommand>("list-mods")
+                .WithDescription("List all installed mods")
+                .WithExample("list-mods")
+                .WithExample("list-mods", "--game-domain", "skyrimspecialedition");
+
+            config.AddCommand<CheckDependenciesCommand>("check-dependencies")
+                .WithDescription("Check and validate mod dependencies")
+                .WithExample("check-dependencies", "skyrimspecialedition", "--mod", "nexusmods:12345")
+                .WithExample("check-dependencies", "stardewvalley", "--mod", "nexusmods:100", "--include-optional");
+
+            config.AddCommand<VerifyCommand>("verify")
+                .WithDescription("Verify installed mod files exist on disk")
+                .WithExample("verify")
+                .WithExample("verify", "my-mod");
+
+            config.AddCommand<RollbackCommand>("rollback")
+                .WithDescription("Rollback installed mods and restore backups")
+                .WithExample("rollback", "--mod", "my-mod")
+                .WithExample("rollback", "--game-domain", "skyrimspecialedition", "--dry-run");
+
             // Steam mod installer command
             config.AddCommand<SteamInstallCommand>("steam-install")
                 .WithDescription("Install Steam game mods with dependency resolution")

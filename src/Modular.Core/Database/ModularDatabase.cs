@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -205,6 +205,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                 await MigrateToV2Async(connection, (SqliteTransaction)transaction);
             }
 
+            if (fromVersion < 3)
+            {
+                await MigrateToV3Async(connection, (SqliteTransaction)transaction);
+            }
+
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
         }
@@ -322,6 +327,34 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                     updated_at_utc TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_changeset_state ON changeset(state);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static async Task MigrateToV3Async(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        // Installed mods tracking table
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS installed_mods (
+                    mod_id TEXT PRIMARY KEY NOT NULL,
+                    mod_name TEXT,
+                    version TEXT,
+                    game_domain TEXT,
+                    target_directory TEXT NOT NULL,
+                    archive_path TEXT,
+                    installer_id TEXT,
+                    installed_files_json TEXT NOT NULL DEFAULT '[]',
+                    backup_files_json TEXT NOT NULL DEFAULT '{}',
+                    checksum TEXT,
+                    installed_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_installed_mods_domain ON installed_mods(game_domain);
+                CREATE INDEX IF NOT EXISTS idx_installed_mods_time ON installed_mods(installed_at_utc);
                 """;
             await cmd.ExecuteNonQueryAsync();
         }

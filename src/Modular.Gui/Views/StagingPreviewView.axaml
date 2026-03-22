@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.StagingPreviewView"
+             x:DataType="vm:StagingPreviewViewModel">
+
+    <Design.DataContext>
+        <vm:StagingPreviewViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Input Area -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Staging Preview" FontWeight="SemiBold" FontSize="16"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,5,0,0">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Archive:" VerticalAlignment="Center" Margin="0,0,10,5"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ArchivePath}"
+                             Watermark="Path to mod archive (.zip, .7z, etc.)" Margin="0,0,0,5"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Game Dir:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding GameDirectory}"
+                             Watermark="Path to game installation directory"/>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Command="{Binding AnalyzeArchiveCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <mi:MaterialIcon Kind="FileSearch" Width="16" Height="16"/>
+                            <TextBlock Text="Analyze"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding CommitInstallCommand}" IsVisible="{Binding HasPlan}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <mi:MaterialIcon Kind="CheckCircle" Width="16" Height="16"/>
+                            <TextBlock Text="Commit Install"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Summary -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="15" Margin="0,0,0,15"
+                IsVisible="{Binding HasPlan}">
+            <StackPanel Orientation="Horizontal" Spacing="30">
+                <StackPanel>
+                    <TextBlock Text="Installer" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding SelectedInstaller}" FontWeight="Bold"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="Operations" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding FileCount}" FontSize="18" FontWeight="Bold"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="Total Size" FontSize="11" Opacity="0.6"/>
+                    <TextBlock FontSize="18" FontWeight="Bold">
+                        <TextBlock.Text>
+                            <Binding Path="TotalBytes" StringFormat="{}{0:N0} bytes"/>
+                        </TextBlock.Text>
+                    </TextBlock>
+                </StackPanel>
+                <StackPanel IsVisible="{Binding RequiresUserInput}">
+                    <TextBlock Text="User Input" FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="Required" FontWeight="Bold" Foreground="Orange"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Operations List -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="10">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Planned File Operations" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <ListBox ItemsSource="{Binding PlannedOperations}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FileOperationItem">
+                            <Grid ColumnDefinitions="80,*,*,Auto" Margin="5">
+                                <Border Grid.Column="0" Padding="5,2" CornerRadius="3" HorizontalAlignment="Left"
+                                        Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                                    <TextBlock Text="{Binding Type}" FontSize="10" FontWeight="SemiBold"/>
+                                </Border>
+                                <TextBlock Grid.Column="1" Text="{Binding Source}" FontFamily="Consolas" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" Margin="10,0"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="ArrowRight" Width="12" Height="12" Opacity="0.4"/>
+                                    <TextBlock Text="{Binding Destination}" FontFamily="Consolas" FontSize="11"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Text="{Binding Size}" FontSize="11" Opacity="0.6"
+                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>
