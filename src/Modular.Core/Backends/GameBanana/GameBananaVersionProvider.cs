@@ -107,6 +107,13 @@ public class GameBananaVersionProvider : IModVersionProvider
             fileName,
             @"[vV]?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?(?:\+[a-zA-Z0-9.]+)?)");
 
-        return match.Success ? match.Groups[1].Value : null;
+        if (!match.Success)
+            return null;
+
+        // Strip trailing file extension that the greedy regex may have captured
+        // (e.g., ".zip" from "2.0.0-beta.1.zip")
+        var version = match.Groups[1].Value;
+        return System.Text.RegularExpressions.Regex.Replace(
+            version, @"\.[a-zA-Z]{2,}$", "");
     }
 }

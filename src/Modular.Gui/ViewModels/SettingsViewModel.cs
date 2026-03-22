@@ -3,7 +3,9 @@ using Avalonia;
 using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Configuration;
+using Modular.Gui.Messages;
 using Modular.Gui.Services;
 
 namespace Modular.Gui.ViewModels;
@@ -265,6 +267,9 @@ public partial class SettingsViewModel : ViewModelBase
 
             HasUnsavedChanges = false;
             StatusMessage = "Settings saved successfully";
+
+            WeakReferenceMessenger.Default.Send(new SettingsChangedMessage(
+                new SettingsChangedInfo { SettingName = "all" }));
         }
         catch (Exception ex)
         {

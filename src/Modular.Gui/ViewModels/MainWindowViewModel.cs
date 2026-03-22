@@ -2,9 +2,11 @@ using System.Timers;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Backends;
 using Modular.Core.Configuration;
 using Modular.Core.RateLimiting;
+using Modular.Gui.Messages;
 using Modular.Gui.Services;
 
 namespace Modular.Gui.ViewModels;
@@ -88,6 +90,16 @@ public partial class MainWindowViewModel : ViewModelBase
         CheckConfiguration();
         UpdateVisibility();
         UpdateRateLimitInfo();
+
+        // Re-check configuration when settings are saved
+        WeakReferenceMessenger.Default.Register<SettingsChangedMessage>(this, (r, m) =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                CheckConfiguration();
+                UpdateVisibility();
+            });
+        });
 
         // Set up timer to update rate limit info periodically
         _rateLimitTimer = new System.Timers.Timer(5000); // Update every 5 seconds

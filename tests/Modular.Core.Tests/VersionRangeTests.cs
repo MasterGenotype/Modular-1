@@ -157,6 +157,49 @@ public class VersionRangeTests
         r.IsSatisfiedBy(SemanticVersion.Parse(version)).Should().Be(expected);
     }
 
+    // --- OR operator (||) ---
+
+    [Theory]
+    [InlineData(">=1.0.0 <2.0.0 || >=3.0.0", "1.5.0", true)]
+    [InlineData(">=1.0.0 <2.0.0 || >=3.0.0", "3.0.0", true)]
+    [InlineData(">=1.0.0 <2.0.0 || >=3.0.0", "3.5.0", true)]
+    [InlineData(">=1.0.0 <2.0.0 || >=3.0.0", "2.5.0", false)]
+    [InlineData(">=1.0.0 <2.0.0 || >=3.0.0", "0.9.0", false)]
+    public void Or_WithAndGroups_Works(string range, string version, bool expected)
+    {
+        var r = VersionRange.Parse(range);
+        r.IsSatisfiedBy(SemanticVersion.Parse(version)).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("~1.2.3 || ^2.0.0", "1.2.5", true)]
+    [InlineData("~1.2.3 || ^2.0.0", "2.5.0", true)]
+    [InlineData("~1.2.3 || ^2.0.0", "1.3.0", false)]
+    [InlineData("~1.2.3 || ^2.0.0", "3.0.0", false)]
+    public void Or_WithTildeAndCaret_Works(string range, string version, bool expected)
+    {
+        var r = VersionRange.Parse(range);
+        r.IsSatisfiedBy(SemanticVersion.Parse(version)).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("=1.0.0 || =2.0.0 || =3.0.0", "1.0.0", true)]
+    [InlineData("=1.0.0 || =2.0.0 || =3.0.0", "2.0.0", true)]
+    [InlineData("=1.0.0 || =2.0.0 || =3.0.0", "3.0.0", true)]
+    [InlineData("=1.0.0 || =2.0.0 || =3.0.0", "1.5.0", false)]
+    public void Or_MultipleExactVersions_Works(string range, string version, bool expected)
+    {
+        var r = VersionRange.Parse(range);
+        r.IsSatisfiedBy(SemanticVersion.Parse(version)).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Or_ToString_Roundtrips()
+    {
+        var r = VersionRange.Parse("~1.2.3 || >=2.0.0");
+        r.ToString().Should().Be("~1.2.3 || >=2.0.0");
+    }
+
     [Fact]
     public void TryParse_ReturnsFalse_ForInvalidRanges()
     {

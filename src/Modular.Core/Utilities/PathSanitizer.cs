@@ -18,6 +18,12 @@ public static class PathSanitizer
         if (string.IsNullOrWhiteSpace(entryPath))
             throw new InvalidOperationException("Archive entry path is empty.");
 
+        // Reject absolute paths before normalization (NormalizeSeparators trims
+        // leading separators, which would cause this check to pass incorrectly)
+        if (Path.IsPathRooted(entryPath))
+            throw new InvalidOperationException(
+                $"Archive entry contains absolute path: '{entryPath}'");
+
         // Normalize separators to platform convention
         var normalized = NormalizeSeparators(entryPath);
 
@@ -25,11 +31,6 @@ public static class PathSanitizer
         if (ContainsTraversalSegments(normalized))
             throw new InvalidOperationException(
                 $"Archive entry contains path traversal: '{entryPath}'");
-
-        // Reject absolute paths
-        if (Path.IsPathRooted(normalized))
-            throw new InvalidOperationException(
-                $"Archive entry contains absolute path: '{entryPath}'");
 
         // Reject entries starting with a drive letter (Windows)
         if (normalized.Length >= 2 && char.IsLetter(normalized[0]) && normalized[1] == ':')

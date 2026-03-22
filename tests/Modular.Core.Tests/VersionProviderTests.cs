@@ -5,7 +5,7 @@ using Modular.Core.Dependencies;
 using Modular.Core.Metadata;
 using Modular.Core.Versioning;
 using Moq;
-using Modular.Sdk.Backends;
+using Modular.Core.Backends;
 using Modular.Sdk.Backends.Common;
 using Xunit;
 

@@ -26,4 +26,8 @@
     <ProjectReference Include="..\Modular.Sdk\Modular.Sdk.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Modular.Core.Tests" />
+  </ItemGroup>
+
 </Project>

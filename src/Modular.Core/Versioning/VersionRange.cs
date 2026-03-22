@@ -8,7 +8,7 @@ namespace Modular.Core.Versioning;
 /// </summary>
 public class VersionRange
 {
-    private readonly List<VersionConstraint> _constraints = [];
+    private readonly List<List<VersionConstraint>> _orGroups = [];
 
     /// <summary>
     /// Parses a version range string (e.g., ">=1.0.0", "^2.3.4", "~1.2.3 || >=2.0.0").
@@ -37,6 +37,8 @@ public class VersionRange
 
         foreach (var orPart in orParts)
         {
+            var andGroup = new List<VersionConstraint>();
+
             // Handle AND operator (implicit space separation)
             var andParts = orPart.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -45,11 +47,14 @@ public class VersionRange
                 if (!TryParseConstraint(constraint, out var parsed))
                     return false;
 
-                result._constraints.Add(parsed!);
+                andGroup.Add(parsed!);
             }
+
+            if (andGroup.Count > 0)
+                result._orGroups.Add(andGroup);
         }
 
-        return result._constraints.Count > 0;
+        return result._orGroups.Count > 0;
     }
 
     private static bool TryParseConstraint(string constraint, out VersionConstraint? result)
@@ -169,18 +174,20 @@ public class VersionRange
 
     /// <summary>
     /// Tests if a version satisfies this range constraint.
+    /// A version satisfies the range if it matches ANY OR group,
+    /// where each group requires ALL of its constraints to match.
     /// </summary>
     public bool IsSatisfiedBy(SemanticVersion version)
     {
-        if (_constraints.Count == 0)
+        if (_orGroups.Count == 0)
             return false;
 
-        // Group constraints by OR blocks (separated by ||)
-        // For now, we treat all constraints as AND (simplification)
-        return _constraints.All(c => c.IsSatisfiedBy(version));
+        return _orGroups.Any(group => group.All(c => c.IsSatisfiedBy(version)));
     }
 
-    public override string ToString() => string.Join(" ", _constraints.Select(c => c.ToString()));
+    public override string ToString() =>
+        string.Join(" || ", _orGroups.Select(group =>
+            string.Join(" ", group.Select(c => c.ToString()))));
 }
 
 /// <summary>
