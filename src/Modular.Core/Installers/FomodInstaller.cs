@@ -76,6 +76,7 @@ public class FomodInstaller : IModInstaller
         {
             InstallerId = InstallerId,
             SourcePath = archivePath,
+            TargetDirectory = context.GameDirectory,
             RequiresUserInput = true, // FOMOD typically needs user choices
             Operations = new List<FileOperation>()
         };

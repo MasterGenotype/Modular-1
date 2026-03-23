@@ -96,6 +96,7 @@ public class BepInExInstaller : IModInstaller
         {
             InstallerId = InstallerId,
             SourcePath = archivePath,
+            TargetDirectory = context.GameDirectory,
             Operations = new List<FileOperation>()
         };
 

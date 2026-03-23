@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Dependencies;
 using Modular.Core.Utilities;
@@ -104,6 +105,7 @@ public class SteamModInstaller : IModInstaller
         {
             InstallerId = InstallerId,
             SourcePath = archivePath,
+            TargetDirectory = context.GameDirectory,
             Operations = new List<FileOperation>()
         };
 
@@ -152,7 +154,9 @@ public class SteamModInstaller : IModInstaller
         IProgress<InstallProgress>? progress = null,
         CancellationToken ct = default)
     {
-        var targetDir = Path.GetDirectoryName(plan.SourcePath) ?? ".";
+        var targetDir = !string.IsNullOrEmpty(plan.TargetDirectory)
+            ? plan.TargetDirectory
+            : Path.GetDirectoryName(plan.SourcePath) ?? ".";
         var stagingDir = Path.Combine(Path.GetTempPath(), "modular-steam-staging", Guid.NewGuid().ToString("N")[..12]);
 
         try
@@ -450,23 +454,17 @@ public class SteamModInstaller : IModInstaller
     }
 
     /// <summary>
-    /// Verifies a mod archive checksum. Currently a placeholder implementation
-    /// that validates non-empty checksums. Extend with real SHA256 verification
-    /// by uncommenting the hash computation below.
+    /// Verifies a mod archive's SHA256 checksum against the expected value.
+    /// Returns true if no checksum is specified (verification skipped).
     /// </summary>
     internal static bool VerifyChecksum(SteamModMetadata mod)
     {
         if (string.IsNullOrEmpty(mod.Checksum))
             return true; // No checksum specified, skip verification
 
-        // Placeholder: accept any non-empty checksum as valid.
-        // To enable real SHA256 verification, replace the return below with:
-        //
-        // using var stream = File.OpenRead(mod.ArchivePath);
-        // var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-        // return string.Equals(hash, mod.Checksum, StringComparison.OrdinalIgnoreCase);
-
-        return true;
+        using var stream = File.OpenRead(mod.ArchivePath);
+        var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        return string.Equals(hash, mod.Checksum, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

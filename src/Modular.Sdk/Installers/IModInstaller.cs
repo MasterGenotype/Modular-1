@@ -126,6 +126,11 @@ public class InstallPlan
     public string SourcePath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Target directory for file installation.
+    /// </summary>
+    public string TargetDirectory { get; set; } = string.Empty;
+
+    /// <summary>
     /// File operations to perform.
     /// </summary>
     public List<FileOperation> Operations { get; set; } = new();

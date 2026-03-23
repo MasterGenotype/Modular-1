@@ -30,8 +30,7 @@ public class SteamModMetadata
     public string Version { get; set; } = string.Empty;
 
     /// <summary>
-    /// Expected checksum for archive integrity verification.
-    /// Placeholder: extendable to real SHA256 verification.
+    /// Expected SHA256 hex string for archive integrity verification.
     /// </summary>
     public string Checksum { get; set; } = string.Empty;
 

@@ -64,6 +64,7 @@ public class LooseFileInstaller : IModInstaller
         {
             InstallerId = InstallerId,
             SourcePath = archivePath,
+            TargetDirectory = context.GameDirectory,
             Operations = new List<FileOperation>()
         };
 

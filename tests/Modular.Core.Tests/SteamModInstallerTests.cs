@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Modular.Core.Installers.Steam;
 using Xunit;
@@ -425,6 +426,8 @@ public class SteamModInstallerTests
 
         var archiveA = CreateTestZipArchive(Path.Combine(tempDir, "ModA"), "fileA.txt", "ContentA");
         var archiveB = CreateTestZipArchive(Path.Combine(tempDir, "ModB"), "fileB.txt", "ContentB");
+        var checksumA = ComputeSha256(archiveA);
+        var checksumB = ComputeSha256(archiveB);
 
         try
         {
@@ -433,13 +436,13 @@ public class SteamModInstallerTests
                 new()
                 {
                     Name = "ModA", TargetGame = "GameX", Version = "1.0.0",
-                    Checksum = "abc", ArchivePath = archiveA,
+                    Checksum = checksumA, ArchivePath = archiveA,
                     Dependencies = new List<SteamModDependency> { SteamModDependency.Required("ModB") }
                 },
                 new()
                 {
                     Name = "ModB", TargetGame = "GameX", Version = "1.2.0",
-                    Checksum = "def", ArchivePath = archiveB,
+                    Checksum = checksumB, ArchivePath = archiveB,
                     Dependencies = new List<SteamModDependency>()
                 }
             };
@@ -473,6 +476,8 @@ public class SteamModInstallerTests
         // Both mods contain the same file
         var archiveA = CreateTestZipArchive(Path.Combine(tempDir, "ModA"), "shared.txt", "ContentA");
         var archiveB = CreateTestZipArchive(Path.Combine(tempDir, "ModB"), "shared.txt", "ContentB");
+        var checksumA = ComputeSha256(archiveA);
+        var checksumB = ComputeSha256(archiveB);
 
         try
         {
@@ -481,13 +486,13 @@ public class SteamModInstallerTests
                 new()
                 {
                     Name = "ModA", TargetGame = "GameX", Version = "1.0.0",
-                    Checksum = "abc", ArchivePath = archiveA,
+                    Checksum = checksumA, ArchivePath = archiveA,
                     Dependencies = new List<SteamModDependency>()
                 },
                 new()
                 {
                     Name = "ModB", TargetGame = "GameX", Version = "1.0.0",
-                    Checksum = "def", ArchivePath = archiveB,
+                    Checksum = checksumB, ArchivePath = archiveB,
                     Dependencies = new List<SteamModDependency>()
                 }
             };
@@ -551,6 +556,11 @@ public class SteamModInstallerTests
         // Create a mod that overwrites the existing file
         var archive = CreateTestZipArchive(Path.Combine(tempDir, "ModOverwrite"), "existing.txt", "new content");
 
+        // Compute the real SHA256 checksum of the archive
+        string checksum;
+        using (var hashStream = File.OpenRead(archive))
+            checksum = Convert.ToHexString(SHA256.HashData(hashStream)).ToLowerInvariant();
+
         try
         {
             var mods = new List<SteamModMetadata>
@@ -558,7 +568,7 @@ public class SteamModInstallerTests
                 new()
                 {
                     Name = "ModOverwrite", TargetGame = "GameX", Version = "1.0.0",
-                    Checksum = "abc", ArchivePath = archive,
+                    Checksum = checksum, ArchivePath = archive,
                     Dependencies = new List<SteamModDependency>()
                 }
             };
@@ -594,10 +604,36 @@ public class SteamModInstallerTests
     }
 
     [Fact]
-    public void VerifyChecksum_NonEmptyChecksum_Placeholder_ReturnsTrue()
+    public void VerifyChecksum_MatchingChecksum_ReturnsTrue()
     {
-        var mod = new SteamModMetadata { Name = "Test", Checksum = "abc123" };
-        SteamModInstaller.VerifyChecksum(mod).Should().BeTrue();
+        var archivePath = CreateTestZipArchive("test-checksum-match");
+        try
+        {
+            using var stream = File.OpenRead(archivePath);
+            var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+
+            var mod = new SteamModMetadata { Name = "Test", Checksum = hash, ArchivePath = archivePath };
+            SteamModInstaller.VerifyChecksum(mod).Should().BeTrue();
+        }
+        finally
+        {
+            File.Delete(archivePath);
+        }
+    }
+
+    [Fact]
+    public void VerifyChecksum_MismatchedChecksum_ReturnsFalse()
+    {
+        var archivePath = CreateTestZipArchive("test-checksum-mismatch");
+        try
+        {
+            var mod = new SteamModMetadata { Name = "Test", Checksum = "0000000000000000000000000000000000000000000000000000000000000000", ArchivePath = archivePath };
+            SteamModInstaller.VerifyChecksum(mod).Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(archivePath);
+        }
     }
 
     [Fact]
@@ -641,6 +677,12 @@ public class SteamModInstallerTests
         writer.Write(content);
 
         return archivePath;
+    }
+
+    private static string ComputeSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 }
 
