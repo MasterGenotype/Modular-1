@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
 using Modular.Core.Backends.NexusMods;
+using Modular.Core.Utilities;
 using Modular.Sdk.Backends;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -42,6 +43,10 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
         [CommandOption("--adult")]
         [Description("Include adult content in results")]
         public bool Adult { get; init; }
+
+        [CommandOption("--fuzzy")]
+        [Description("Re-rank results by fuzzy match score against the search terms")]
+        public bool Fuzzy { get; init; }
 
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
@@ -100,6 +105,10 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
                 return 0;
             }
 
+            var mods = settings.Fuzzy
+                ? FuzzyMatcher.Rank(settings.Terms, result.Mods, m => m.Name).ToList()
+                : result.Mods;
+
             var table = new Table();
             table.Border(TableBorder.Rounded);
             table.AddColumn("Mod ID");
@@ -109,7 +118,7 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
             table.AddColumn("Endorsements");
             table.AddColumn("Updated");
 
-            foreach (var mod in result.Mods)
+            foreach (var mod in mods)
             {
                 table.AddRow(
                     mod.ModId,

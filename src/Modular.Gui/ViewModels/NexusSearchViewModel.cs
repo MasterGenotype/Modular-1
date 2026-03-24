@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
+using Modular.Core.Utilities;
 using Modular.Gui.Models;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
@@ -160,20 +161,17 @@ public partial class NexusSearchViewModel : ViewModelBase
             g.Domain.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
         if (exact.Domain != null) return exact.Domain;
 
-        // Fuzzy: match against domain or display name (contains, case-insensitive)
-        var matches = _allGames
-            .Where(g =>
-                g.Domain.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
-                g.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+        // Fuzzy: score each game against the input and pick the best match
+        var scored = _allGames
+            .Select(g => (g, score: Math.Max(FuzzyMatcher.Score(trimmed, g.Domain),
+                                             FuzzyMatcher.Score(trimmed, g.Name))))
+            .Where(x => x.score > 0)
+            .OrderByDescending(x => x.score)
             .ToList();
 
-        if (matches.Count == 0) return trimmed; // Let the API try it as-is
+        if (scored.Count == 0) return trimmed; // Let the API try it as-is
 
-        // Prefer exact starts-with on domain, then name, then first contains match
-        return matches
-            .OrderByDescending(g => g.Domain.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(g => g.Name.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
-            .First().Domain;
+        return scored[0].g.Domain;
     }
 
     private async Task SearchNexusModsAsync()
@@ -225,8 +223,11 @@ public partial class NexusSearchViewModel : ViewModelBase
         {
             var results = await _gbBackend.SearchModsAsync(SearchText, maxResults: 50);
 
+            // Re-rank by fuzzy score so the closest matches surface first
+            var ranked = FuzzyMatcher.Rank(SearchText, results, m => m.Name);
+
             SearchResults.Clear();
-            foreach (var mod in results)
+            foreach (var mod in ranked)
                 SearchResults.Add(new ModDisplayModel(mod));
 
             TotalResults = SearchResults.Count;
