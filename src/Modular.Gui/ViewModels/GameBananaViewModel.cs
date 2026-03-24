@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Configuration;
+using Modular.Core.Utilities;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
 
@@ -41,13 +42,16 @@ public partial class GameBananaViewModel : ViewModelBase
     [ObservableProperty]
     private string _configurationError = string.Empty;
 
-    // Filtered view of mods
+    // Filtered view of mods, fuzzy-ranked when a search query is active
     public IEnumerable<ModDisplayModel> FilteredMods =>
         string.IsNullOrWhiteSpace(SearchText)
             ? Mods
-            : Mods.Where(m =>
-                m.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-                (m.Author?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ?? false));
+            : FuzzyMatcher
+                .Rank(SearchText, Mods, m => m.Name)
+                .Concat(FuzzyMatcher
+                    .Rank(SearchText, Mods.Where(m => m.Author != null), m => m.Author!)
+                    .Where(m => FuzzyMatcher.Score(SearchText, m.Name) == 0))
+                .Distinct();
 
     // Designer constructor
     public GameBananaViewModel()
