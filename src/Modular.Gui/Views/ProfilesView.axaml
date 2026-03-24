@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.ProfilesView"
+             x:DataType="vm:ProfilesViewModel">
+
+    <Design.DataContext>
+        <vm:ProfilesViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="{Binding Profiles.Count, StringFormat='{}{0} profile(s)'}"
+                       VerticalAlignment="Center" Opacity="0.7"/>
+            <Button Grid.Column="1" Command="{Binding ImportProfileCommand}" Margin="0,0,10,0"
+                    IsEnabled="{Binding !IsLoading}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Import" Width="16" Height="16"/>
+                    <TextBlock Text="Import"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Command="{Binding ExportProfileCommand}"
+                    IsEnabled="{Binding !IsLoading}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Export" Width="16" Height="16"/>
+                    <TextBlock Text="Export"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Loading Indicator -->
+        <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+                     VerticalAlignment="Top" Margin="0,0,0,10"/>
+
+        <!-- Profile List -->
+        <ListBox Grid.Row="1" ItemsSource="{Binding Profiles}"
+                 SelectedItem="{Binding SelectedProfile}"
+                 IsVisible="{Binding !IsLoading}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProfileDisplayModel">
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="8" Padding="15" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Spacing="5">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16"/>
+                                <StackPanel Orientation="Horizontal" Spacing="15">
+                                    <TextBlock FontSize="12" Opacity="0.6"
+                                               IsVisible="{Binding GameId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <Run Text="Game: "/><Run Text="{Binding GameId}"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="12" Opacity="0.6">
+                                        <Run Text="{Binding ModCount}"/><Run Text=" mod(s)"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="12" Opacity="0.6"
+                                               IsVisible="{Binding CreatedAt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <Run Text="Created: "/><Run Text="{Binding CreatedAt}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Empty State -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    IsVisible="{Binding !Profiles.Count}">
+            <mi:MaterialIcon Kind="AccountGroup" Width="48" Height="48" Opacity="0.3"
+                             HorizontalAlignment="Center"/>
+            <TextBlock Text="No profiles yet" FontSize="16" Opacity="0.5" Margin="0,10,0,5"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="Import a profile or create one by exporting your current library"
+                       Opacity="0.4" HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

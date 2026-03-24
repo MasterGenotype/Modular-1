@@ -50,6 +50,12 @@ public class DownloadOptions
     public bool OrganizeByCategory { get; set; }
 
     /// <summary>
+    /// Whether to include optional mods when downloading a collection.
+    /// Defaults to true.
+    /// </summary>
+    public bool IncludeOptional { get; set; } = true;
+
+    /// <summary>
     /// Creates default options for normal download behavior.
     /// </summary>
     public static DownloadOptions Default => new()

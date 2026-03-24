@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.GameDetectionView"
+             x:DataType="vm:GameDetectionViewModel">
+
+    <Design.DataContext>
+        <vm:GameDetectionViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="{Binding TotalGames, StringFormat='{}{0} game(s) detected'}"
+                       VerticalAlignment="Center" Opacity="0.7"/>
+            <Button Grid.Column="1" Command="{Binding ScanGamesCommand}"
+                    IsEnabled="{Binding !IsLoading}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    <TextBlock Text="Scan"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Loading Indicator -->
+        <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+                     VerticalAlignment="Top" Margin="0,0,0,10"/>
+
+        <!-- Games DataGrid -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Games}"
+                  IsVisible="{Binding !IsLoading}"
+                  AutoGenerateColumns="False"
+                  CanUserReorderColumns="True"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal"
+                  IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="AppID" Binding="{Binding AppId}" Width="80"/>
+                <DataGridTextColumn Header="Game" Binding="{Binding DisplayName}" Width="*"/>
+                <DataGridTextColumn Header="Install Path" Binding="{Binding InstallPath}" Width="2*"/>
+                <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="80"/>
+                <DataGridTemplateColumn Header="Status" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="vm:GameDisplayModel">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="5,0">
+                                <Panel>
+                                    <mi:MaterialIcon Kind="CheckCircle" Width="14" Height="14" Foreground="Green"
+                                                     IsVisible="{Binding IsFullyInstalled}"/>
+                                    <mi:MaterialIcon Kind="AlertCircle" Width="14" Height="14" Foreground="Orange"
+                                                     IsVisible="{Binding !IsFullyInstalled}"/>
+                                </Panel>
+                                <Panel>
+                                    <TextBlock Text="Installed" FontSize="12" IsVisible="{Binding IsFullyInstalled}"/>
+                                    <TextBlock Text="Partial" FontSize="12" IsVisible="{Binding !IsFullyInstalled}"/>
+                                </Panel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

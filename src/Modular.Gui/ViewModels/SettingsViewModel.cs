@@ -4,7 +4,11 @@ using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
+using System.Collections.ObjectModel;
+using Modular.Core.Authentication;
 using Modular.Core.Configuration;
+using Modular.Core.Diagnostics;
+using Modular.Core.Telemetry;
 using Modular.Gui.Messages;
 using Modular.Gui.Services;
 
@@ -18,6 +22,9 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ConfigurationService? _configService;
     private readonly AppSettings? _settings;
     private readonly IDialogService? _dialogService;
+    private readonly NexusSsoClient? _ssoClient;
+    private readonly DiagnosticService? _diagnosticService;
+    private readonly TelemetryService? _telemetryService;
 
     // NexusMods settings
     [ObservableProperty]
@@ -27,7 +34,7 @@ public partial class SettingsViewModel : ViewModelBase
     private bool _showNexusApiKey;
 
     [ObservableProperty]
-    private string _nexusApplicationSlug = "modular";
+    private string _nexusApplicationSlug = "vortex";
 
     [ObservableProperty]
     private bool _nexusSsoEnabled = true;
@@ -97,6 +104,33 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasUnsavedChanges;
 
+    // SSO Login state
+    [ObservableProperty]
+    private bool _isSsoLoggingIn;
+
+    [ObservableProperty]
+    private string _ssoStatusMessage = string.Empty;
+
+    // Diagnostics state
+    [ObservableProperty]
+    private bool _isRunningDiagnostics;
+
+    [ObservableProperty]
+    private ObservableCollection<DiagnosticCheckItem> _diagnosticResults = new();
+
+    [ObservableProperty]
+    private string _diagnosticOverallStatus = string.Empty;
+
+    [ObservableProperty]
+    private string _diagnosticSystemInfo = string.Empty;
+
+    // Telemetry state
+    [ObservableProperty]
+    private string _telemetrySummaryText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isLoadingTelemetry;
+
     public string[] AvailableThemes { get; } = { "System", "Light", "Dark" };
     public int[] ConcurrentDownloadOptions { get; } = { 1, 2, 3, 4, 5 };
 
@@ -112,11 +146,17 @@ public partial class SettingsViewModel : ViewModelBase
     public SettingsViewModel(
         ConfigurationService configService,
         AppSettings settings,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        NexusSsoClient ssoClient,
+        DiagnosticService diagnosticService,
+        TelemetryService telemetryService)
     {
         _configService = configService;
         _settings = settings;
         _dialogService = dialogService;
+        _ssoClient = ssoClient;
+        _diagnosticService = diagnosticService;
+        _telemetryService = telemetryService;
 
         LoadSettings();
     }
@@ -127,7 +167,7 @@ public partial class SettingsViewModel : ViewModelBase
 
         // NexusMods
         NexusApiKey = _settings.NexusApiKey ?? string.Empty;
-        NexusApplicationSlug = _settings.NexusApplicationSlug ?? "modular";
+        NexusApplicationSlug = _settings.NexusApplicationSlug ?? "vortex";
         NexusSsoEnabled = _settings.NexusSsoEnabled;
 
         // GameBanana
@@ -364,4 +404,171 @@ public partial class SettingsViewModel : ViewModelBase
             IsTestingConnection = false;
         }
     }
+
+    [RelayCommand]
+    private async Task LoginViaSsoAsync()
+    {
+        if (_ssoClient == null)
+        {
+            SsoStatusMessage = "SSO client not available";
+            return;
+        }
+
+        IsSsoLoggingIn = true;
+        SsoStatusMessage = "Opening browser for NexusMods login...";
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var apiKey = await _ssoClient.AuthenticateAsync(cts.Token);
+
+            NexusApiKey = apiKey;
+            HasUnsavedChanges = true;
+            SsoStatusMessage = "Login successful! Save settings to persist the API key.";
+        }
+        catch (OperationCanceledException)
+        {
+            SsoStatusMessage = "Login timed out — please try again";
+        }
+        catch (Exception ex)
+        {
+            SsoStatusMessage = $"Login failed: {ex.Message}";
+        }
+        finally
+        {
+            IsSsoLoggingIn = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RunDiagnosticsAsync()
+    {
+        if (_diagnosticService == null)
+        {
+            DiagnosticOverallStatus = "Diagnostic service not available";
+            return;
+        }
+
+        IsRunningDiagnostics = true;
+        DiagnosticResults.Clear();
+        DiagnosticOverallStatus = "Running health checks...";
+
+        try
+        {
+            var report = await _diagnosticService.RunHealthCheckAsync();
+
+            DiagnosticOverallStatus = $"Overall: {report.OverallStatus} ({report.Timestamp:g})";
+
+            foreach (var check in report.Checks)
+            {
+                DiagnosticResults.Add(new DiagnosticCheckItem
+                {
+                    Name = check.Name,
+                    Status = check.Status.ToString(),
+                    Message = check.Message
+                });
+            }
+
+            // Add system info
+            var sysReport = _diagnosticService.GenerateReport();
+            DiagnosticSystemInfo = $"Runtime: {sysReport.Runtime} | Platform: {sysReport.Platform} | " +
+                                   $"Plugins: {sysReport.LoadedPlugins.Count} | " +
+                                   $"Installers: {sysReport.TotalInstallers}";
+        }
+        catch (Exception ex)
+        {
+            DiagnosticOverallStatus = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsRunningDiagnostics = false;
+        }
+    }
+
+    [RelayCommand]
+    private void LoadTelemetrySummary()
+    {
+        if (_telemetryService == null)
+        {
+            TelemetrySummaryText = "Telemetry service not available";
+            return;
+        }
+
+        IsLoadingTelemetry = true;
+
+        try
+        {
+            var summary = _telemetryService.GetSummary();
+
+            TelemetrySummaryText = $"Events: {summary.TotalEvents} | " +
+                                  $"Downloads: {summary.TotalDownloads} | " +
+                                  $"Installer OK: {summary.InstallerSuccesses} | " +
+                                  $"Installer Fail: {summary.InstallerFailures} | " +
+                                  $"Plugin Crashes: {summary.PluginCrashes}";
+        }
+        catch (Exception ex)
+        {
+            TelemetrySummaryText = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsLoadingTelemetry = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportTelemetryAsync()
+    {
+        if (_telemetryService == null || _dialogService == null) return;
+
+        var folder = await _dialogService.ShowFolderBrowserAsync("Select Export Location");
+        if (string.IsNullOrEmpty(folder)) return;
+
+        var outputPath = Path.Combine(folder, $"telemetry_export_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+
+        try
+        {
+            var success = await _telemetryService.ExportDataAsync(outputPath);
+            StatusMessage = success ? $"Telemetry exported to {outputPath}" : "Export failed";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Export error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ClearTelemetryAsync()
+    {
+        if (_telemetryService == null || _dialogService == null) return;
+
+        var confirmed = await _dialogService.ShowConfirmationAsync(
+            "Clear Telemetry",
+            "Are you sure you want to clear all telemetry data? This action cannot be undone.");
+
+        if (!confirmed) return;
+
+        try
+        {
+            _telemetryService.ClearData();
+            TelemetrySummaryText = string.Empty;
+            StatusMessage = "Telemetry data cleared";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error clearing telemetry: {ex.Message}";
+        }
+    }
+}
+
+public partial class DiagnosticCheckItem : ObservableObject
+{
+    [ObservableProperty]
+    private string _name = string.Empty;
+
+    [ObservableProperty]
+    private string _status = string.Empty;
+
+    [ObservableProperty]
+    private string _message = string.Empty;
 }

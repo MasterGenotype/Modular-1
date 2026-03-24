@@ -17,7 +17,7 @@ public class AppSettings
     /// Application slug registered with NexusMods for SSO.
     /// </summary>
     [JsonPropertyName("nexus_application_slug")]
-    public string NexusApplicationSlug { get; set; } = "modular";
+    public string NexusApplicationSlug { get; set; } = "vortex";
 
     /// <summary>
     /// Whether to use SSO to obtain the NexusMods API key interactively.

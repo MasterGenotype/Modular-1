@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.InstallView"
+             x:DataType="vm:InstallViewModel">
+
+    <Design.DataContext>
+        <vm:InstallViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer>
+        <StackPanel Spacing="20" MaxWidth="700">
+            <!-- Archive Selection -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Archive" Width="24" Height="24"/>
+                            <TextBlock Text="Mod Archives" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ArchivePaths.Count, StringFormat='({0})'}"
+                                       VerticalAlignment="Center" Opacity="0.6"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding AddArchivesCommand}"
+                                ToolTip.Tip="Add mod archives" Margin="0,0,5,0">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
+                                <TextBlock Text="Add Archives..."/>
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="2" Command="{Binding ClearArchivesCommand}"
+                                ToolTip.Tip="Remove all archives"
+                                IsVisible="{Binding ArchivePaths.Count}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="DeleteSweep" Width="14" Height="14"/>
+                                <TextBlock Text="Clear"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!-- Archive list -->
+                    <TextBlock Text="No archives selected — click Add Archives to browse"
+                               Opacity="0.5" IsVisible="{Binding !ArchivePaths.Count}"/>
+
+                    <ItemsControl ItemsSource="{Binding ArchivePaths}"
+                                  IsVisible="{Binding ArchivePaths.Count}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                        CornerRadius="4" Padding="8,6" Margin="0,2">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding}"
+                                                   FontSize="12" FontFamily="Consolas"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding $parent[ItemsControl].((vm:InstallViewModel)DataContext).RemoveArchiveCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Remove" Padding="4,2" Margin="5,0,0,0">
+                                            <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Target Game/Directory -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="FolderAccount" Width="24" Height="24"/>
+                            <TextBlock Text="Target" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding ScanGamesCommand}"
+                                ToolTip.Tip="Scan for installed games">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Magnify" Width="14" Height="14"/>
+                                <TextBlock Text="Detect Games"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <StackPanel IsVisible="{Binding DetectedGames.Count}">
+                        <TextBlock Text="Detected Game" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding DetectedGames}"
+                                  SelectedItem="{Binding SelectedGame}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:GameDisplayModel">
+                                    <TextBlock Text="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Target Directory" Margin="0,0,0,5"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding TargetDirectory}"
+                                     Watermark="Game installation directory"/>
+                            <Button Grid.Column="1" Content="Browse..." Margin="10,0,0,0"
+                                    Command="{Binding BrowseTargetCommand}"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Install Options -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
+                        <TextBlock Text="Options" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding AllowOverwrite}"
+                              Content="Allow overwrite existing files"/>
+                    <CheckBox IsChecked="{Binding CreateBackups}"
+                              Content="Create backups of overwritten files"/>
+                    <CheckBox IsChecked="{Binding DryRun}"
+                              Content="Dry run (preview changes without installing)"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Install Button & Progress -->
+            <StackPanel Spacing="10">
+                <Button Command="{Binding InstallModsCommand}"
+                        IsEnabled="{Binding !IsInstalling}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Padding="15,12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="PackageDown" Width="20" Height="20"/>
+                        <Panel>
+                            <TextBlock FontWeight="SemiBold" IsVisible="{Binding !DryRun}">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="Install {0} Mod(s)">
+                                        <Binding Path="ArchivePaths.Count"/>
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                            <TextBlock FontWeight="SemiBold" IsVisible="{Binding DryRun}">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="Preview {0} Mod(s) (Dry Run)">
+                                        <Binding Path="ArchivePaths.Count"/>
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </Panel>
+                    </StackPanel>
+                </Button>
+
+                <StackPanel IsVisible="{Binding IsInstalling}" Spacing="5">
+                    <TextBlock Opacity="0.7">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="Archive {0} of {1}">
+                                <Binding Path="CurrentArchiveIndex"/>
+                                <Binding Path="TotalArchives"/>
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
+                    <ProgressBar Value="{Binding InstallProgress}" Minimum="0" Maximum="100"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Results -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="15"
+                    IsVisible="{Binding InstallResults.Count}">
+                <StackPanel Spacing="5">
+                    <TextBlock Text="Results" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                    <ItemsControl ItemsSource="{Binding InstallResults}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="12" FontFamily="Consolas" Opacity="0.8"
+                                           TextWrapping="Wrap"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Status -->
+            <TextBlock Text="{Binding StatusMessage}" Opacity="0.7"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

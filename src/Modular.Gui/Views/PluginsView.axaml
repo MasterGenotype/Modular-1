@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.PluginsView"
+             x:DataType="vm:PluginsViewModel">
+
+    <Design.DataContext>
+        <vm:PluginsViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="15">
+                <TextBlock Text="{Binding TotalPlugins, StringFormat='{}{0} plugin(s)'}" VerticalAlignment="Center" Opacity="0.7"/>
+                <TextBlock Text="{Binding EnabledPlugins, StringFormat='{}{0} enabled'}" VerticalAlignment="Center" Opacity="0.7"/>
+            </StackPanel>
+            <Button Grid.Column="1" Command="{Binding RefreshPluginsCommand}" ToolTip.Tip="Refresh plugins">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    <TextBlock Text="Refresh"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Loading Indicator -->
+        <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+                     VerticalAlignment="Top" Margin="0,0,0,10"/>
+
+        <!-- Plugin List -->
+        <ListBox Grid.Row="1" ItemsSource="{Binding Plugins}"
+                 IsVisible="{Binding !IsLoading}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:PluginDisplayModel">
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="8" Padding="15" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Spacing="5">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="16"/>
+                                    <TextBlock Text="{Binding Version, StringFormat='v{0}'}" Opacity="0.6" VerticalAlignment="Center"/>
+                                    <Border CornerRadius="4" Padding="6,2"
+                                            Background="{DynamicResource SystemAccentColor}"
+                                            IsVisible="{Binding IsLoaded}">
+                                        <TextBlock Text="Loaded" FontSize="11"/>
+                                    </Border>
+                                    <Border CornerRadius="4" Padding="6,2"
+                                            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                                            IsVisible="{Binding !IsLoaded}">
+                                        <TextBlock Text="Not Loaded" FontSize="11" Opacity="0.6"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Opacity="0.7"/>
+                                <StackPanel Orientation="Horizontal" Spacing="15">
+                                    <TextBlock FontSize="12" Opacity="0.5">
+                                        <Run Text="Author: "/><Run Text="{Binding Author}"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="12" Opacity="0.5"
+                                               IsVisible="{Binding MinHostVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <Run Text="Min Host: "/><Run Text="{Binding MinHostVersion}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                            <Button Grid.Column="1" VerticalAlignment="Center"
+                                    Command="{Binding $parent[ListBox].((vm:PluginsViewModel)DataContext).TogglePluginCommand}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="Play" Width="16" Height="16" IsVisible="{Binding !IsLoaded}"/>
+                                        <mi:MaterialIcon Kind="Stop" Width="16" Height="16" IsVisible="{Binding IsLoaded}"/>
+                                    </Panel>
+                                    <Panel>
+                                        <TextBlock Text="Load" IsVisible="{Binding !IsLoaded}"/>
+                                        <TextBlock Text="Unload" IsVisible="{Binding IsLoaded}"/>
+                                    </Panel>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

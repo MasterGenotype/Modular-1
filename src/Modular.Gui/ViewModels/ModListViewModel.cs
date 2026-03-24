@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Modular.Core.Backends;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
@@ -12,7 +11,8 @@ using Modular.Gui.Services;
 namespace Modular.Gui.ViewModels;
 
 /// <summary>
-/// ViewModel for the NexusMods mod list view.
+/// ViewModel for the NexusMods tracked mods view.
+/// Shows mods the user is tracking on NexusMods, grouped by game domain.
 /// </summary>
 public partial class ModListViewModel : ViewModelBase
 {
@@ -28,13 +28,16 @@ public partial class ModListViewModel : ViewModelBase
     private string _searchText = string.Empty;
 
     [ObservableProperty]
-    private string _selectedDomain = string.Empty;
+    private GameDomainInfo? _selectedDomainInfo;
 
     [ObservableProperty]
-    private ObservableCollection<string> _availableDomains = new();
+    private ObservableCollection<GameDomainInfo> _availableDomains = new();
 
     [ObservableProperty]
     private bool _domainsLoaded;
+
+    /// <summary>Currently selected domain string (for API calls).</summary>
+    public string SelectedDomain => SelectedDomainInfo?.Domain ?? string.Empty;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -51,7 +54,7 @@ public partial class ModListViewModel : ViewModelBase
     [ObservableProperty]
     private int _updatesAvailable;
 
-    // Filtered view of mods
+    // Local filter for tracked mods
     public IEnumerable<ModDisplayModel> FilteredMods =>
         string.IsNullOrWhiteSpace(SearchText)
             ? Mods
@@ -89,7 +92,7 @@ public partial class ModListViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Loads available game domains from all tracked mods.
+    /// Loads available game domains from all tracked mods, with per-domain mod counts.
     /// </summary>
     private async Task LoadAvailableDomainsAsync()
     {
@@ -97,27 +100,27 @@ public partial class ModListViewModel : ViewModelBase
 
         try
         {
-            // Get ALL tracked mods (no domain filter) to extract unique domains
+            // Get ALL tracked mods (no domain filter) to extract unique domains with counts
             var allMods = await _backend.GetUserModsAsync(null);
-            var domains = allMods
-                .Select(m => m.GameDomain)
-                .Where(d => !string.IsNullOrEmpty(d))
-                .Distinct()
-                .OrderBy(d => d)
+            var domainGroups = allMods
+                .Where(m => !string.IsNullOrEmpty(m.GameDomain))
+                .GroupBy(m => m.GameDomain!)
+                .OrderByDescending(g => g.Count())
                 .ToList();
 
             AvailableDomains.Clear();
-            foreach (var domain in domains)
+            foreach (var group in domainGroups)
             {
-                AvailableDomains.Add(domain!);
+                AvailableDomains.Add(new GameDomainInfo(group.Key, group.Count()));
             }
 
-            // Select first domain if available and none selected
-            if (AvailableDomains.Count > 0 && string.IsNullOrEmpty(SelectedDomain))
+            // Select first domain (most tracked mods) if none selected
+            if (AvailableDomains.Count > 0 && SelectedDomainInfo == null)
             {
-                SelectedDomain = AvailableDomains[0];
+                SelectedDomainInfo = AvailableDomains[0];
             }
 
+            StatusMessage = $"{allMods.Count} tracked mods across {AvailableDomains.Count} game(s)";
             DomainsLoaded = true;
         }
         catch (Exception ex)
@@ -131,10 +134,10 @@ public partial class ModListViewModel : ViewModelBase
         OnPropertyChanged(nameof(FilteredMods));
     }
 
-    partial void OnSelectedDomainChanged(string value)
+    partial void OnSelectedDomainInfoChanged(GameDomainInfo? value)
     {
-        // Clear and reload when domain changes (only if not empty)
-        if (!string.IsNullOrEmpty(value))
+        // Clear and reload when domain changes
+        if (value != null)
         {
             _ = RefreshModsAsync();
         }
@@ -263,7 +266,7 @@ public partial class ModListViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckForUpdatesAsync()
     {
-        if (_backend == null || _database == null)
+        if (_backend == null || _database == null || string.IsNullOrEmpty(SelectedDomain))
         {
             StatusMessage = "Backend or database not initialized";
             return;
@@ -329,4 +332,12 @@ public partial class ModListViewModel : ViewModelBase
             IsLoading = false;
         }
     }
+}
+
+/// <summary>
+/// Represents a game domain with its tracked mod count.
+/// </summary>
+public record GameDomainInfo(string Domain, int ModCount)
+{
+    public override string ToString() => $"{Domain} ({ModCount} mods)";
 }

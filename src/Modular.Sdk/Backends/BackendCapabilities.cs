@@ -46,4 +46,10 @@ public enum BackendCapabilities
     /// If set, mods can be grouped by their category ID.
     /// </summary>
     ModCategories = 1 << 5,
+
+    /// <summary>
+    /// Backend supports full-text search via <see cref="ISearchableBackend"/>.
+    /// If set, the search command and GUI search are available.
+    /// </summary>
+    Search = 1 << 6,
 }

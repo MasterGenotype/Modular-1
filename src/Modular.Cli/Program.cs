@@ -106,6 +106,64 @@ class Program
                     .WithExample("plugins", "remove", "my-plugin");
             });
 
+            // Search command
+            config.AddCommand<SearchCommand>("search")
+                .WithDescription("Search for mods on a backend")
+                .WithExample("search", "SKSE64", "--game", "skyrimspecialedition")
+                .WithExample("search", "armor retexture", "--sort", "downloads", "--limit", "10");
+
+            // Browse command
+            config.AddCommand<BrowseCommand>("browse")
+                .WithDescription("Browse trending, latest, or recently updated mods")
+                .WithExample("browse", "trending", "--game", "skyrimspecialedition")
+                .WithExample("browse", "latest", "--game", "stardewvalley")
+                .WithExample("browse", "updated", "--game", "skyrimspecialedition", "--period", "1w");
+
+            // Collection command group
+            config.AddBranch("collection", collection =>
+            {
+                collection.SetDescription("Manage mod collections");
+
+                collection.AddCommand<CollectionCreateCommand>("create")
+                    .WithDescription("Create a new collection")
+                    .WithExample("collection", "create", "My Skyrim Build", "--game", "skyrimspecialedition");
+
+                collection.AddCommand<CollectionListCommand>("list")
+                    .WithDescription("List all collections");
+
+                collection.AddCommand<CollectionShowCommand>("show")
+                    .WithDescription("Show collection details")
+                    .WithExample("collection", "show", "My Skyrim Build");
+
+                collection.AddCommand<CollectionAddCommand>("add")
+                    .WithDescription("Add a mod to a collection")
+                    .WithExample("collection", "add", "My Skyrim Build", "1234", "--file-id", "5678");
+
+                collection.AddCommand<CollectionRemoveCommand>("remove")
+                    .WithDescription("Remove a mod from a collection")
+                    .WithExample("collection", "remove", "My Skyrim Build", "1234");
+
+                collection.AddCommand<CollectionDownloadCommand>("download")
+                    .WithDescription("Download all mods in a collection")
+                    .WithExample("collection", "download", "My Skyrim Build", "--verify");
+
+                collection.AddCommand<CollectionVerifyCommand>("verify")
+                    .WithDescription("Verify downloaded collection files")
+                    .WithExample("collection", "verify", "My Skyrim Build");
+
+                collection.AddCommand<CollectionExportCommand>("export")
+                    .WithDescription("Export a collection to a JSON file")
+                    .WithExample("collection", "export", "My Skyrim Build", "--output", "./export.json");
+
+                collection.AddCommand<CollectionImportCommand>("import")
+                    .WithDescription("Import a collection from a JSON file")
+                    .WithExample("collection", "import", "./export.json");
+
+                collection.AddCommand<CollectionCheckUpdatesCommand>("check-updates")
+                    .WithDescription("Check for updates to mods in a collection")
+                    .WithExample("collection", "check-updates", "My Skyrim Build");
+            });
+
             // Mod installation commands
             config.AddCommand<InstallCommand>("install")
                 .WithDescription("Install a mod archive to a game directory")

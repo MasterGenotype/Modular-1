@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.InstalledModsView"
+             x:DataType="vm:InstalledModsViewModel">
+
+    <Design.DataContext>
+        <vm:InstalledModsViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+            <TextBlock Grid.Column="0" Text="{Binding TotalInstalled, StringFormat='{}{0} installed mod(s)'}"
+                       VerticalAlignment="Center" Opacity="0.7"/>
+            <Button Grid.Column="1" Command="{Binding RefreshInstalledCommand}"
+                    IsEnabled="{Binding !IsLoading}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    <TextBlock Text="Refresh"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Loading Indicator -->
+        <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+                     VerticalAlignment="Top" Margin="0,0,0,10"/>
+
+        <!-- Installed Mods DataGrid -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Changesets}"
+                  IsVisible="{Binding !IsLoading}"
+                  AutoGenerateColumns="False"
+                  CanUserReorderColumns="True"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal"
+                  IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Changeset" Binding="{Binding ChangesetId}" Width="120"/>
+                <DataGridTextColumn Header="Mod" Binding="{Binding ModId}" Width="*"/>
+                <DataGridTextColumn Header="Target Directory" Binding="{Binding TargetDirectory}" Width="2*"/>
+                <DataGridTextColumn Header="Installed" Binding="{Binding CreatedAt}" Width="150"/>
+                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="80"/>
+                <DataGridTemplateColumn Header="" Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="vm:ChangesetDisplayModel">
+                            <Button Command="{Binding $parent[DataGrid].((vm:InstalledModsViewModel)DataContext).UninstallModCommand}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip.Tip="Uninstall this mod"
+                                    Padding="6,4">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                    <TextBlock Text="Remove" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+    </Grid>
+</UserControl>

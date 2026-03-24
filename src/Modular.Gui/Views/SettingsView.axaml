@@ -63,12 +63,28 @@
                         <TextBlock Text="Application Slug" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding NexusApplicationSlug}"
                                  Width="200" HorizontalAlignment="Left"
-                                 Watermark="modular"/>
+                                 Watermark="vortex"/>
                     </StackPanel>
 
                     <CheckBox IsChecked="{Binding NexusSsoEnabled}"
                               Content="Enable SSO authentication"
                               ToolTip.Tip="When enabled and no API key is configured, opens browser for authorization"/>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Command="{Binding LoginViaSsoCommand}"
+                                IsEnabled="{Binding !IsSsoLoggingIn}"
+                                ToolTip.Tip="Authenticate via browser SSO (no API key needed)">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Login" Width="16" Height="16"/>
+                                <TextBlock Text="Login via Browser"/>
+                            </StackPanel>
+                        </Button>
+                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsSsoLoggingIn}"
+                                     Width="100" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SsoStatusMessage}" VerticalAlignment="Center"
+                                   FontSize="12" Opacity="0.7"
+                                   IsVisible="{Binding SsoStatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
 
                     <TextBlock Text="Get your API key from nexusmods.com/users/myaccount?tab=api+access"
                                FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
@@ -232,6 +248,84 @@
                                  Watermark="~/.config/Modular/metadata_cache.json"
                                  ToolTip.Tip="Path to the mod metadata cache file"/>
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Diagnostics Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Stethoscope" Width="24" Height="24"/>
+                            <TextBlock Text="Diagnostics" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding RunDiagnosticsCommand}"
+                                IsEnabled="{Binding !IsRunningDiagnostics}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
+                                <TextBlock Text="Run Health Check"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsRunningDiagnostics}"/>
+
+                    <TextBlock Text="{Binding DiagnosticOverallStatus}" FontWeight="SemiBold"
+                               IsVisible="{Binding DiagnosticOverallStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <ItemsControl ItemsSource="{Binding DiagnosticResults}"
+                                  IsVisible="{Binding DiagnosticResults.Count}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DiagnosticCheckItem">
+                                <Grid ColumnDefinitions="Auto,*,2*" Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12"
+                                               FontWeight="SemiBold" Width="60" Opacity="0.8"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" Margin="10,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Message}" FontSize="12" Opacity="0.6"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="{Binding DiagnosticSystemInfo}" FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                               IsVisible="{Binding DiagnosticSystemInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Telemetry Section -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="15">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="ChartBar" Width="24" Height="24"/>
+                        <TextBlock Text="Telemetry" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Command="{Binding LoadTelemetrySummaryCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"/>
+                                <TextBlock Text="Load Summary"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ExportTelemetryCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Export" Width="14" Height="14"/>
+                                <TextBlock Text="Export"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ClearTelemetryCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                <TextBlock Text="Clear"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding TelemetrySummaryText}" FontSize="12" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding TelemetrySummaryText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
             </Border>
 

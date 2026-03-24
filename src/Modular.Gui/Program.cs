@@ -6,8 +6,15 @@ using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Authentication;
+using Modular.Core.Diagnostics;
+using Modular.Core.GameDetection;
+using Modular.Core.Installers;
+using Modular.Core.Plugins;
+using Modular.Core.Profiles;
 using Modular.Core.RateLimiting;
 using Modular.Core.Services;
+using Modular.Core.Telemetry;
 using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
 using System;
@@ -125,6 +132,73 @@ sealed class Program
         // Other core services
         services.AddSingleton<IRenameService, RenameService>();
 
+        // Plugin services
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetService<ILogger<PluginLoader>>();
+            return new PluginLoader(logger: logger);
+        });
+        services.AddSingleton(sp =>
+        {
+            var pluginLoader = sp.GetRequiredService<PluginLoader>();
+            var logger = sp.GetService<ILogger<PluginComposer>>();
+            return new PluginComposer(pluginLoader, logger);
+        });
+
+        // Authentication
+        services.AddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var logger = sp.GetService<ILogger<NexusSsoClient>>();
+            return new NexusSsoClient(settings.NexusApplicationSlug ?? "vortex", logger);
+        });
+
+        // Game detection
+        services.AddSingleton<SteamGameScanner>();
+
+        // Installation services
+        services.AddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var dbPath = Path.Combine(
+                Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
+                "modular.db");
+            return new ModularDatabase(dbPath);
+        });
+        services.AddSingleton(sp =>
+        {
+            var db = sp.GetRequiredService<ModularDatabase>();
+            var telemetry = sp.GetService<TelemetryService>();
+            var logger = sp.GetService<ILogger<ModInstallationService>>();
+            return new ModInstallationService(db, telemetry, logger);
+        });
+
+        // Profiles
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetService<ILogger<ProfileExporter>>();
+            return new ProfileExporter(logger);
+        });
+
+        // Diagnostics
+        services.AddSingleton(sp =>
+        {
+            var pluginLoader = sp.GetRequiredService<PluginLoader>();
+            var logger = sp.GetService<ILogger<DiagnosticService>>();
+            return new DiagnosticService(pluginLoader, logger);
+        });
+
+        // Telemetry
+        services.AddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var telemetryPath = Path.Combine(
+                Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
+                "telemetry");
+            var logger = sp.GetService<ILogger<TelemetryService>>();
+            return new TelemetryService(telemetryPath, logger: logger);
+        });
+
         // GUI services - use pre-loaded instance
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton(_downloadHistory!);
@@ -144,6 +218,17 @@ sealed class Program
         services.AddTransient<SettingsViewModel>();
         services.AddTransient<GameBananaViewModel>();
         services.AddTransient<LibraryViewModel>();
+        services.AddTransient<PluginsViewModel>();
+        services.AddTransient<GameDetectionViewModel>();
+        services.AddTransient<NexusSearchViewModel>();
+        // Sub-ViewModels for combined panels
+        services.AddTransient<InstallViewModel>();
+        services.AddTransient<InstalledModsViewModel>();
+        services.AddTransient<ProfilesViewModel>();
+        services.AddTransient<CollectionViewModel>();
+        // Combined wrapper ViewModels
+        services.AddTransient<ProfilesCollectionsViewModel>();
+        services.AddTransient<ModManagerViewModel>();
 
         return services.BuildServiceProvider();
     }

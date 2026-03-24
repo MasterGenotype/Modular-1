@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
@@ -13,9 +15,10 @@ namespace Modular.Core.Backends.NexusMods;
 
 /// <summary>
 /// NexusMods backend implementation.
-/// Provides access to NexusMods API for downloading tracked mods.
+/// Provides access to NexusMods API for downloading tracked mods,
+/// full-text search via the v2 GraphQL API, and discovery feeds.
 /// </summary>
-public class NexusModsBackend : IModBackend
+public class NexusModsBackend : IModBackend, ISearchableBackend
 {
     private const string BaseUrl = "https://api.nexusmods.com";
 
@@ -24,6 +27,7 @@ public class NexusModsBackend : IModBackend
     private readonly DownloadDatabase _database;
     private readonly ModMetadataCache _metadataCache;
     private readonly ILogger<NexusModsBackend>? _logger;
+    private readonly NexusModsGraphQlClient _graphQlClient;
 
     // Cache of tracked mods to avoid repeated API calls
     private HashSet<(string domain, int modId)>? _trackedModsCache;
@@ -37,7 +41,8 @@ public class NexusModsBackend : IModBackend
         BackendCapabilities.Md5Verification |
         BackendCapabilities.RateLimited |
         BackendCapabilities.Authentication |
-        BackendCapabilities.ModCategories;
+        BackendCapabilities.ModCategories |
+        BackendCapabilities.Search;
 
     public NexusModsBackend(
         AppSettings settings,
@@ -50,8 +55,10 @@ public class NexusModsBackend : IModBackend
         _database = database;
         _metadataCache = metadataCache;
         _logger = logger;
-        _client = FluentClientFactory.Create(BaseUrl, new RateLimiterAdapter(rateLimiter), logger);
+        var rateLimiterAdapter = new RateLimiterAdapter(rateLimiter);
+        _client = FluentClientFactory.Create(BaseUrl, rateLimiterAdapter, logger);
         _client.SetUserAgent("Modular/1.0");
+        _graphQlClient = new NexusModsGraphQlClient(settings.NexusApiKey ?? string.Empty, rateLimiterAdapter, logger);
     }
 
     public IReadOnlyList<string> ValidateConfiguration()
@@ -463,6 +470,118 @@ public class NexusModsBackend : IModBackend
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Gets the list of all games on NexusMods (domain name + display name).
+    /// Results are cached after first call.
+    /// </summary>
+    public async Task<List<(string Domain, string Name)>> GetGamesAsync(CancellationToken ct = default)
+    {
+        if (_gamesCache != null)
+            return _gamesCache;
+
+        var response = await _client.GetAsync("v1/games.json")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .AsJsonAsync();
+
+        var games = new List<(string Domain, string Name)>();
+        foreach (var game in response.RootElement.EnumerateArray())
+        {
+            var domain = game.TryGetProperty("domain_name", out var d) ? d.GetString() : null;
+            var name = game.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrEmpty(domain) && !string.IsNullOrEmpty(name))
+                games.Add((domain, name));
+        }
+
+        _gamesCache = games;
+        return games;
+    }
+    private List<(string Domain, string Name)>? _gamesCache;
+
+    // --- ISearchableBackend ---
+
+    public Task<ModSearchResult> SearchModsAsync(ModSearchQuery query, CancellationToken ct = default)
+    {
+        return _graphQlClient.SearchAsync(query, ct);
+    }
+
+    // --- Discovery endpoints (v1 API) ---
+
+    /// <summary>
+    /// Gets currently trending mods for a game domain.
+    /// </summary>
+    public async Task<List<BackendMod>> GetTrendingModsAsync(string gameDomain, int limit = 20, CancellationToken ct = default)
+    {
+        var mods = await _client.GetAsync($"v1/games/{gameDomain}/mods/trending.json")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .AsArrayAsync<NexusV1ModInfo>();
+
+        return mods.Take(limit).Select(m => MapV1ModToBackendMod(m, gameDomain)).ToList();
+    }
+
+    /// <summary>
+    /// Gets the most recently added mods for a game domain.
+    /// </summary>
+    public async Task<List<BackendMod>> GetLatestAddedModsAsync(string gameDomain, int limit = 20, CancellationToken ct = default)
+    {
+        var mods = await _client.GetAsync($"v1/games/{gameDomain}/mods/latest_added.json")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .AsArrayAsync<NexusV1ModInfo>();
+
+        return mods.Take(limit).Select(m => MapV1ModToBackendMod(m, gameDomain)).ToList();
+    }
+
+    /// <summary>
+    /// Gets recently updated mods for a game domain.
+    /// </summary>
+    /// <param name="gameDomain">Game domain name.</param>
+    /// <param name="period">Time period: "1d", "1w", or "1m".</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<List<BackendMod>> GetRecentlyUpdatedModsAsync(string gameDomain, string period = "1w", CancellationToken ct = default)
+    {
+        var updatedMods = await _client.GetAsync($"v1/games/{gameDomain}/mods/updated.json?period={period}")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .AsArrayAsync<NexusV1UpdatedMod>();
+
+        // The updated endpoint only returns mod IDs and timestamps,
+        // so we fetch full info for each (cached where possible)
+        var result = new List<BackendMod>();
+        foreach (var updated in updatedMods)
+        {
+            ct.ThrowIfCancellationRequested();
+            var modInfo = await GetModInfoAsync(updated.ModId.ToString(), gameDomain, ct);
+            if (modInfo != null)
+                result.Add(modInfo);
+        }
+        return result;
+    }
+
+    private static BackendMod MapV1ModToBackendMod(NexusV1ModInfo mod, string gameDomain)
+    {
+        return new BackendMod
+        {
+            ModId = mod.ModId.ToString(),
+            Name = mod.Name,
+            GameDomain = gameDomain,
+            BackendId = "nexusmods",
+            CategoryId = mod.CategoryId,
+            Summary = mod.Summary,
+            Author = mod.Author,
+            Version = mod.Version,
+            EndorsementCount = mod.EndorsementCount,
+            DownloadCount = mod.DownloadCount,
+            IsAdult = mod.ContainsAdultContent,
+            Url = $"https://www.nexusmods.com/{gameDomain}/mods/{mod.ModId}",
+            ThumbnailUrl = mod.PictureUrl,
+            UpdatedAt = mod.UpdatedTimestamp > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(mod.UpdatedTimestamp).DateTime
+                : null
+        };
     }
 
     private static string GetCategoryName(int categoryId) => categoryId switch

@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:sdk="using:Modular.Sdk.Collections"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.CollectionView"
+             x:DataType="vm:CollectionViewModel">
+
+    <Design.DataContext>
+        <vm:CollectionViewModel/>
+    </Design.DataContext>
+
+    <Grid ColumnDefinitions="250,*">
+        <!-- Left panel: collection list -->
+        <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Margin="0,0,10,0" Padding="10">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Collections" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+
+                <!-- Create new collection -->
+                <StackPanel DockPanel.Dock="Bottom" Spacing="5" Margin="0,10,0,0">
+                    <TextBox Text="{Binding NewCollectionName}" Watermark="Collection name"/>
+                    <TextBox Text="{Binding NewCollectionGame}" Watermark="Game domain"/>
+                    <Button Command="{Binding CreateCollectionCommand}" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+                            <TextBlock Text="Create"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Collection list -->
+                <ListBox ItemsSource="{Binding Collections}"
+                         SelectedItem="{Binding SelectedCollection}"
+                         Margin="0,0,0,5">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="sdk:ModCollection">
+                            <StackPanel Spacing="2" Margin="5">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                <TextBlock Opacity="0.6" FontSize="11">
+                                    <Run Text="{Binding GameId}"/>
+                                    <Run Text=" — "/>
+                                    <Run Text="{Binding Entries.Count}"/>
+                                    <Run Text=" mod(s)"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Right panel: collection entries -->
+        <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="10">
+            <DockPanel>
+                <!-- Actions bar -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+                    <Button Command="{Binding RefreshCollectionsCommand}" ToolTip.Tip="Refresh">
+                        <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding DeleteCollectionCommand}" ToolTip.Tip="Delete collection">
+                        <mi:MaterialIcon Kind="Delete" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding CheckUpdatesCommand}" ToolTip.Tip="Check for updates">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <mi:MaterialIcon Kind="Update" Width="16" Height="16"/>
+                            <TextBlock Text="Check Updates"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Status -->
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Opacity="0.7" Margin="0,10,0,0"/>
+
+                <!-- Loading -->
+                <StackPanel IsVisible="{Binding IsLoading}"
+                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <ProgressBar IsIndeterminate="True" Width="200"/>
+                </StackPanel>
+
+                <!-- Entries DataGrid -->
+                <DataGrid IsVisible="{Binding !IsLoading}"
+                          ItemsSource="{Binding CollectionEntries}"
+                          AutoGenerateColumns="False"
+                          CanUserResizeColumns="True"
+                          GridLinesVisibility="Horizontal"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                        <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="130"/>
+                        <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="100"/>
+                        <DataGridTemplateColumn Header="Optional" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="sdk:ModCollectionEntry">
+                                    <TextBlock Text="{Binding IsOptional}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="" Width="50">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="sdk:ModCollectionEntry">
+                                    <Button Command="{Binding $parent[DataGrid].((vm:CollectionViewModel)DataContext).RemoveEntryCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="Remove from collection"
+                                            Background="Transparent" BorderThickness="0" Padding="4">
+                                        <mi:MaterialIcon Kind="Close" Width="14" Height="14" Opacity="0.6"/>
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

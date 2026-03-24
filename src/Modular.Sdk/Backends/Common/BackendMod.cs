@@ -64,4 +64,24 @@ public class BackendMod
     /// URL to a thumbnail image for the mod.
     /// </summary>
     public string? ThumbnailUrl { get; set; }
+
+    /// <summary>
+    /// Number of endorsements the mod has received.
+    /// </summary>
+    public int? EndorsementCount { get; set; }
+
+    /// <summary>
+    /// Total number of unique downloads.
+    /// </summary>
+    public long? DownloadCount { get; set; }
+
+    /// <summary>
+    /// Current version string of the mod.
+    /// </summary>
+    public string? Version { get; set; }
+
+    /// <summary>
+    /// Whether this mod contains adult content.
+    /// </summary>
+    public bool IsAdult { get; set; }
 }

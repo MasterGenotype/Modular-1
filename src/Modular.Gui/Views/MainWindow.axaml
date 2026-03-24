@@ -40,6 +40,14 @@
 
                     <!-- Navigation Items -->
                     <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="5,10">
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Search"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Magnify" Width="20" Height="20"/>
+                                <TextBlock Text="Search" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
                         <Button Command="{Binding NavigateToCommand}" CommandParameter="NexusMods"
                                 Classes="nav-button">
                             <StackPanel Orientation="Horizontal" Spacing="10">
@@ -69,6 +77,40 @@
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <mi:MaterialIcon Kind="FolderMultiple" Width="20" Height="20"/>
                                 <TextBlock Text="Library" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Separator Margin="5,8" Opacity="0.3"/>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Games"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="GamepadVariant" Width="20" Height="20"/>
+                                <TextBlock Text="Games" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Mod Manager"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="PackageVariantClosed" Width="20" Height="20"/>
+                                <TextBlock Text="Mod Manager" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Profiles"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="BookmarkMultiple" Width="20" Height="20"/>
+                                <TextBlock Text="Profiles" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Plugins"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Puzzle" Width="20" Height="20"/>
+                                <TextBlock Text="Plugins" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -123,6 +165,21 @@
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:LibraryViewModel">
                                     <views:LibraryView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:PluginsViewModel">
+                                    <views:PluginsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:GameDetectionViewModel">
+                                    <views:GameDetectionView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:NexusSearchViewModel">
+                                    <views:NexusSearchView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:ProfilesCollectionsViewModel">
+                                    <views:ProfilesCollectionsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:ModManagerViewModel">
+                                    <views:ModManagerView/>
                                 </DataTemplate>
                             </ContentControl.DataTemplates>
                         </ContentControl>

@@ -49,6 +49,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public SettingsViewModel? SettingsViewModel { get; }
     public GameBananaViewModel? GameBananaViewModel { get; }
     public LibraryViewModel? LibraryViewModel { get; }
+    public PluginsViewModel? PluginsViewModel { get; }
+    public GameDetectionViewModel? GameDetectionViewModel { get; }
+    public NexusSearchViewModel? NexusSearchViewModel { get; }
+    public ProfilesCollectionsViewModel? ProfilesCollectionsViewModel { get; }
+    public ModManagerViewModel? ModManagerViewModel { get; }
 
     // Parameterless constructor for designer
     public MainWindowViewModel()
@@ -58,6 +63,11 @@ public partial class MainWindowViewModel : ViewModelBase
         SettingsViewModel = new SettingsViewModel();
         GameBananaViewModel = new GameBananaViewModel();
         LibraryViewModel = new LibraryViewModel();
+        PluginsViewModel = new PluginsViewModel();
+        GameDetectionViewModel = new GameDetectionViewModel();
+        NexusSearchViewModel = new NexusSearchViewModel();
+        ProfilesCollectionsViewModel = new ProfilesCollectionsViewModel();
+        ModManagerViewModel = new ModManagerViewModel();
         CurrentViewModel = ModListViewModel;
         CheckConfiguration();
         UpdateVisibility();
@@ -73,7 +83,12 @@ public partial class MainWindowViewModel : ViewModelBase
         DownloadQueueViewModel downloadQueueViewModel,
         SettingsViewModel settingsViewModel,
         GameBananaViewModel gameBananaViewModel,
-        LibraryViewModel libraryViewModel)
+        LibraryViewModel libraryViewModel,
+        PluginsViewModel pluginsViewModel,
+        GameDetectionViewModel gameDetectionViewModel,
+        NexusSearchViewModel nexusSearchViewModel,
+        ProfilesCollectionsViewModel profilesCollectionsViewModel,
+        ModManagerViewModel modManagerViewModel)
     {
         _backendRegistry = backendRegistry;
         _settings = settings;
@@ -85,6 +100,11 @@ public partial class MainWindowViewModel : ViewModelBase
         SettingsViewModel = settingsViewModel;
         GameBananaViewModel = gameBananaViewModel;
         LibraryViewModel = libraryViewModel;
+        PluginsViewModel = pluginsViewModel;
+        GameDetectionViewModel = gameDetectionViewModel;
+        NexusSearchViewModel = nexusSearchViewModel;
+        ProfilesCollectionsViewModel = profilesCollectionsViewModel;
+        ModManagerViewModel = modManagerViewModel;
         CurrentViewModel = ModListViewModel;
 
         CheckConfiguration();
@@ -114,9 +134,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void UpdateVisibility()
     {
-        var isSettings = SelectedPage == "Settings";
-        ShowConfigurationWarning = !IsConfigured && !isSettings;
-        ShowPageContent = IsConfigured || isSettings;
+        // Pages that don't require backend configuration
+        var isConfigFree = SelectedPage is "Settings" or "Plugins" or "Games" or "Mod Manager" or "Profiles";
+        ShowConfigurationWarning = !IsConfigured && !isConfigFree;
+        ShowPageContent = IsConfigured || isConfigFree;
     }
 
     partial void OnIsConfiguredChanged(bool value) => UpdateVisibility();
@@ -169,10 +190,15 @@ public partial class MainWindowViewModel : ViewModelBase
         // Switch to the appropriate ViewModel
         CurrentViewModel = page switch
         {
+            "Search" => NexusSearchViewModel,
             "NexusMods" => ModListViewModel,
             "GameBanana" => GameBananaViewModel,
             "Downloads" => DownloadQueueViewModel,
             "Library" => LibraryViewModel,
+            "Games" => GameDetectionViewModel,
+            "Mod Manager" => ModManagerViewModel,
+            "Profiles" => ProfilesCollectionsViewModel,
+            "Plugins" => PluginsViewModel,
             "Settings" => SettingsViewModel,
             _ => ModListViewModel
         };
@@ -202,6 +228,29 @@ public partial class MainWindowViewModel : ViewModelBase
             else if (CurrentViewModel is LibraryViewModel library)
             {
                 library.RefreshLibraryCommand.Execute(null);
+            }
+            else if (CurrentViewModel is PluginsViewModel plugins)
+            {
+                await plugins.RefreshPluginsCommand.ExecuteAsync(null);
+            }
+            else if (CurrentViewModel is GameDetectionViewModel gameDetection)
+            {
+                await gameDetection.ScanGamesCommand.ExecuteAsync(null);
+            }
+            else if (CurrentViewModel is NexusSearchViewModel search)
+            {
+                await search.ExecuteSearchCommand.ExecuteAsync(null);
+            }
+            else if (CurrentViewModel is ModManagerViewModel modManager)
+            {
+                modManager.ScanForArchivesCommand.Execute(null);
+                if (modManager.InstalledModsViewModel != null)
+                    await modManager.InstalledModsViewModel.RefreshInstalledCommand.ExecuteAsync(null);
+            }
+            else if (CurrentViewModel is ProfilesCollectionsViewModel profCol)
+            {
+                if (profCol.CollectionViewModel != null)
+                    await profCol.CollectionViewModel.RefreshCollectionsCommand.ExecuteAsync(null);
             }
         }
         catch (Exception ex)

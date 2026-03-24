@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:models="using:Modular.Gui.Models"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.NexusSearchView"
+             x:DataType="vm:NexusSearchViewModel">
+
+    <Design.DataContext>
+        <vm:NexusSearchViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Search bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,15">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
+                <TextBlock Text="Backend:" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding AvailableBackends}"
+                          SelectedItem="{Binding SelectedBackend}"
+                          MinWidth="140"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0"
+                        IsVisible="{Binding ShowGameSelector}">
+                <TextBlock Text="Game:" VerticalAlignment="Center"/>
+                <AutoCompleteBox ItemsSource="{Binding AvailableGames}"
+                                 Text="{Binding SelectedGame}"
+                                 FilterMode="Contains"
+                                 MinWidth="220"
+                                 Watermark="Type or select a game domain"/>
+            </StackPanel>
+
+            <TextBox Grid.Column="2"
+                     Text="{Binding SearchText}"
+                     Watermark="Search mods... (min 3 characters)"
+                     Margin="0,0,10,0">
+                <TextBox.InnerLeftContent>
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
+                </TextBox.InnerLeftContent>
+            </TextBox>
+
+            <Button Grid.Column="3" Command="{Binding ExecuteSearchCommand}"
+                    ToolTip.Tip="Search">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    <TextBlock Text="Search"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Sort options -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+            <TextBlock Text="Sort:" VerticalAlignment="Center" Opacity="0.7"/>
+            <ComboBox SelectedIndex="0" MinWidth="150"
+                      SelectionChanged="OnSortChanged">
+                <ComboBoxItem Content="Relevance" Tag="Relevance"/>
+                <ComboBoxItem Content="Most Downloads" Tag="Downloads"/>
+                <ComboBoxItem Content="Most Endorsed" Tag="Endorsements"/>
+                <ComboBoxItem Content="Recently Updated" Tag="Updated"/>
+                <ComboBoxItem Content="Recently Added" Tag="Added"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Results grid -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="1">
+            <Grid>
+                <!-- Loading indicator -->
+                <StackPanel IsVisible="{Binding IsLoading}"
+                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <ProgressBar IsIndeterminate="True" Width="200"/>
+                    <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.7"/>
+                </StackPanel>
+
+                <!-- Status message when not loading and no results -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <StackPanel.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!IsLoading"/>
+                            <Binding Path="!SearchResults.Count"/>
+                        </MultiBinding>
+                    </StackPanel.IsVisible>
+                    <mi:MaterialIcon Kind="Magnify" Width="48" Height="48" Opacity="0.3"/>
+                    <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.6" FontSize="14"/>
+                </StackPanel>
+
+                <!-- Results DataGrid (only when we have results) -->
+                <DataGrid ItemsSource="{Binding SearchResults}"
+                          AutoGenerateColumns="False"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="Horizontal"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!IsLoading"/>
+                            <Binding Path="SearchResults.Count"/>
+                        </MultiBinding>
+                    </DataGrid.IsVisible>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                        <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150"/>
+                        <DataGridTemplateColumn Header="Downloads" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <TextBlock Text="{Binding Mod.DownloadCount, StringFormat='{}{0:N0}'}"
+                                               VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Endorsements" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <TextBlock Text="{Binding Mod.EndorsementCount, StringFormat='{}{0:N0}'}"
+                                               VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Updated" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <TextBlock Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd}'}"
+                                               VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+
+        <!-- Pagination footer -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
+                <Run Text="{Binding TotalResults}"/>
+                <Run Text=" results found"/>
+            </TextBlock>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                <Button Command="{Binding PreviousPageCommand}"
+                        IsEnabled="{Binding HasPreviousPage}"
+                        Content="Previous"/>
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="Page "/>
+                    <Run Text="{Binding CurrentPage}"/>
+                </TextBlock>
+                <Button Command="{Binding NextPageCommand}"
+                        IsEnabled="{Binding HasNextPage}"
+                        Content="Next"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

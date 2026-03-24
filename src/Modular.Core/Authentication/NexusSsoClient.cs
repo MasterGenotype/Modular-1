@@ -19,7 +19,7 @@ public class NexusSsoClient
     private readonly string _applicationSlug;
     private readonly ILogger? _logger;
 
-    public NexusSsoClient(string applicationSlug = "modular", ILogger? logger = null)
+    public NexusSsoClient(string applicationSlug = "vortex", ILogger? logger = null)
     {
         _applicationSlug = applicationSlug;
         _logger = logger;
@@ -74,41 +74,44 @@ public class NexusSsoClient
     {
         var buffer = new byte[4096];
 
+        // Send keepalive pings on a background task — we must NOT cancel
+        // ReceiveAsync with a CancellationToken because that aborts the
+        // entire ClientWebSocket in .NET.
+        _ = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(PingInterval, ct);
+                if (ws.State == WebSocketState.Open)
+                {
+                    await ws.SendAsync(
+                        ArraySegment<byte>.Empty,
+                        WebSocketMessageType.Binary,
+                        true,
+                        ct);
+                }
+            }
+        }, ct);
+
         while (!ct.IsCancellationRequested)
         {
-            // Use a short receive timeout so we can send pings
-            using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            pingCts.CancelAfter(PingInterval);
+            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
 
-            try
+            if (result.MessageType == WebSocketMessageType.Close)
+                throw new InvalidOperationException("SSO server closed the connection unexpectedly.");
+
+            var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var response = JsonSerializer.Deserialize<SsoResponse>(message);
+
+            if (response?.Success == true && response.Data?.ApiKey != null)
             {
-                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), pingCts.Token);
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                    throw new InvalidOperationException("SSO server closed the connection unexpectedly.");
-
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                var response = JsonSerializer.Deserialize<SsoResponse>(message);
-
-                if (response?.Success == true && response.Data?.ApiKey != null)
-                {
-                    _logger?.LogInformation("Received API key from SSO");
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Done", CancellationToken.None);
-                    return response.Data.ApiKey;
-                }
-
-                if (response?.Error != null)
-                    throw new InvalidOperationException($"SSO error: {response.Error}");
+                _logger?.LogInformation("Received API key from SSO");
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Done", CancellationToken.None);
+                return response.Data.ApiKey;
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                // Ping timeout - send ping to keep connection alive
-                await ws.SendAsync(
-                    ArraySegment<byte>.Empty,
-                    WebSocketMessageType.Binary,
-                    true,
-                    ct);
-            }
+
+            if (response?.Error != null)
+                throw new InvalidOperationException($"SSO error: {response.Error}");
         }
 
         throw new TimeoutException("SSO authorization timed out. The user did not authorize within the time limit.");

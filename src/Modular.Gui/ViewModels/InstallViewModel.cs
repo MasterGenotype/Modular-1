@@ -1,0 +1,274 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Modular.Core.GameDetection;
+using Modular.Core.Installers;
+using Modular.Gui.Services;
+using Modular.Sdk.Installers;
+
+namespace Modular.Gui.ViewModels;
+
+public partial class InstallViewModel : ViewModelBase
+{
+    private readonly ModInstallationService? _installService;
+    private readonly SteamGameScanner? _scanner;
+    private readonly IDialogService? _dialogService;
+
+    [ObservableProperty]
+    private ObservableCollection<string> _archivePaths = new();
+
+    [ObservableProperty]
+    private string _targetDirectory = string.Empty;
+
+    [ObservableProperty]
+    private ObservableCollection<GameDisplayModel> _detectedGames = new();
+
+    [ObservableProperty]
+    private GameDisplayModel? _selectedGame;
+
+    [ObservableProperty]
+    private bool _allowOverwrite;
+
+    [ObservableProperty]
+    private bool _createBackups = true;
+
+    [ObservableProperty]
+    private bool _dryRun;
+
+    [ObservableProperty]
+    private bool _isInstalling;
+
+    [ObservableProperty]
+    private double _installProgress;
+
+    [ObservableProperty]
+    private string _statusMessage = "Select archives and a target directory to install";
+
+    [ObservableProperty]
+    private ObservableCollection<string> _installResults = new();
+
+    [ObservableProperty]
+    private int _currentArchiveIndex;
+
+    [ObservableProperty]
+    private int _totalArchives;
+
+    // Designer constructor
+    public InstallViewModel()
+    {
+        ArchivePaths.Add("/home/user/Mods/skyrim/some-mod.zip");
+        ArchivePaths.Add("/home/user/Mods/skyrim/another-mod.zip");
+        TargetDirectory = "/home/user/.steam/steamapps/common/Skyrim";
+        DetectedGames.Add(new GameDisplayModel
+        {
+            AppId = 489830,
+            DisplayName = "The Elder Scrolls V: Skyrim Special Edition",
+            InstallPath = "/home/user/.steam/steamapps/common/Skyrim Special Edition"
+        });
+    }
+
+    // DI constructor
+    public InstallViewModel(
+        ModInstallationService installService,
+        SteamGameScanner scanner,
+        IDialogService dialogService)
+    {
+        _installService = installService;
+        _scanner = scanner;
+        _dialogService = dialogService;
+    }
+
+    partial void OnSelectedGameChanged(GameDisplayModel? value)
+    {
+        if (value != null)
+        {
+            TargetDirectory = value.InstallPath;
+        }
+    }
+
+    [RelayCommand]
+    private async Task AddArchivesAsync()
+    {
+        if (_dialogService == null) return;
+
+        var files = await _dialogService.ShowFileBrowserAsync(
+            "Select Mod Archives",
+            allowMultiple: true);
+
+        foreach (var file in files)
+        {
+            if (!ArchivePaths.Contains(file))
+            {
+                ArchivePaths.Add(file);
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void RemoveArchive(string path)
+    {
+        ArchivePaths.Remove(path);
+    }
+
+    [RelayCommand]
+    private void ClearArchives()
+    {
+        ArchivePaths.Clear();
+    }
+
+    [RelayCommand]
+    private async Task BrowseTargetAsync()
+    {
+        if (_dialogService == null) return;
+
+        var folder = await _dialogService.ShowFolderBrowserAsync(
+            "Select Target Directory",
+            TargetDirectory);
+
+        if (!string.IsNullOrEmpty(folder))
+        {
+            TargetDirectory = folder;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ScanGamesAsync()
+    {
+        if (_scanner == null)
+        {
+            StatusMessage = "Game scanner not available";
+            return;
+        }
+
+        StatusMessage = "Scanning for games...";
+        DetectedGames.Clear();
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var results = await _scanner.ScanAllAsync(cts.Token);
+
+            foreach (var game in results.OrderBy(g => g.DisplayName))
+            {
+                DetectedGames.Add(new GameDisplayModel
+                {
+                    AppId = game.AppId,
+                    DisplayName = game.DisplayName,
+                    InstallPath = game.InstallPath,
+                    IsFullyInstalled = game.IsFullyInstalled
+                });
+            }
+
+            StatusMessage = $"Found {DetectedGames.Count} game(s)";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Scan error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task InstallModsAsync()
+    {
+        if (_installService == null)
+        {
+            StatusMessage = "Installation service not available";
+            return;
+        }
+
+        if (ArchivePaths.Count == 0)
+        {
+            StatusMessage = "Please add at least one archive";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(TargetDirectory))
+        {
+            StatusMessage = "Please specify a target directory";
+            return;
+        }
+
+        IsInstalling = true;
+        InstallProgress = 0;
+        InstallResults.Clear();
+        TotalArchives = ArchivePaths.Count;
+        CurrentArchiveIndex = 0;
+
+        var succeeded = 0;
+        var failed = 0;
+
+        try
+        {
+            for (var i = 0; i < ArchivePaths.Count; i++)
+            {
+                var archivePath = ArchivePaths[i];
+                var fileName = Path.GetFileName(archivePath);
+                CurrentArchiveIndex = i + 1;
+
+                if (!File.Exists(archivePath))
+                {
+                    InstallResults.Add($"Skipped (not found): {fileName}");
+                    failed++;
+                    continue;
+                }
+
+                StatusMessage = DryRun
+                    ? $"Dry-run {CurrentArchiveIndex}/{TotalArchives}: {fileName}"
+                    : $"Installing {CurrentArchiveIndex}/{TotalArchives}: {fileName}";
+
+                var options = new ModInstallationOptions
+                {
+                    AllowOverwrite = AllowOverwrite,
+                    CreateBackups = CreateBackups,
+                    DryRun = DryRun
+                };
+
+                var progress = new Progress<InstallProgress>(p =>
+                {
+                    // Scale progress across all archives
+                    var archiveBase = (double)(i) / TotalArchives * 100;
+                    var archiveSlice = p.Percentage / TotalArchives;
+                    InstallProgress = archiveBase + archiveSlice;
+                });
+
+                var result = await _installService.InstallAsync(
+                    archivePath, TargetDirectory, options, progress);
+
+                if (result.Success)
+                {
+                    if (result.DryRun)
+                    {
+                        InstallResults.Add($"[Dry run] {fileName}: {result.PlannedOperations.Count} operation(s)");
+                    }
+                    else
+                    {
+                        InstallResults.Add($"Installed: {fileName} ({result.InstalledFiles.Count} files, {result.InstallerUsed})");
+                    }
+                    succeeded++;
+                }
+                else
+                {
+                    InstallResults.Add($"Failed: {fileName} — {result.Error}");
+                    failed++;
+                }
+            }
+
+            StatusMessage = DryRun
+                ? $"Dry run complete: {succeeded} previewed, {failed} failed"
+                : $"Batch complete: {succeeded} installed, {failed} failed";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            if (_dialogService != null)
+            {
+                await _dialogService.ShowErrorAsync("Install Error", ex.Message);
+            }
+        }
+        finally
+        {
+            IsInstalling = false;
+            InstallProgress = 100;
+        }
+    }
+}

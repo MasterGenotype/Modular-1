@@ -19,10 +19,9 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                 <TextBlock Text="Game:" VerticalAlignment="Center"/>
                 <ComboBox ItemsSource="{Binding AvailableDomains}"
-                          SelectedItem="{Binding SelectedDomain}"
-                          IsEditable="True"
-                          MinWidth="200"
-                          PlaceholderText="Enter or select game domain"/>
+                          SelectedItem="{Binding SelectedDomainInfo}"
+                          MinWidth="250"
+                          PlaceholderText="Select a game"/>
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
@@ -45,7 +44,7 @@
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,10">
             <TextBox Grid.Column="0" 
                      Text="{Binding SearchText}" 
-                     Watermark="Search mods..."
+                     Watermark="Filter tracked mods..."
                      Margin="0,0,10,0">
                 <TextBox.InnerLeftContent>
                     <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>

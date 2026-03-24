@@ -53,6 +53,12 @@ public interface IDialogService
     Task<DialogResult> ShowRetryErrorAsync(string title, string message);
 
     /// <summary>
+    /// Shows a file browser dialog.
+    /// </summary>
+    /// <returns>List of selected file paths, or empty if cancelled.</returns>
+    Task<List<string>> ShowFileBrowserAsync(string? title = null, bool allowMultiple = false, string? initialDirectory = null);
+
+    /// <summary>
     /// Shows a progress dialog for long-running operations.
     /// </summary>
     /// <param name="title">Dialog title.</param>

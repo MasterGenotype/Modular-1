@@ -186,6 +186,28 @@ public class DialogService : IDialogService
         return result;
     }
 
+    public async Task<List<string>> ShowFileBrowserAsync(string? title = null, bool allowMultiple = false, string? initialDirectory = null)
+    {
+        var window = GetMainWindow();
+        if (window == null) return [];
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title ?? "Select File(s)",
+            AllowMultiple = allowMultiple,
+            SuggestedStartLocation = initialDirectory != null
+                ? await window.StorageProvider.TryGetFolderFromPathAsync(initialDirectory)
+                : null,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Mod Archives") { Patterns = ["*.zip", "*.7z", "*.rar", "*.tar.gz", "*.tgz", "*.tar"] },
+                new FilePickerFileType("All Files") { Patterns = ["*"] }
+            ]
+        });
+
+        return files.Select(f => f.Path.LocalPath).ToList();
+    }
+
     public async Task<string?> ShowFolderBrowserAsync(string? title = null, string? initialDirectory = null)
     {
         var window = GetMainWindow();
