@@ -18,7 +18,7 @@
             <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                     CornerRadius="8" Padding="20">
                 <StackPanel Spacing="15">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                             <mi:MaterialIcon Kind="Archive" Width="24" Height="24"/>
                             <TextBlock Text="Mod Archives" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -32,7 +32,14 @@
                                 <TextBlock Text="Add Archives..."/>
                             </StackPanel>
                         </Button>
-                        <Button Grid.Column="2" Command="{Binding ClearArchivesCommand}"
+                        <Button Grid.Column="2" Command="{Binding AddFolderCommand}"
+                                ToolTip.Tip="Recursively scan a folder for archives" Margin="0,0,5,0">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="FolderSearch" Width="14" Height="14"/>
+                                <TextBlock Text="Add Folder..."/>
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="3" Command="{Binding ClearArchivesCommand}"
                                 ToolTip.Tip="Remove all archives"
                                 IsVisible="{Binding ArchivePaths.Count}">
                             <StackPanel Orientation="Horizontal" Spacing="5">
@@ -43,7 +50,7 @@
                     </Grid>
 
                     <!-- Archive list -->
-                    <TextBlock Text="No archives selected — click Add Archives to browse"
+                    <TextBlock Text="No archives selected — Add Archives to pick files, or Add Folder to scan a directory"
                                Opacity="0.5" IsVisible="{Binding !ArchivePaths.Count}"/>
 
                     <ItemsControl ItemsSource="{Binding ArchivePaths}"

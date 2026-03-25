@@ -16,7 +16,7 @@ public class ArchiveReaderFactory : IArchiveReaderFactory
 
     private static readonly HashSet<string> SharpCompressExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".lz", ".lzma"
+        ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".lz", ".lzma", ".pak"
     };
 
     /// <inheritdoc />

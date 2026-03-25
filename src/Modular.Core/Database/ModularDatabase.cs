@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 4;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -184,6 +184,10 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Also create v2+ tables for fresh installs
+            await CreateV2TablesAsync(connection, (SqliteTransaction)transaction);
+            await CreateV4TablesAsync(connection, (SqliteTransaction)transaction);
+
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
         }
@@ -205,6 +209,18 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                 await MigrateToV2Async(connection, (SqliteTransaction)transaction);
             }
 
+            if (fromVersion < 3)
+            {
+                // Re-run v2 table creation to fix databases that were created fresh at v2
+                // but missing v2 tables due to a bug in CreateSchemaAsync
+                await CreateV2TablesAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 4)
+            {
+                await CreateV4TablesAsync(connection, (SqliteTransaction)transaction);
+            }
+
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
         }
@@ -216,6 +232,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
     }
 
     private static async Task MigrateToV2Async(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        await CreateV2TablesAsync(connection, transaction);
+    }
+
+    private static async Task CreateV2TablesAsync(SqliteConnection connection, SqliteTransaction transaction)
     {
         // Game detection tables
         await using (var cmd = connection.CreateCommand())
@@ -322,6 +343,52 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                     updated_at_utc TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_changeset_state ON changeset(state);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static async Task CreateV4TablesAsync(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        // Snapshot table — point-in-time record of installed mods for a game
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS snapshot (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT NOT NULL UNIQUE,
+                    game_appid INTEGER NOT NULL,
+                    game_name TEXT NOT NULL,
+                    game_install_path TEXT NOT NULL,
+                    name TEXT,
+                    description TEXT,
+                    trigger TEXT NOT NULL DEFAULT 'manual',
+                    created_at_utc TEXT NOT NULL,
+                    mod_count INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_snapshot_game ON snapshot(game_appid);
+                CREATE INDEX IF NOT EXISTS idx_snapshot_created ON snapshot(created_at_utc);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Snapshot entries — denormalized copy of each committed changeset at snapshot time
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS snapshot_entry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT NOT NULL REFERENCES snapshot(snapshot_id) ON DELETE CASCADE,
+                    changeset_id TEXT NOT NULL,
+                    mod_id TEXT,
+                    archive_path TEXT,
+                    target_directory TEXT,
+                    operations_json TEXT,
+                    changeset_created_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_snapshot_entry_snapshot ON snapshot_entry(snapshot_id);
                 """;
             await cmd.ExecuteNonQueryAsync();
         }

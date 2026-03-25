@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:views="using:Modular.Gui.Views"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.BackupsView"
+             x:DataType="vm:BackupsViewModel">
+
+    <Design.DataContext>
+        <vm:BackupsViewModel/>
+    </Design.DataContext>
+
+    <TabControl SelectedIndex="{Binding SelectedTabIndex}">
+        <TabItem>
+            <TabItem.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <mi:MaterialIcon Kind="BookmarkMultiple" Width="16" Height="16"/>
+                    <TextBlock Text="Collections"/>
+                </StackPanel>
+            </TabItem.Header>
+            <views:CollectionView DataContext="{Binding CollectionViewModel}"/>
+        </TabItem>
+
+        <TabItem>
+            <TabItem.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <mi:MaterialIcon Kind="BackupRestore" Width="16" Height="16"/>
+                    <TextBlock Text="Snapshots"/>
+                </StackPanel>
+            </TabItem.Header>
+            <views:SnapshotView DataContext="{Binding SnapshotViewModel}"/>
+        </TabItem>
+    </TabControl>
+</UserControl>

@@ -43,14 +43,17 @@ internal record NexusGraphQlMod
     [JsonPropertyName("version")]
     public string? Version { get; init; }
 
-    [JsonPropertyName("categoryId")]
-    public int? CategoryId { get; init; }
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
 
-    [JsonPropertyName("endorsementCount")]
-    public int EndorsementCount { get; init; }
+    [JsonPropertyName("modCategory")]
+    public NexusGraphQlModCategory? ModCategory { get; init; }
 
-    [JsonPropertyName("downloadCount")]
-    public long DownloadCount { get; init; }
+    [JsonPropertyName("endorsements")]
+    public int Endorsements { get; init; }
+
+    [JsonPropertyName("downloads")]
+    public int Downloads { get; init; }
 
     [JsonPropertyName("createdAt")]
     public string? CreatedAt { get; init; }
@@ -66,6 +69,12 @@ internal record NexusGraphQlMod
 
     [JsonPropertyName("game")]
     public NexusGraphQlGame? Game { get; init; }
+}
+
+internal record NexusGraphQlModCategory
+{
+    [JsonPropertyName("categoryId")]
+    public int CategoryId { get; init; }
 }
 
 internal record NexusGraphQlGame

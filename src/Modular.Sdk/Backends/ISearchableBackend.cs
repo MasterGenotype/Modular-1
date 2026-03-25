@@ -22,8 +22,8 @@ public interface ISearchableBackend
 /// </summary>
 public record ModSearchQuery
 {
-    /// <summary>Full-text search terms.</summary>
-    public required string Terms { get; init; }
+    /// <summary>Full-text search terms. Empty or null returns unfiltered results.</summary>
+    public string Terms { get; init; } = string.Empty;
 
     /// <summary>Optional game domain filter (e.g. "skyrimspecialedition").</summary>
     public string? GameDomain { get; init; }

@@ -13,7 +13,7 @@
         <vm:NexusSearchViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
         <!-- Search bar -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,15">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
@@ -35,7 +35,7 @@
 
             <TextBox Grid.Column="2"
                      Text="{Binding SearchText}"
-                     Watermark="Search mods... (min 3 characters)"
+                     Watermark="Search mods... (leave empty to browse all)"
                      Margin="0,0,10,0">
                 <TextBox.InnerLeftContent>
                     <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
@@ -64,8 +64,28 @@
             </ComboBox>
         </StackPanel>
 
+        <!-- Selection bar -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+            <Button Command="{Binding SelectAllCommand}" Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="CheckboxMultipleMarked" Width="14" Height="14"/>
+                    <TextBlock Text="Select All" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <Button Command="{Binding SelectNoneCommand}" Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="CheckboxMultipleBlankOutline" Width="14" Height="14"/>
+                    <TextBlock Text="Select None" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <TextBlock VerticalAlignment="Center" Opacity="0.6" FontSize="12">
+                <Run Text="{Binding SelectedCount}"/>
+                <Run Text=" selected"/>
+            </TextBlock>
+        </StackPanel>
+
         <!-- Results grid -->
-        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 CornerRadius="8" Padding="1">
             <Grid>
                 <!-- Loading indicator -->
@@ -93,7 +113,7 @@
                           CanUserResizeColumns="True"
                           CanUserSortColumns="True"
                           GridLinesVisibility="Horizontal"
-                          IsReadOnly="True"
+                          IsReadOnly="False"
                           SelectionMode="Single">
                     <DataGrid.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -102,9 +122,17 @@
                         </MultiBinding>
                     </DataGrid.IsVisible>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80"/>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
-                        <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150"/>
+                        <DataGridTemplateColumn Header="" Width="40">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150" IsReadOnly="True"/>
                         <DataGridTemplateColumn Header="Downloads" Width="110">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:ModDisplayModel">
@@ -134,25 +162,40 @@
             </Grid>
         </Border>
 
-        <!-- Pagination footer -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
-                <Run Text="{Binding TotalResults}"/>
-                <Run Text=" results found"/>
-            </TextBlock>
-
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+        <!-- Footer: pagination + download -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,15,0,0">
+            <!-- Results count & pagination -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock VerticalAlignment="Center" Opacity="0.7">
+                    <Run Text="{Binding TotalResults}"/>
+                    <Run Text=" results found"/>
+                </TextBlock>
                 <Button Command="{Binding PreviousPageCommand}"
                         IsEnabled="{Binding HasPreviousPage}"
-                        Content="Previous"/>
+                        Content="Previous" Padding="8,4"/>
                 <TextBlock VerticalAlignment="Center">
                     <Run Text="Page "/>
                     <Run Text="{Binding CurrentPage}"/>
                 </TextBlock>
                 <Button Command="{Binding NextPageCommand}"
                         IsEnabled="{Binding HasNextPage}"
-                        Content="Next"/>
+                        Content="Next" Padding="8,4"/>
             </StackPanel>
+
+            <!-- Download Selected button -->
+            <Button Grid.Column="2"
+                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
+                    IsEnabled="{Binding SelectedCount}"
+                    Padding="16,10">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
+                    <TextBlock VerticalAlignment="Center">
+                        <Run Text="Download Selected ("/>
+                        <Run Text="{Binding SelectedCount}"/>
+                        <Run Text=")"/>
+                    </TextBlock>
+                </StackPanel>
+            </Button>
         </Grid>
     </Grid>
 </UserControl>

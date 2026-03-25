@@ -40,14 +40,6 @@
 
                     <!-- Navigation Items -->
                     <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="5,10">
-                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Search"
-                                Classes="nav-button">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="Magnify" Width="20" Height="20"/>
-                                <TextBlock Text="Search" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-
                         <Button Command="{Binding NavigateToCommand}" CommandParameter="NexusMods"
                                 Classes="nav-button">
                             <StackPanel Orientation="Horizontal" Spacing="10">
@@ -101,8 +93,16 @@
                         <Button Command="{Binding NavigateToCommand}" CommandParameter="Profiles"
                                 Classes="nav-button">
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="BookmarkMultiple" Width="20" Height="20"/>
+                                <mi:MaterialIcon Kind="AccountGroup" Width="20" Height="20"/>
                                 <TextBlock Text="Profiles" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Backups"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="BackupRestore" Width="20" Height="20"/>
+                                <TextBlock Text="Backups" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
@@ -151,17 +151,17 @@
                         <!-- Content based on CurrentViewModel -->
                         <ContentControl Content="{Binding CurrentViewModel}">
                         <ContentControl.DataTemplates>
-                                <DataTemplate DataType="vm:ModListViewModel">
-                                    <views:ModListView/>
+                                <DataTemplate DataType="vm:NexusModsViewModel">
+                                    <views:NexusModsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:GameBananaPanelViewModel">
+                                    <views:GameBananaPanelView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:DownloadQueueViewModel">
                                     <views:DownloadQueueView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:SettingsViewModel">
                                     <views:SettingsView/>
-                                </DataTemplate>
-                                <DataTemplate DataType="vm:GameBananaViewModel">
-                                    <views:GameBananaView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:LibraryViewModel">
                                     <views:LibraryView/>
@@ -172,11 +172,11 @@
                                 <DataTemplate DataType="vm:GameDetectionViewModel">
                                     <views:GameDetectionView/>
                                 </DataTemplate>
-                                <DataTemplate DataType="vm:NexusSearchViewModel">
-                                    <views:NexusSearchView/>
-                                </DataTemplate>
                                 <DataTemplate DataType="vm:ProfilesCollectionsViewModel">
                                     <views:ProfilesCollectionsView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:BackupsViewModel">
+                                    <views:BackupsView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:ModManagerViewModel">
                                     <views:ModManagerView/>

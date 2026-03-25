@@ -1,7 +1,8 @@
-using System.IO.Compression;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -12,14 +13,16 @@ namespace Modular.Core.Installers;
 /// </summary>
 public class FomodInstaller : IModInstaller
 {
+    private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly ILogger<FomodInstaller>? _logger;
 
     public string InstallerId => "fomod";
     public string DisplayName => "FOMOD Installer";
     public int Priority => 100; // High priority
 
-    public FomodInstaller(ILogger<FomodInstaller>? logger = null)
+    public FomodInstaller(IArchiveReaderFactory? archiveReaderFactory = null, ILogger<FomodInstaller>? logger = null)
     {
+        _archiveReaderFactory = archiveReaderFactory ?? new ArchiveReaderFactory();
         _logger = logger;
     }
 
@@ -27,14 +30,23 @@ public class FomodInstaller : IModInstaller
     {
         try
         {
-            using var archive = ZipFile.OpenRead(archivePath);
-            
+            using var reader = _archiveReaderFactory.Open(archivePath);
+            if (reader == null)
+            {
+                return new InstallDetectionResult
+                {
+                    CanHandle = false,
+                    Confidence = 0,
+                    Reason = "Unable to open archive"
+                };
+            }
+
             // Look for FOMOD descriptor files
-            var hasFomodConfig = archive.Entries.Any(e => 
+            var hasFomodConfig = reader.Entries.Any(e =>
                 e.FullName.EndsWith("ModuleConfig.xml", StringComparison.OrdinalIgnoreCase) ||
                 e.FullName.EndsWith("fomod/ModuleConfig.xml", StringComparison.OrdinalIgnoreCase));
 
-            var hasInfo = archive.Entries.Any(e => 
+            var hasInfo = reader.Entries.Any(e =>
                 e.FullName.EndsWith("fomod/info.xml", StringComparison.OrdinalIgnoreCase));
 
             if (hasFomodConfig)
@@ -81,10 +93,11 @@ public class FomodInstaller : IModInstaller
             Operations = new List<FileOperation>()
         };
 
-        using var archive = ZipFile.OpenRead(archivePath);
-        
+        using var reader = _archiveReaderFactory.Open(archivePath)
+            ?? throw new InvalidOperationException($"Unable to open archive: {archivePath}");
+
         // Find and parse ModuleConfig.xml
-        var configEntry = archive.Entries.FirstOrDefault(e => 
+        var configEntry = reader.Entries.FirstOrDefault(e =>
             e.FullName.EndsWith("ModuleConfig.xml", StringComparison.OrdinalIgnoreCase));
 
         if (configEntry == null)
@@ -92,7 +105,7 @@ public class FomodInstaller : IModInstaller
             throw new InvalidOperationException("No ModuleConfig.xml found");
         }
 
-        using var configStream = configEntry.Open();
+        using var configStream = reader.OpenEntryStream(configEntry);
         var doc = await XDocument.LoadAsync(configStream, LoadOptions.None, ct);
 
         // Parse FOMOD structure
@@ -104,8 +117,8 @@ public class FomodInstaller : IModInstaller
         };
 
         // For now, create a basic file list (UI would handle user selections)
-        var allFiles = archive.Entries.Where(e => 
-            !string.IsNullOrEmpty(e.Name) && 
+        var allFiles = reader.Entries.Where(e =>
+            !e.IsDirectory &&
             !e.FullName.Contains("fomod/", StringComparison.OrdinalIgnoreCase));
 
         long totalBytes = 0;
@@ -133,14 +146,15 @@ public class FomodInstaller : IModInstaller
     {
         // Note: Full FOMOD install requires UI for user selections
         // This is a simplified implementation
-        
+
         var result = new InstallResult { Success = false };
         var installedFiles = new List<string>();
 
         try
         {
-            using var archive = ZipFile.OpenRead(plan.SourcePath);
-            
+            using var reader = _archiveReaderFactory.Open(plan.SourcePath)
+                ?? throw new InvalidOperationException($"Unable to open archive: {plan.SourcePath}");
+
             // If options contain user selections, use those
             var selectedFiles = plan.Options?.ContainsKey("selected_files") == true
                 ? (List<string>)plan.Options["selected_files"]
@@ -153,7 +167,7 @@ public class FomodInstaller : IModInstaller
             {
                 ct.ThrowIfCancellationRequested();
 
-                var entry = archive.GetEntry(filePath);
+                var entry = reader.Entries.FirstOrDefault(e => e.FullName == filePath);
                 if (entry == null)
                     continue;
 
@@ -164,7 +178,7 @@ public class FomodInstaller : IModInstaller
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
                     Directory.CreateDirectory(destDir);
 
-                entry.ExtractToFile(destPath, true);
+                await reader.ExtractEntryAsync(entry, destPath, overwrite: true, ct);
                 installedFiles.Add(destPath);
 
                 filesProcessed++;
@@ -198,7 +212,7 @@ public class FomodInstaller : IModInstaller
             _logger?.LogError(ex, "FOMOD installation failed");
         }
 
-        return await Task.FromResult(result);
+        return result;
     }
 
     private Dictionary<string, object> ParseFomodConfig(XDocument doc)

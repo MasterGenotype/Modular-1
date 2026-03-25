@@ -1,6 +1,7 @@
-using System.IO.Compression;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -11,14 +12,16 @@ namespace Modular.Core.Installers;
 /// </summary>
 public class LooseFileInstaller : IModInstaller
 {
+    private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly ILogger<LooseFileInstaller>? _logger;
 
     public string InstallerId => "loose-file";
     public string DisplayName => "Loose File Installer";
     public int Priority => 1; // Lowest priority (fallback)
 
-    public LooseFileInstaller(ILogger<LooseFileInstaller>? logger = null)
+    public LooseFileInstaller(IArchiveReaderFactory? archiveReaderFactory = null, ILogger<LooseFileInstaller>? logger = null)
     {
+        _archiveReaderFactory = archiveReaderFactory ?? new ArchiveReaderFactory();
         _logger = logger;
     }
 
@@ -27,10 +30,19 @@ public class LooseFileInstaller : IModInstaller
         try
         {
             // Always can handle any archive as fallback
-            using var archive = ZipFile.OpenRead(archivePath);
-            
+            using var reader = _archiveReaderFactory.Open(archivePath);
+            if (reader == null)
+            {
+                return new InstallDetectionResult
+                {
+                    CanHandle = false,
+                    Confidence = 0,
+                    Reason = "Unable to open archive"
+                };
+            }
+
             // Check if it's truly a simple loose file structure
-            var entries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            var entries = reader.Entries.Where(e => !e.IsDirectory).ToList();
             var hasNestedStructure = entries.Any(e => e.FullName.Count(c => c == '/') > 2);
 
             return await Task.FromResult(new InstallDetectionResult
@@ -38,7 +50,7 @@ public class LooseFileInstaller : IModInstaller
                 CanHandle = true,
                 Confidence = hasNestedStructure ? 0.3 : 0.7,
                 InstallerType = "loose-file",
-                Reason = hasNestedStructure 
+                Reason = hasNestedStructure
                     ? "Can extract as loose files but may need directory adjustments"
                     : "Simple file structure suitable for direct extraction"
             });
@@ -68,10 +80,11 @@ public class LooseFileInstaller : IModInstaller
             Operations = new List<FileOperation>()
         };
 
-        using var archive = ZipFile.OpenRead(archivePath);
-        
+        using var reader = _archiveReaderFactory.Open(archivePath)
+            ?? throw new InvalidOperationException($"Unable to open archive: {archivePath}");
+
         // Find common root directory
-        var entries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+        var entries = reader.Entries.Where(e => !e.IsDirectory).ToList();
         var commonRoot = FindCommonRoot(entries.Select(e => e.FullName).ToList());
 
         long totalBytes = 0;
@@ -109,8 +122,9 @@ public class LooseFileInstaller : IModInstaller
 
         try
         {
-            using var archive = ZipFile.OpenRead(plan.SourcePath);
-            
+            using var reader = _archiveReaderFactory.Open(plan.SourcePath)
+                ?? throw new InvalidOperationException($"Unable to open archive: {plan.SourcePath}");
+
             int filesProcessed = 0;
             long bytesProcessed = 0;
 
@@ -118,7 +132,7 @@ public class LooseFileInstaller : IModInstaller
             {
                 ct.ThrowIfCancellationRequested();
 
-                var entry = archive.GetEntry(operation.SourcePath);
+                var entry = reader.Entries.FirstOrDefault(e => e.FullName == operation.SourcePath);
                 if (entry == null)
                     continue;
 
@@ -139,7 +153,7 @@ public class LooseFileInstaller : IModInstaller
                 }
 
                 // Extract file
-                entry.ExtractToFile(destPath, true);
+                await reader.ExtractEntryAsync(entry, destPath, overwrite: true, ct);
                 installedFiles.Add(destPath);
 
                 filesProcessed++;
@@ -175,7 +189,7 @@ public class LooseFileInstaller : IModInstaller
             _logger?.LogError(ex, "Installation failed");
         }
 
-        return await Task.FromResult(result);
+        return result;
     }
 
     private string FindCommonRoot(List<string> paths)

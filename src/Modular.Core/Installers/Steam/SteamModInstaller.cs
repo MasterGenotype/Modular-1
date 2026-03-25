@@ -2,8 +2,10 @@ using System.Formats.Tar;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Archives;
 using Modular.Core.Dependencies;
 using Modular.Core.Utilities;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers.Steam;
@@ -14,6 +16,7 @@ namespace Modular.Core.Installers.Steam;
 /// </summary>
 public class SteamModInstaller : IModInstaller
 {
+    private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly ILogger<SteamModInstaller>? _logger;
     private readonly SteamConstraintSolver _solver;
 
@@ -21,8 +24,9 @@ public class SteamModInstaller : IModInstaller
     public string DisplayName => "Steam Mod Installer";
     public int Priority => 5; // Higher than LooseFile (1), lower than specialized installers
 
-    public SteamModInstaller(ILogger<SteamModInstaller>? logger = null)
+    public SteamModInstaller(IArchiveReaderFactory? archiveReaderFactory = null, ILogger<SteamModInstaller>? logger = null)
     {
+        _archiveReaderFactory = archiveReaderFactory ?? new ArchiveReaderFactory();
         _logger = logger;
         _solver = new SteamConstraintSolver(logger != null
             ? new LoggerFactory().CreateLogger<SteamConstraintSolver>()
@@ -31,8 +35,10 @@ public class SteamModInstaller : IModInstaller
 
     public SteamModInstaller(
         SteamConstraintSolver solver,
+        IArchiveReaderFactory? archiveReaderFactory = null,
         ILogger<SteamModInstaller>? logger = null)
     {
+        _archiveReaderFactory = archiveReaderFactory ?? new ArchiveReaderFactory();
         _solver = solver;
         _logger = logger;
     }
@@ -44,16 +50,14 @@ public class SteamModInstaller : IModInstaller
     {
         try
         {
-            var extension = Path.GetExtension(archivePath).ToLowerInvariant();
-            var isSupportedFormat = extension is ".zip" or ".tar" or ".gz" or ".tgz";
-
-            if (!isSupportedFormat)
+            using var reader = _archiveReaderFactory.Open(archivePath);
+            if (reader == null)
             {
                 return Task.FromResult(new InstallDetectionResult
                 {
                     CanHandle = false,
                     Confidence = 0,
-                    Reason = $"Unsupported archive format: {extension}"
+                    Reason = "Unable to open archive"
                 });
             }
 
@@ -61,17 +65,13 @@ public class SteamModInstaller : IModInstaller
             var confidence = 0.5;
             var reason = "Supported archive format for Steam mod installation";
 
-            if (extension == ".zip")
-            {
-                using var archive = ZipFile.OpenRead(archivePath);
-                var entries = archive.Entries.Select(e => e.FullName.ToLowerInvariant()).ToList();
+            var entryNames = reader.Entries.Select(e => e.FullName.ToLowerInvariant()).ToList();
 
-                // Higher confidence if it has typical Steam workshop structure
-                if (entries.Any(e => e.Contains("workshop") || e.Contains("steam")))
-                    confidence = 0.85;
-                else if (entries.Any(e => e.EndsWith(".dll") || e.EndsWith(".so")))
-                    confidence = 0.65;
-            }
+            // Higher confidence if it has typical Steam workshop structure
+            if (entryNames.Any(e => e.Contains("workshop") || e.Contains("steam")))
+                confidence = 0.85;
+            else if (entryNames.Any(e => e.EndsWith(".dll") || e.EndsWith(".so")))
+                confidence = 0.65;
 
             return Task.FromResult(new InstallDetectionResult
             {
@@ -109,13 +109,12 @@ public class SteamModInstaller : IModInstaller
             Operations = new List<FileOperation>()
         };
 
-        var extension = Path.GetExtension(archivePath).ToLowerInvariant();
         long totalBytes = 0;
 
-        if (extension == ".zip")
+        using var reader = _archiveReaderFactory.Open(archivePath);
+        if (reader != null)
         {
-            using var archive = ZipFile.OpenRead(archivePath);
-            var entries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            var entries = reader.Entries.Where(e => !e.IsDirectory).ToList();
 
             foreach (var entry in entries)
             {
@@ -129,9 +128,9 @@ public class SteamModInstaller : IModInstaller
                 totalBytes += entry.Length;
             }
         }
-        else if (extension is ".tar" or ".gz" or ".tgz")
+        else
         {
-            // For tar/tar.gz, we list entries by opening the archive
+            // Fallback: treat as opaque archive
             plan.Operations.Add(new FileOperation
             {
                 Type = FileOperationType.Extract,
@@ -468,21 +467,27 @@ public class SteamModInstaller : IModInstaller
     }
 
     /// <summary>
-    /// Extracts an archive to the staging directory, supporting .zip, .tar, and .tar.gz formats.
+    /// Extracts an archive to the staging directory using IArchiveReader for all supported formats,
+    /// with fallback to native tar/tar.gz handling.
     /// </summary>
-    internal static async Task ExtractToStagingAsync(
+    internal async Task ExtractToStagingAsync(
         string archivePath,
         string stagingDir,
         CancellationToken ct = default)
     {
+        // Try using the archive reader factory first (handles zip, 7z, rar, tar, gz, etc.)
+        using var reader = _archiveReaderFactory.Open(archivePath);
+        if (reader != null)
+        {
+            await reader.ExtractAllAsync(stagingDir, overwrite: true, ct);
+            return;
+        }
+
+        // Fallback for formats the factory can't handle: native tar/tar.gz
         var extension = Path.GetExtension(archivePath).ToLowerInvariant();
         var secondExtension = Path.GetExtension(Path.GetFileNameWithoutExtension(archivePath)).ToLowerInvariant();
 
-        if (extension == ".zip")
-        {
-            await Task.Run(() => ZipFile.ExtractToDirectory(archivePath, stagingDir, overwriteFiles: true), ct);
-        }
-        else if (extension == ".tar")
+        if (extension == ".tar")
         {
             await using var stream = File.OpenRead(archivePath);
             await TarFile.ExtractToDirectoryAsync(stream, stagingDir, overwriteFiles: true, cancellationToken: ct);

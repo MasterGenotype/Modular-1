@@ -200,7 +200,7 @@ public class DialogService : IDialogService
                 : null,
             FileTypeFilter =
             [
-                new FilePickerFileType("Mod Archives") { Patterns = ["*.zip", "*.7z", "*.rar", "*.tar.gz", "*.tgz", "*.tar"] },
+                new FilePickerFileType("Mod Archives") { Patterns = ["*.zip", "*.7z", "*.rar", "*.tar.gz", "*.tgz", "*.tar", "*.pak"] },
                 new FilePickerFileType("All Files") { Patterns = ["*"] }
             ]
         });

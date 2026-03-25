@@ -13,6 +13,7 @@ using Modular.Core.Installers;
 using Modular.Core.Plugins;
 using Modular.Core.Profiles;
 using Modular.Core.RateLimiting;
+using Modular.Core.Snapshots;
 using Modular.Core.Services;
 using Modular.Core.Telemetry;
 using Modular.Gui.Services;
@@ -163,14 +164,24 @@ sealed class Program
             var dbPath = Path.Combine(
                 Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
                 "modular.db");
-            return new ModularDatabase(dbPath);
+            var db = new ModularDatabase(dbPath);
+            db.InitializeAsync().GetAwaiter().GetResult();
+            return db;
+        });
+        services.AddSingleton(sp =>
+        {
+            var db = sp.GetRequiredService<ModularDatabase>();
+            var changesetManager = new ChangesetManager(db);
+            var logger = sp.GetService<ILogger<SnapshotManager>>();
+            return new SnapshotManager(db, changesetManager, logger);
         });
         services.AddSingleton(sp =>
         {
             var db = sp.GetRequiredService<ModularDatabase>();
             var telemetry = sp.GetService<TelemetryService>();
+            var snapshotManager = sp.GetRequiredService<SnapshotManager>();
             var logger = sp.GetService<ILogger<ModInstallationService>>();
-            return new ModInstallationService(db, telemetry, logger);
+            return new ModInstallationService(db, telemetry, snapshotManager, logger);
         });
 
         // Profiles
@@ -227,7 +238,11 @@ sealed class Program
         services.AddTransient<ProfilesViewModel>();
         services.AddTransient<CollectionViewModel>();
         // Combined wrapper ViewModels
+        services.AddTransient<NexusModsViewModel>();
+        services.AddTransient<GameBananaPanelViewModel>();
         services.AddTransient<ProfilesCollectionsViewModel>();
+        services.AddTransient<BackupsViewModel>();
+        services.AddTransient<SnapshotViewModel>();
         services.AddTransient<ModManagerViewModel>();
 
         return services.BuildServiceProvider();

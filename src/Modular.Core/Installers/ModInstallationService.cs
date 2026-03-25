@@ -4,6 +4,7 @@ using Modular.Core.Archives;
 using Modular.Core.Database;
 using Modular.Core.Dependencies;
 using Modular.Core.GameDetection;
+using Modular.Core.Snapshots;
 using Modular.Core.Telemetry;
 using Modular.Sdk.Installers;
 
@@ -23,15 +24,18 @@ public class ModInstallationService
     private readonly FileConflictIndex _conflictIndex;
     private readonly ModularDatabase _database;
     private readonly TelemetryService? _telemetry;
+    private readonly SnapshotManager? _snapshotManager;
     private readonly ILogger<ModInstallationService>? _logger;
 
     public ModInstallationService(
         ModularDatabase database,
         TelemetryService? telemetry = null,
+        SnapshotManager? snapshotManager = null,
         ILogger<ModInstallationService>? logger = null)
     {
         _database = database;
         _telemetry = telemetry;
+        _snapshotManager = snapshotManager;
         _logger = logger;
 
         var configDir = Path.Combine(
@@ -40,6 +44,7 @@ public class ModInstallationService
         var stagingPath = Path.Combine(configDir, "staging");
 
         _installerManager = new InstallerManager(
+            archiveReaderFactory: new ArchiveReaderFactory(),
             logger: logger != null ? null : null,
             telemetry: telemetry);
         _stagingManager = new StagingManager(stagingPath);
@@ -195,6 +200,27 @@ public class ModInstallationService
                 "Installation complete: {Count} files installed in {Duration:F1}s",
                 installResult.InstalledFiles.Count, stopwatch.Elapsed.TotalSeconds);
 
+            // Auto-snapshot after successful install
+            if (options.AutoSnapshot && _snapshotManager != null)
+            {
+                try
+                {
+                    var gameInfo = await TryDetectGameForPathAsync(targetDirectory, ct);
+                    if (gameInfo != null)
+                    {
+                        await _snapshotManager.CreateSnapshotAsync(
+                            gameInfo.Value.appId, gameInfo.Value.name, targetDirectory,
+                            SnapshotTrigger.AutoInstall,
+                            name: $"Auto — {options.ModId ?? Path.GetFileName(archivePath)} installed",
+                            ct: ct);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Auto-snapshot failed after install (non-fatal)");
+                }
+            }
+
             return result;
         }
         catch (OperationCanceledException)
@@ -309,6 +335,27 @@ public class ModInstallationService
             _logger?.LogInformation(
                 "Uninstall complete: {Removed} files removed, {Restored} backups restored",
                 removedCount, restoredCount);
+
+            // Auto-snapshot after successful uninstall
+            if (_snapshotManager != null && changeset.TargetDirectory != null)
+            {
+                try
+                {
+                    var gameInfo = await TryDetectGameForPathAsync(changeset.TargetDirectory, ct);
+                    if (gameInfo != null)
+                    {
+                        await _snapshotManager.CreateSnapshotAsync(
+                            gameInfo.Value.appId, gameInfo.Value.name, changeset.TargetDirectory,
+                            SnapshotTrigger.AutoUninstall,
+                            name: $"Auto — {changeset.ModId ?? changesetId} uninstalled",
+                            ct: ct);
+                    }
+                }
+                catch (Exception ex2)
+                {
+                    _logger?.LogWarning(ex2, "Auto-snapshot failed after uninstall (non-fatal)");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -365,6 +412,30 @@ public class ModInstallationService
 
         return byName?.InstallPath;
     }
+
+    /// <summary>
+    /// Tries to detect the game for a target directory by querying the detected_games table.
+    /// </summary>
+    private async Task<(int appId, string name)?> TryDetectGameForPathAsync(
+        string targetDirectory, CancellationToken ct)
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT steam_appid, display_name FROM detected_games
+            WHERE install_path = @path
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("@path", targetDirectory);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        if (await reader.ReadAsync(ct))
+        {
+            return (reader.GetInt32(0), reader.IsDBNull(1) ? "Unknown Game" : reader.GetString(1));
+        }
+
+        return null;
+    }
 }
 
 /// <summary>
@@ -383,6 +454,9 @@ public class ModInstallationOptions
 
     /// <summary>Show what would be installed without actually installing.</summary>
     public bool DryRun { get; set; }
+
+    /// <summary>Whether to automatically create a snapshot after installation.</summary>
+    public bool AutoSnapshot { get; set; } = true;
 }
 
 /// <summary>

@@ -44,31 +44,31 @@ public partial class MainWindowViewModel : ViewModelBase
     private ViewModelBase? _currentViewModel;
 
     // Child ViewModels
-    public ModListViewModel? ModListViewModel { get; }
+    public NexusModsViewModel? NexusModsViewModel { get; }
+    public GameBananaPanelViewModel? GameBananaPanelViewModel { get; }
     public DownloadQueueViewModel? DownloadQueueViewModel { get; }
     public SettingsViewModel? SettingsViewModel { get; }
-    public GameBananaViewModel? GameBananaViewModel { get; }
     public LibraryViewModel? LibraryViewModel { get; }
     public PluginsViewModel? PluginsViewModel { get; }
     public GameDetectionViewModel? GameDetectionViewModel { get; }
-    public NexusSearchViewModel? NexusSearchViewModel { get; }
     public ProfilesCollectionsViewModel? ProfilesCollectionsViewModel { get; }
+    public BackupsViewModel? BackupsViewModel { get; }
     public ModManagerViewModel? ModManagerViewModel { get; }
 
     // Parameterless constructor for designer
     public MainWindowViewModel()
     {
-        ModListViewModel = new ModListViewModel();
+        NexusModsViewModel = new NexusModsViewModel();
+        GameBananaPanelViewModel = new GameBananaPanelViewModel();
         DownloadQueueViewModel = new DownloadQueueViewModel();
         SettingsViewModel = new SettingsViewModel();
-        GameBananaViewModel = new GameBananaViewModel();
         LibraryViewModel = new LibraryViewModel();
         PluginsViewModel = new PluginsViewModel();
         GameDetectionViewModel = new GameDetectionViewModel();
-        NexusSearchViewModel = new NexusSearchViewModel();
         ProfilesCollectionsViewModel = new ProfilesCollectionsViewModel();
+        BackupsViewModel = new BackupsViewModel();
         ModManagerViewModel = new ModManagerViewModel();
-        CurrentViewModel = ModListViewModel;
+        CurrentViewModel = NexusModsViewModel;
         CheckConfiguration();
         UpdateVisibility();
     }
@@ -79,15 +79,15 @@ public partial class MainWindowViewModel : ViewModelBase
         AppSettings settings,
         IRateLimiter rateLimiter,
         IDialogService dialogService,
-        ModListViewModel modListViewModel,
+        NexusModsViewModel nexusModsViewModel,
+        GameBananaPanelViewModel gameBananaPanelViewModel,
         DownloadQueueViewModel downloadQueueViewModel,
         SettingsViewModel settingsViewModel,
-        GameBananaViewModel gameBananaViewModel,
         LibraryViewModel libraryViewModel,
         PluginsViewModel pluginsViewModel,
         GameDetectionViewModel gameDetectionViewModel,
-        NexusSearchViewModel nexusSearchViewModel,
         ProfilesCollectionsViewModel profilesCollectionsViewModel,
+        BackupsViewModel backupsViewModel,
         ModManagerViewModel modManagerViewModel)
     {
         _backendRegistry = backendRegistry;
@@ -95,17 +95,17 @@ public partial class MainWindowViewModel : ViewModelBase
         _rateLimiter = rateLimiter;
         _dialogService = dialogService;
 
-        ModListViewModel = modListViewModel;
+        NexusModsViewModel = nexusModsViewModel;
+        GameBananaPanelViewModel = gameBananaPanelViewModel;
         DownloadQueueViewModel = downloadQueueViewModel;
         SettingsViewModel = settingsViewModel;
-        GameBananaViewModel = gameBananaViewModel;
         LibraryViewModel = libraryViewModel;
         PluginsViewModel = pluginsViewModel;
         GameDetectionViewModel = gameDetectionViewModel;
-        NexusSearchViewModel = nexusSearchViewModel;
         ProfilesCollectionsViewModel = profilesCollectionsViewModel;
+        BackupsViewModel = backupsViewModel;
         ModManagerViewModel = modManagerViewModel;
-        CurrentViewModel = ModListViewModel;
+        CurrentViewModel = NexusModsViewModel;
 
         CheckConfiguration();
         UpdateVisibility();
@@ -135,7 +135,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private void UpdateVisibility()
     {
         // Pages that don't require backend configuration
-        var isConfigFree = SelectedPage is "Settings" or "Plugins" or "Games" or "Mod Manager" or "Profiles";
+        var isConfigFree = SelectedPage is "Settings" or "Plugins" or "Games" or "Mod Manager" or "Profiles" or "Backups";
         ShowConfigurationWarning = !IsConfigured && !isConfigFree;
         ShowPageContent = IsConfigured || isConfigFree;
     }
@@ -190,17 +190,17 @@ public partial class MainWindowViewModel : ViewModelBase
         // Switch to the appropriate ViewModel
         CurrentViewModel = page switch
         {
-            "Search" => NexusSearchViewModel,
-            "NexusMods" => ModListViewModel,
-            "GameBanana" => GameBananaViewModel,
+            "NexusMods" => NexusModsViewModel,
+            "GameBanana" => GameBananaPanelViewModel,
             "Downloads" => DownloadQueueViewModel,
             "Library" => LibraryViewModel,
             "Games" => GameDetectionViewModel,
             "Mod Manager" => ModManagerViewModel,
             "Profiles" => ProfilesCollectionsViewModel,
+            "Backups" => BackupsViewModel,
             "Plugins" => PluginsViewModel,
             "Settings" => SettingsViewModel,
-            _ => ModListViewModel
+            _ => NexusModsViewModel
         };
     }
 
@@ -217,13 +217,17 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusText = "Refreshing...";
         try
         {
-            if (CurrentViewModel is ModListViewModel modList)
+            if (CurrentViewModel is NexusModsViewModel nexusPanel)
             {
-                await modList.RefreshModsCommand.ExecuteAsync(null);
+                if (nexusPanel.SelectedTabIndex == 0 && nexusPanel.NexusSearchViewModel != null)
+                    await nexusPanel.NexusSearchViewModel.ExecuteSearchCommand.ExecuteAsync(null);
+                else if (nexusPanel.ModListViewModel != null)
+                    await nexusPanel.ModListViewModel.RefreshModsCommand.ExecuteAsync(null);
             }
-            else if (CurrentViewModel is GameBananaViewModel gbList)
+            else if (CurrentViewModel is GameBananaPanelViewModel gbPanel)
             {
-                await gbList.RefreshModsCommand.ExecuteAsync(null);
+                if (gbPanel.GameBananaViewModel != null)
+                    await gbPanel.GameBananaViewModel.RefreshModsCommand.ExecuteAsync(null);
             }
             else if (CurrentViewModel is LibraryViewModel library)
             {
@@ -237,20 +241,16 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 await gameDetection.ScanGamesCommand.ExecuteAsync(null);
             }
-            else if (CurrentViewModel is NexusSearchViewModel search)
-            {
-                await search.ExecuteSearchCommand.ExecuteAsync(null);
-            }
             else if (CurrentViewModel is ModManagerViewModel modManager)
             {
                 modManager.ScanForArchivesCommand.Execute(null);
                 if (modManager.InstalledModsViewModel != null)
                     await modManager.InstalledModsViewModel.RefreshInstalledCommand.ExecuteAsync(null);
             }
-            else if (CurrentViewModel is ProfilesCollectionsViewModel profCol)
+            else if (CurrentViewModel is BackupsViewModel backups)
             {
-                if (profCol.CollectionViewModel != null)
-                    await profCol.CollectionViewModel.RefreshCollectionsCommand.ExecuteAsync(null);
+                if (backups.CollectionViewModel != null)
+                    await backups.CollectionViewModel.RefreshCollectionsCommand.ExecuteAsync(null);
             }
         }
         catch (Exception ex)
@@ -262,8 +262,19 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task DownloadSelectedAsync()
     {
+        if (DownloadQueueViewModel == null) return;
+
+        // Unwrap wrapper VMs to get the active child VM
+        ViewModelBase? activeVm = CurrentViewModel;
+        if (activeVm is NexusModsViewModel nexusPanel)
+            activeVm = nexusPanel.SelectedTabIndex == 0
+                ? (ViewModelBase?)nexusPanel.NexusSearchViewModel
+                : nexusPanel.ModListViewModel;
+        else if (activeVm is GameBananaPanelViewModel gbPanel)
+            activeVm = gbPanel.GameBananaViewModel;
+
         // Get selected mods from current view and queue them for download
-        if (CurrentViewModel is ModListViewModel modList && DownloadQueueViewModel != null)
+        if (activeVm is ModListViewModel modList)
         {
             var selected = modList.GetSelectedMods().ToList();
             if (selected.Count == 0)
@@ -274,7 +285,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
             StatusText = $"Fetching files for {selected.Count} mod(s)...";
 
-            // Get the backend to fetch file info
             var backend = _backendRegistry?.Get("nexusmods") as Modular.Core.Backends.NexusMods.NexusModsBackend;
             if (backend == null)
             {
@@ -288,7 +298,6 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 try
                 {
-                    // Fetch files for this mod
                     var files = await backend.GetModFilesAsync(
                         modDisplay.ModId,
                         modDisplay.GameDomain,
@@ -296,7 +305,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     if (files.Count > 0)
                     {
-                        // Get the latest main file
                         var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
                         itemsToQueue.Add((modDisplay.Mod, latestFile));
                     }
@@ -322,7 +330,71 @@ public partial class MainWindowViewModel : ViewModelBase
                 StatusText = "No downloadable files found";
             }
         }
-        else if (CurrentViewModel is GameBananaViewModel gbList && DownloadQueueViewModel != null)
+        else if (activeVm is NexusSearchViewModel searchVm)
+        {
+            var selected = searchVm.GetSelectedMods().ToList();
+            if (selected.Count == 0)
+            {
+                StatusText = "No mods selected";
+                return;
+            }
+
+            StatusText = $"Fetching files for {selected.Count} mod(s)...";
+
+            var searchBackendId = searchVm.SelectedBackend == "NexusMods" ? "nexusmods" : "gamebanana";
+            var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
+
+            foreach (var modDisplay in selected)
+            {
+                try
+                {
+                    if (searchBackendId == "nexusmods")
+                    {
+                        var nexus = _backendRegistry?.Get("nexusmods") as Modular.Core.Backends.NexusMods.NexusModsBackend;
+                        if (nexus == null) { StatusText = "NexusMods backend not available"; return; }
+
+                        var files = await nexus.GetModFilesAsync(
+                            modDisplay.ModId,
+                            modDisplay.GameDomain,
+                            new Modular.Sdk.Backends.Common.FileFilter { Categories = ["main"] });
+
+                        if (files.Count > 0)
+                        {
+                            var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
+                            itemsToQueue.Add((modDisplay.Mod, latestFile));
+                        }
+                    }
+                    else
+                    {
+                        var gb = _backendRegistry?.Get("gamebanana") as Modular.Core.Backends.GameBanana.GameBananaBackend;
+                        if (gb == null) { StatusText = "GameBanana backend not available"; return; }
+
+                        var files = await gb.GetModFilesAsync(modDisplay.ModId);
+                        if (files.Count > 0)
+                        {
+                            var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
+                            itemsToQueue.Add((modDisplay.Mod, latestFile));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    StatusText = $"Error fetching files for {modDisplay.Name}: {ex.Message}";
+                }
+            }
+
+            if (itemsToQueue.Count > 0)
+            {
+                StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
+                await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
+                NavigateTo("Downloads");
+            }
+            else
+            {
+                StatusText = "No downloadable files found";
+            }
+        }
+        else if (activeVm is GameBananaViewModel gbList)
         {
             var selected = gbList.GetSelectedMods().ToList();
             if (selected.Count == 0)
@@ -380,7 +452,8 @@ public partial class MainWindowViewModel : ViewModelBase
             downloads.CancelAllCommand.Execute(null);
             StatusText = "Operation cancelled";
         }
-        else if (CurrentViewModel is ModListViewModel modList && modList.IsLoading)
+        else if (CurrentViewModel is NexusModsViewModel nexusPanel &&
+                 nexusPanel.ModListViewModel is { IsLoading: true })
         {
             StatusText = "Cannot cancel - operation in progress";
         }

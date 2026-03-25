@@ -46,7 +46,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     private bool _isLoading;
 
     [ObservableProperty]
-    private string _statusMessage = "Select a backend and enter search terms";
+    private string _statusMessage = "Select a backend and game to browse mods";
 
     [ObservableProperty]
     private ObservableCollection<ModDisplayModel> _searchResults = new();
@@ -62,6 +62,9 @@ public partial class NexusSearchViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _hasPreviousPage;
+
+    [ObservableProperty]
+    private int _selectedCount;
 
     // Designer constructor
     public NexusSearchViewModel()
@@ -93,7 +96,7 @@ public partial class NexusSearchViewModel : ViewModelBase
         SearchResults.Clear();
         CurrentPage = 1;
         TotalResults = 0;
-        StatusMessage = $"Search {value} — enter at least 3 characters";
+        StatusMessage = $"Search {value} — enter terms or browse all mods";
     }
 
     private async Task LoadAvailableGamesAsync()
@@ -118,23 +121,16 @@ public partial class NexusSearchViewModel : ViewModelBase
     partial void OnSearchTextChanged(string value)
     {
         _debounceTimer?.Dispose();
-        if (value.Length >= 3)
-        {
-            _debounceTimer = new System.Threading.Timer(
-                _ => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = ExecuteSearchAsync()),
-                null, 400, System.Threading.Timeout.Infinite);
-        }
+        // Debounce typed input; empty triggers an unfiltered listing
+        var delay = string.IsNullOrWhiteSpace(value) ? 0 : 400;
+        _debounceTimer = new System.Threading.Timer(
+            _ => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = ExecuteSearchAsync()),
+            null, delay, System.Threading.Timeout.Infinite);
     }
 
     [RelayCommand]
     private async Task ExecuteSearchAsync()
     {
-        if (string.IsNullOrWhiteSpace(SearchText) || SearchText.Length < 3)
-        {
-            StatusMessage = "Enter at least 3 characters to search";
-            return;
-        }
-
         if (SelectedBackend == "NexusMods")
             await SearchNexusModsAsync();
         else
@@ -185,8 +181,17 @@ public partial class NexusSearchViewModel : ViewModelBase
             return;
         }
 
+        // Let the user know when fuzzy matching resolved to a different domain
+        var rawInput = SelectedGame.Trim();
+        var dashIdx = rawInput.IndexOf(" — ", StringComparison.Ordinal);
+        var inputDomain = dashIdx > 0 ? rawInput[..dashIdx].Trim() : rawInput;
+        var wasFuzzyResolved = !inputDomain.Equals(resolvedDomain, StringComparison.OrdinalIgnoreCase);
+
         IsLoading = true;
-        StatusMessage = $"Searching {resolvedDomain} for \"{SearchText}\"...";
+        var domainLabel = wasFuzzyResolved ? $"{resolvedDomain} (matched from '{inputDomain}')" : resolvedDomain;
+        StatusMessage = string.IsNullOrWhiteSpace(SearchText)
+            ? $"Loading mods for {domainLabel}..."
+            : $"Searching {domainLabel} for \"{SearchText}\"...";
 
         try
         {
@@ -201,7 +206,11 @@ public partial class NexusSearchViewModel : ViewModelBase
 
             SearchResults.Clear();
             foreach (var mod in result.Mods)
-                SearchResults.Add(new ModDisplayModel(mod));
+            {
+                var display = new ModDisplayModel(mod);
+                display.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ModDisplayModel.IsSelected)) UpdateSelectedCount(); };
+                SearchResults.Add(display);
+            }
 
             TotalResults = result.TotalCount;
             HasNextPage = result.HasNextPage;
@@ -228,7 +237,11 @@ public partial class NexusSearchViewModel : ViewModelBase
 
             SearchResults.Clear();
             foreach (var mod in ranked)
-                SearchResults.Add(new ModDisplayModel(mod));
+            {
+                var display = new ModDisplayModel(mod);
+                display.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ModDisplayModel.IsSelected)) UpdateSelectedCount(); };
+                SearchResults.Add(display);
+            }
 
             TotalResults = SearchResults.Count;
             HasNextPage = false;
@@ -253,5 +266,31 @@ public partial class NexusSearchViewModel : ViewModelBase
         if (CurrentPage <= 1) return;
         CurrentPage--;
         await ExecuteSearchAsync();
+    }
+
+    [RelayCommand]
+    private void SelectAll()
+    {
+        foreach (var mod in SearchResults)
+            mod.IsSelected = true;
+        UpdateSelectedCount();
+    }
+
+    [RelayCommand]
+    private void SelectNone()
+    {
+        foreach (var mod in SearchResults)
+            mod.IsSelected = false;
+        UpdateSelectedCount();
+    }
+
+    public void UpdateSelectedCount()
+    {
+        SelectedCount = SearchResults.Count(m => m.IsSelected);
+    }
+
+    public IEnumerable<ModDisplayModel> GetSelectedMods()
+    {
+        return SearchResults.Where(m => m.IsSelected);
     }
 }

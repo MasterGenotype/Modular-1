@@ -16,8 +16,8 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
 {
     public sealed class Settings : CommandSettings
     {
-        [CommandArgument(0, "<terms>")]
-        [Description("Search terms")]
+        [CommandArgument(0, "[terms]")]
+        [Description("Search terms (omit to list all mods for the game)")]
         public string Terms { get; init; } = string.Empty;
 
         [CommandOption("--game|-g")]
@@ -95,7 +95,10 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
                 AdultContent = settings.Adult
             };
 
-            LiveProgressDisplay.ShowInfo($"Searching {backend.DisplayName} for \"{settings.Terms}\"...");
+            var infoMessage = string.IsNullOrWhiteSpace(settings.Terms)
+                ? $"Listing mods on {backend.DisplayName} for \"{gameDomain}\"..."
+                : $"Searching {backend.DisplayName} for \"{settings.Terms}\"...";
+            LiveProgressDisplay.ShowInfo(infoMessage);
 
             var result = await searchable.SearchModsAsync(query);
 

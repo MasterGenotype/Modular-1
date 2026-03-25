@@ -15,24 +15,19 @@ internal class NexusModsGraphQlClient
 {
     private const string GraphQlUrl = "https://api.nexusmods.com/v2/graphql";
 
-    private const string SearchQuery = """
-        query SearchMods($terms: String!, $game: String!, $limit: Int!, $offset: Int!, $sort: [ModsSortInput!]) {
-          mods(
-            filter: { gameDomainName: { value: $game } }
-            query: $terms
-            sort: $sort
-            limit: $limit
-            offset: $offset
-          ) {
+    private const string ModsQuery = """
+        query SearchMods($filter: ModsFilter, $sort: [ModsSort!], $count: Int, $offset: Int) {
+          mods(filter: $filter, sort: $sort, count: $count, offset: $offset) {
             nodes {
               modId
               name
               summary
               author
               version
-              categoryId
-              endorsementCount
-              downloadCount
+              category
+              modCategory { categoryId }
+              endorsements
+              downloads
               createdAt
               updatedAt
               pictureUrl
@@ -62,18 +57,31 @@ internal class NexusModsGraphQlClient
             throw new ArgumentException("GameDomain is required for NexusMods search", nameof(query));
 
         var offset = (query.Page - 1) * query.PageSize;
-        var sortField = MapSortOrder(query.SortBy);
+        var hasTerms = !string.IsNullOrWhiteSpace(query.Terms);
+
+        // Build the filter: always filter by game domain, optionally add name wildcard
+        var filter = new Dictionary<string, object>
+        {
+            ["gameDomainName"] = new[] { new { value = query.GameDomain } }
+        };
+        if (hasTerms)
+        {
+            // Wrap search terms in wildcards so partial matches work with the WILDCARD operator
+            var wildcardTerms = query.Terms!.Trim();
+            if (!wildcardTerms.StartsWith('*')) wildcardTerms = "*" + wildcardTerms;
+            if (!wildcardTerms.EndsWith('*')) wildcardTerms = wildcardTerms + "*";
+            filter["name"] = new[] { new { value = wildcardTerms, op = "WILDCARD" } };
+        }
 
         var requestBody = new
         {
-            query = SearchQuery,
+            query = ModsQuery,
             variables = new
             {
-                terms = query.Terms,
-                game = query.GameDomain,
-                limit = query.PageSize,
-                offset,
-                sort = new[] { new { field = sortField.field, direction = sortField.direction } }
+                filter,
+                sort = BuildSort(query.SortBy),
+                count = query.PageSize,
+                offset
             }
         };
 
@@ -131,12 +139,12 @@ internal class NexusModsGraphQlClient
             Name = node.Name,
             GameDomain = domain,
             BackendId = "nexusmods",
-            CategoryId = node.CategoryId,
+            CategoryId = node.ModCategory?.CategoryId,
             Summary = node.Summary,
             Author = node.Author,
             Version = node.Version,
-            EndorsementCount = node.EndorsementCount,
-            DownloadCount = node.DownloadCount,
+            EndorsementCount = node.Endorsements,
+            DownloadCount = node.Downloads,
             IsAdult = node.AdultContent,
             Url = $"https://www.nexusmods.com/{domain}/mods/{node.ModId}",
             ThumbnailUrl = node.PictureUrl,
@@ -144,13 +152,20 @@ internal class NexusModsGraphQlClient
         };
     }
 
-    private static (string field, string direction) MapSortOrder(ModSortOrder sort) => sort switch
+    /// <summary>
+    /// Builds the sort array for the NexusMods GraphQL API.
+    /// Sort format: [{ "fieldName": { "direction": "ASC"|"DESC" } }]
+    /// </summary>
+    private static object[] BuildSort(ModSortOrder sort)
     {
-        ModSortOrder.Relevance => ("name", "ASC"),
-        ModSortOrder.Endorsements => ("endorsement_count", "DESC"),
-        ModSortOrder.Downloads => ("download_count", "DESC"),
-        ModSortOrder.Updated => ("updated_at", "DESC"),
-        ModSortOrder.Added => ("created_at", "DESC"),
-        _ => ("name", "ASC")
-    };
+        var (field, direction) = sort switch
+        {
+            ModSortOrder.Endorsements => ("endorsements", "DESC"),
+            ModSortOrder.Downloads => ("downloads", "DESC"),
+            ModSortOrder.Updated => ("updatedAt", "DESC"),
+            ModSortOrder.Added => ("createdAt", "DESC"),
+            _ => ("name", "ASC")
+        };
+        return [new Dictionary<string, object> { [field] = new { direction } }];
+    }
 }

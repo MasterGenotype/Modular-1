@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Archives;
 using Modular.Core.Installers.Steam;
 using Modular.Core.Telemetry;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -15,6 +17,7 @@ public class InstallerManager
     private readonly TelemetryService? _telemetry;
 
     public InstallerManager(
+        IArchiveReaderFactory? archiveReaderFactory = null,
         ILogger<InstallerManager>? logger = null,
         TelemetryService? telemetry = null)
     {
@@ -22,11 +25,13 @@ public class InstallerManager
         _telemetry = telemetry;
         _installers = new List<IModInstaller>();
 
-        // Register built-in installers (they'll create their own loggers)
-        RegisterInstaller(new LooseFileInstaller());
-        RegisterInstaller(new FomodInstaller());
-        RegisterInstaller(new BepInExInstaller());
-        RegisterInstaller(new SteamModInstaller());
+        var factory = archiveReaderFactory ?? new ArchiveReaderFactory();
+
+        // Register built-in installers with shared archive reader factory
+        RegisterInstaller(new LooseFileInstaller(factory));
+        RegisterInstaller(new FomodInstaller(factory));
+        RegisterInstaller(new BepInExInstaller(factory));
+        RegisterInstaller(new SteamModInstaller(factory));
     }
 
     /// <summary>

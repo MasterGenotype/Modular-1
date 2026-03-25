@@ -1,6 +1,7 @@
-using System.IO.Compression;
 using Microsoft.Extensions.Logging;
+using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers;
@@ -11,14 +12,16 @@ namespace Modular.Core.Installers;
 /// </summary>
 public class BepInExInstaller : IModInstaller
 {
+    private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly ILogger<BepInExInstaller>? _logger;
 
     public string InstallerId => "bepinex";
     public string DisplayName => "BepInEx Installer";
     public int Priority => 80; // High priority
 
-    public BepInExInstaller(ILogger<BepInExInstaller>? logger = null)
+    public BepInExInstaller(IArchiveReaderFactory? archiveReaderFactory = null, ILogger<BepInExInstaller>? logger = null)
     {
+        _archiveReaderFactory = archiveReaderFactory ?? new ArchiveReaderFactory();
         _logger = logger;
     }
 
@@ -26,20 +29,29 @@ public class BepInExInstaller : IModInstaller
     {
         try
         {
-            using var archive = ZipFile.OpenRead(archivePath);
-            
+            using var reader = _archiveReaderFactory.Open(archivePath);
+            if (reader == null)
+            {
+                return new InstallDetectionResult
+                {
+                    CanHandle = false,
+                    Confidence = 0,
+                    Reason = "Unable to open archive"
+                };
+            }
+
             // Check for BepInEx core files
-            var hasBepInExCore = archive.Entries.Any(e => 
+            var hasBepInExCore = reader.Entries.Any(e =>
                 e.FullName.Contains("BepInEx/core/", StringComparison.OrdinalIgnoreCase) ||
                 e.FullName.EndsWith("BepInEx.dll", StringComparison.OrdinalIgnoreCase));
 
             // Check for BepInEx plugins
-            var hasPlugins = archive.Entries.Any(e => 
+            var hasPlugins = reader.Entries.Any(e =>
                 e.FullName.Contains("BepInEx/plugins/", StringComparison.OrdinalIgnoreCase) ||
                 e.FullName.Contains("plugins/", StringComparison.OrdinalIgnoreCase));
 
             // Check for doorstop/preloader files
-            var hasDoorstop = archive.Entries.Any(e => 
+            var hasDoorstop = reader.Entries.Any(e =>
                 e.FullName.Contains("doorstop", StringComparison.OrdinalIgnoreCase) ||
                 e.FullName.EndsWith("winhttp.dll", StringComparison.OrdinalIgnoreCase));
 
@@ -50,7 +62,7 @@ public class BepInExInstaller : IModInstaller
                     CanHandle = true,
                     Confidence = 0.95,
                     InstallerType = "bepinex",
-                    Reason = hasBepInExCore 
+                    Reason = hasBepInExCore
                         ? "Contains BepInEx core framework files"
                         : "Contains BepInEx plugin structure"
                 });
@@ -100,12 +112,13 @@ public class BepInExInstaller : IModInstaller
             Operations = new List<FileOperation>()
         };
 
-        using var archive = ZipFile.OpenRead(archivePath);
-        
-        var entries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
-        
+        using var reader = _archiveReaderFactory.Open(archivePath)
+            ?? throw new InvalidOperationException($"Unable to open archive: {archivePath}");
+
+        var entries = reader.Entries.Where(e => !e.IsDirectory).ToList();
+
         // Detect if this is BepInEx core or just a plugin
-        var isCoreInstall = entries.Any(e => 
+        var isCoreInstall = entries.Any(e =>
             e.FullName.Contains("BepInEx/core/", StringComparison.OrdinalIgnoreCase));
 
         long totalBytes = 0;
@@ -162,8 +175,9 @@ public class BepInExInstaller : IModInstaller
 
         try
         {
-            using var archive = ZipFile.OpenRead(plan.SourcePath);
-            
+            using var reader = _archiveReaderFactory.Open(plan.SourcePath)
+                ?? throw new InvalidOperationException($"Unable to open archive: {plan.SourcePath}");
+
             int filesProcessed = 0;
             long bytesProcessed = 0;
 
@@ -171,7 +185,7 @@ public class BepInExInstaller : IModInstaller
             {
                 ct.ThrowIfCancellationRequested();
 
-                var entry = archive.GetEntry(operation.SourcePath);
+                var entry = reader.Entries.FirstOrDefault(e => e.FullName == operation.SourcePath);
                 if (entry == null)
                     continue;
 
@@ -192,7 +206,7 @@ public class BepInExInstaller : IModInstaller
                 }
 
                 // Extract file
-                entry.ExtractToFile(destPath, true);
+                await reader.ExtractEntryAsync(entry, destPath, overwrite: true, ct);
                 installedFiles.Add(destPath);
 
                 filesProcessed++;
@@ -219,7 +233,7 @@ public class BepInExInstaller : IModInstaller
                 Backups = backedUpFiles.ToDictionary(f => f, f => f)
             };
 
-            var isCoreInstall = plan.Options?.ContainsKey("is_core_install") == true && 
+            var isCoreInstall = plan.Options?.ContainsKey("is_core_install") == true &&
                                (bool)plan.Options["is_core_install"];
 
             _logger?.LogInformation(
@@ -234,6 +248,6 @@ public class BepInExInstaller : IModInstaller
             _logger?.LogError(ex, "BepInEx installation failed");
         }
 
-        return await Task.FromResult(result);
+        return result;
     }
 }

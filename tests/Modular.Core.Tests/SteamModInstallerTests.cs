@@ -645,7 +645,8 @@ public class SteamModInstallerTests
         try
         {
             Directory.CreateDirectory(stagingDir);
-            await SteamModInstaller.ExtractToStagingAsync(archivePath, stagingDir);
+            var installer = new SteamModInstaller();
+            await installer.ExtractToStagingAsync(archivePath, stagingDir);
 
             Directory.GetFiles(stagingDir, "*", SearchOption.AllDirectories).Should().NotBeEmpty();
         }

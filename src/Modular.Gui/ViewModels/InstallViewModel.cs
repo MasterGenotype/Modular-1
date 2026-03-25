@@ -86,6 +86,15 @@ public partial class InstallViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Archive extensions to detect when scanning directories.
+    /// </summary>
+    private static readonly HashSet<string> ArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2",
+        ".xz", ".txz", ".lz", ".lzma", ".pak"
+    };
+
     [RelayCommand]
     private async Task AddArchivesAsync()
     {
@@ -102,6 +111,30 @@ public partial class InstallViewModel : ViewModelBase
                 ArchivePaths.Add(file);
             }
         }
+    }
+
+    [RelayCommand]
+    private async Task AddFolderAsync()
+    {
+        if (_dialogService == null) return;
+
+        var folder = await _dialogService.ShowFolderBrowserAsync("Select Folder Containing Mod Archives");
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+
+        var found = 0;
+        foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+        {
+            var ext = Path.GetExtension(file);
+            if (ArchiveExtensions.Contains(ext) && !ArchivePaths.Contains(file))
+            {
+                ArchivePaths.Add(file);
+                found++;
+            }
+        }
+
+        StatusMessage = found > 0
+            ? $"Added {found} archive(s) from {Path.GetFileName(folder)}"
+            : $"No archives found in {Path.GetFileName(folder)}";
     }
 
     [RelayCommand]
@@ -218,6 +251,7 @@ public partial class InstallViewModel : ViewModelBase
 
                 var options = new ModInstallationOptions
                 {
+                    ModId = Path.GetFileNameWithoutExtension(archivePath),
                     AllowOverwrite = AllowOverwrite,
                     CreateBackups = CreateBackups,
                     DryRun = DryRun
