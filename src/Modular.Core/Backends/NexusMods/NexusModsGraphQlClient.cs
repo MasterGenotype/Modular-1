@@ -16,8 +16,8 @@ internal class NexusModsGraphQlClient
     private const string GraphQlUrl = "https://api.nexusmods.com/v2/graphql";
 
     private const string CollectionsQuery = """
-        query SearchCollections($filter: CollectionsFilter, $count: Int, $offset: Int) {
-          collections(filter: $filter, count: $count, offset: $offset) {
+        query SearchCollections($filter: CollectionsSearchFilter, $count: Int, $offset: Int) {
+          collectionsV2(filter: $filter, count: $count, offset: $offset) {
             nodes {
               slug
               name
@@ -33,6 +33,30 @@ internal class NexusModsGraphQlClient
               }
             }
             totalCount
+          }
+        }
+        """;
+
+    private const string CollectionDetailQuery = """
+        query GetCollection($slug: String, $domainName: String) {
+          collection(slug: $slug, domainName: $domainName) {
+            name
+            slug
+            latestPublishedRevision {
+              revisionNumber
+              modCount
+              modFiles {
+                file {
+                  modId
+                  name
+                  version
+                  fileId
+                  mod { name author modId }
+                }
+                optional
+                version
+              }
+            }
           }
         }
         """;
@@ -185,7 +209,7 @@ internal class NexusModsGraphQlClient
 
         var filter = new Dictionary<string, object>
         {
-            ["gameDomainName"] = new[] { new { value = gameDomain } }
+            ["gameDomain"] = new[] { new { value = gameDomain } }
         };
 
         var requestBody = new
@@ -230,6 +254,70 @@ internal class NexusModsGraphQlClient
         }).ToList();
 
         return (collections, result.TotalCount);
+    }
+
+    /// <summary>
+    /// Fetches the mod list for a specific NexusMods collection by slug and game domain.
+    /// </summary>
+    public async Task<NexusCollectionDetail?> GetCollectionDetailsAsync(
+        string slug, string gameDomain, CancellationToken ct = default)
+    {
+        var requestBody = new
+        {
+            query = CollectionDetailQuery,
+            variables = new { slug, domainName = gameDomain }
+        };
+
+        _logger?.LogDebug("Fetching NexusMods collection details: slug={Slug}, game={Game}", slug, gameDomain);
+
+        var json = await _client.PostAsync(GraphQlUrl)
+            .WithHeader("apikey", _apiKey)
+            .WithHeader("accept", "application/json")
+            .WithJsonBody(requestBody)
+            .AsStringAsync();
+
+        var response = JsonSerializer.Deserialize<NexusGraphQlCollectionDetailResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        var collection = response?.Data?.Collection;
+        if (collection == null)
+        {
+            _logger?.LogWarning("GraphQL collection detail returned no data. Response: {Response}", json);
+            return null;
+        }
+
+        var revision = collection.LatestRevision;
+        var entries = new List<NexusCollectionModEntry>();
+        if (revision?.ModFiles != null)
+        {
+            foreach (var mf in revision.ModFiles)
+            {
+                var file = mf.File;
+                var mod = file?.Mod;
+                entries.Add(new NexusCollectionModEntry
+                {
+                    ModId = (mod?.ModId ?? file?.ModId ?? 0).ToString(),
+                    Name = mod?.Name ?? file?.Name ?? "Unknown",
+                    Author = mod?.Author,
+                    Version = mf.Version ?? file?.Version,
+                    FileId = file?.FileId.ToString(),
+                    FileName = file?.Name,
+                    IsOptional = mf.Optional
+                });
+            }
+        }
+
+        return new NexusCollectionDetail
+        {
+            Name = collection.Name,
+            Slug = collection.Slug,
+            GameDomain = gameDomain,
+            RevisionNumber = revision?.RevisionNumber ?? 0,
+            ModCount = revision?.ModCount ?? 0,
+            Entries = entries
+        };
     }
 
     /// <summary>

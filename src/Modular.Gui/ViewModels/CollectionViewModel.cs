@@ -320,9 +320,10 @@ public partial class CollectionViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task ImportOnlineCollectionAsync()
+    private async Task DownloadOnlineCollectionAsync()
     {
-        if (_service == null || _repository == null || SelectedOnlineCollection == null) return;
+        if (_backend == null || _service == null || _repository == null ||
+            SelectedOnlineCollection == null || _dialogService == null) return;
 
         var info = SelectedOnlineCollection.Info;
         var gameId = info.GameDomain;
@@ -333,29 +334,73 @@ public partial class CollectionViewModel : ViewModelBase
 
         if (existingForGame >= MaxCollectionsPerGame)
         {
-            StatusMessage = $"Maximum {MaxCollectionsPerGame} collections per game reached for '{gameId}'.";
-            if (_dialogService != null)
-            {
-                await _dialogService.ShowWarningAsync("Collection Limit",
-                    $"You can only store up to {MaxCollectionsPerGame} collections per game. " +
-                    $"Please delete an existing collection for '{gameId}' before importing a new one.");
-            }
+            await _dialogService.ShowWarningAsync("Collection Limit",
+                $"You can only store up to {MaxCollectionsPerGame} collections per game. " +
+                $"Please delete an existing collection for '{gameId}' before downloading a new one.");
             return;
         }
 
+        // Ask for download directory
+        var modsDir = _settings?.ModsDirectory;
+        if (string.IsNullOrEmpty(modsDir))
+        {
+            modsDir = await _dialogService.ShowFolderBrowserAsync("Select download directory for collection mods");
+            if (string.IsNullOrEmpty(modsDir)) return;
+        }
+
+        IsSearching = true;
+        SearchStatusMessage = $"Fetching mod list for '{info.Name}'...";
+
         try
         {
-            // Create a local collection record from the online collection info
-            await _service.CreateAsync(info.Name, gameId);
+            // 1. Fetch the full mod list from GraphQL
+            var detail = await _backend.GetCollectionDetailsAsync(info.Slug, gameId);
+            if (detail == null || detail.Entries.Count == 0)
+            {
+                SearchStatusMessage = $"Could not fetch mod list for '{info.Name}'";
+                return;
+            }
 
-            // Refresh and find the newly created collection
+            // 2. Create a local collection populated with mod entries
+            var collection = await _service.CreateAsync(info.Name, gameId);
+            foreach (var entry in detail.Entries)
+            {
+                collection.Entries.Add(new Modular.Sdk.Collections.ModCollectionEntry
+                {
+                    ModId = entry.ModId,
+                    Name = entry.Name,
+                    Author = entry.Author,
+                    Version = entry.Version,
+                    FileId = entry.FileId,
+                    FileName = entry.FileName,
+                    IsOptional = entry.IsOptional
+                });
+            }
+
+            // Save the populated collection
+            var (_, path) = await _repository.FindByNameAsync(collection.Name);
+            if (path != null)
+                await _repository.SaveAsync(collection, path);
+
             await RefreshCollectionsAsync();
+            SearchStatusMessage = $"Imported '{info.Name}' with {detail.Entries.Count} mod(s). Downloading...";
 
-            StatusMessage = $"Imported collection '{info.Name}' ({info.ModCount} mods) for {gameId}";
+            // 3. Download the mods
+            var progress = new Progress<Modular.Sdk.Backends.DownloadProgress>(p =>
+            {
+                SearchStatusMessage = !string.IsNullOrEmpty(p.Status) ? p.Status : "Downloading...";
+            });
+
+            await _service.DownloadCollectionAsync(collection, modsDir, progress: progress);
+            SearchStatusMessage = $"Collection '{info.Name}' downloaded ({detail.Entries.Count} mods)";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Failed to import collection: {ex.Message}";
+            SearchStatusMessage = $"Download failed: {ex.Message}";
+        }
+        finally
+        {
+            IsSearching = false;
         }
     }
 }

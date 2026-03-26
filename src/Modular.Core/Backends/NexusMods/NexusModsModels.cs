@@ -96,7 +96,7 @@ internal record NexusGraphQlCollectionResponse
 
 internal record NexusGraphQlCollectionData
 {
-    [JsonPropertyName("collections")]
+    [JsonPropertyName("collectionsV2")]
     public NexusGraphQlCollectionsResult? Collections { get; init; }
 }
 
@@ -152,6 +152,91 @@ internal record NexusGraphQlCollectionRevision
 
     [JsonPropertyName("modCount")]
     public int ModCount { get; init; }
+
+    [JsonPropertyName("modFiles")]
+    public List<NexusGraphQlCollectionModFile>? ModFiles { get; init; }
+}
+
+internal record NexusGraphQlCollectionModFile
+{
+    [JsonPropertyName("file")]
+    public NexusGraphQlModFileRef? File { get; init; }
+
+    [JsonPropertyName("optional")]
+    public bool Optional { get; init; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; init; }
+}
+
+internal record NexusGraphQlModFileRef
+{
+    [JsonPropertyName("modId")]
+    public int ModId { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; init; }
+
+    [JsonPropertyName("fileId")]
+    public int FileId { get; init; }
+
+    [JsonPropertyName("mod")]
+    public NexusGraphQlModRef? Mod { get; init; }
+}
+
+internal record NexusGraphQlModRef
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("author")]
+    public string? Author { get; init; }
+
+    [JsonPropertyName("modId")]
+    public int ModId { get; init; }
+}
+
+// --- GraphQL collection detail response ---
+
+internal record NexusGraphQlCollectionDetailResponse
+{
+    [JsonPropertyName("data")]
+    public NexusGraphQlCollectionDetailData? Data { get; init; }
+}
+
+internal record NexusGraphQlCollectionDetailData
+{
+    [JsonPropertyName("collection")]
+    public NexusGraphQlCollection? Collection { get; init; }
+}
+
+// --- Public collection detail models ---
+
+/// <summary>
+/// Detailed collection info including the mod entry list.
+/// </summary>
+public record NexusCollectionDetail
+{
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public string GameDomain { get; init; } = string.Empty;
+    public int RevisionNumber { get; init; }
+    public int ModCount { get; init; }
+    public List<NexusCollectionModEntry> Entries { get; init; } = [];
+}
+
+public record NexusCollectionModEntry
+{
+    public string ModId { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? Author { get; init; }
+    public string? Version { get; init; }
+    public string? FileId { get; init; }
+    public string? FileName { get; init; }
+    public bool IsOptional { get; init; }
 }
 
 /// <summary>

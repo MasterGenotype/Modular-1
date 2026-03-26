@@ -152,10 +152,102 @@ public class GameBananaBackend : IModBackend
     }
 
     /// <summary>
-    /// Searches for mods on GameBanana.
+    /// Searches for mods on GameBanana using the Util/Search/Results endpoint.
+    /// Falls back to Mod/Index listing (with optional game filter) when no query is provided.
     /// </summary>
     public async Task<List<BackendMod>> SearchModsAsync(
         string searchQuery,
+        int? gameId = null,
+        int maxResults = 50,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+            return await ListModsAsync(gameId, maxResults, ct);
+
+        var result = new List<BackendMod>();
+
+        try
+        {
+            var page = 1;
+            while (result.Count < maxResults)
+            {
+                ct.ThrowIfCancellationRequested();
+                await ThrottleAsync();
+
+                // Use the search endpoint — Mod/Index does not support text search
+                var request = _client.GetAsync("Util/Search/Results")
+                    .WithArgument("_nPage", page.ToString())
+                    .WithArgument("_nPerpage", DefaultPageSize.ToString())
+                    .WithArgument("_sSearchString", searchQuery);
+
+                // _idGameRow=0 means all games
+                if (gameId.HasValue)
+                    request = request.WithArgument("_idGameRow", gameId.Value.ToString());
+
+                var response = await request.AsJsonAsync();
+
+                var v11Response = JsonSerializer.Deserialize<GameBananaV11Response>(
+                    response.RootElement.GetRawText());
+
+                if (v11Response?.Records == null || v11Response.Records.Count == 0)
+                    break;
+
+                foreach (var record in v11Response.Records)
+                {
+                    // Search endpoint returns all types; keep only Mods
+                    if (!string.Equals(record.ModelName, "Mod", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (record.Id == 0 || string.IsNullOrEmpty(record.Name))
+                        continue;
+
+                    var modId = record.Id.ToString();
+                    var thumbnailUrl = GetThumbnailUrl(record.PreviewMedia);
+
+                    result.Add(new BackendMod
+                    {
+                        ModId = modId,
+                        Name = record.Name,
+                        BackendId = Id,
+                        Url = record.ProfileUrl ?? $"https://gamebanana.com/mods/{modId}",
+                        Author = record.Submitter?.Name,
+                        UpdatedAt = record.DateModifiedTimestamp.HasValue
+                            ? DateTimeOffset.FromUnixTimeSeconds(record.DateModifiedTimestamp.Value).DateTime
+                            : null,
+                        GameDomain = record.Game?.Name,
+                        ThumbnailUrl = thumbnailUrl
+                    });
+
+                    if (result.Count >= maxResults)
+                        break;
+                }
+
+                if (v11Response.Metadata?.IsComplete == true ||
+                    v11Response.Records.Count < DefaultPageSize)
+                    break;
+
+                page++;
+            }
+
+            _logger?.LogInformation("Found {Count} mods matching '{Query}'", result.Count, searchQuery);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to search mods for query '{Query}'", searchQuery);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lists mods from GameBanana using Mod/Index, optionally filtered by game.
+    /// Used when no search query is provided.
+    /// </summary>
+    private async Task<List<BackendMod>> ListModsAsync(
         int? gameId = null,
         int maxResults = 50,
         CancellationToken ct = default)
@@ -174,11 +266,8 @@ public class GameBananaBackend : IModBackend
                     .WithArgument("_nPage", page.ToString())
                     .WithArgument("_nPerpage", DefaultPageSize.ToString());
 
-                if (!string.IsNullOrWhiteSpace(searchQuery))
-                    request = request.WithArgument("_sSearchText", searchQuery);
-
                 if (gameId.HasValue)
-                    request = request.WithArgument("_aFilters[Game][_idRow]", gameId.Value.ToString());
+                    request = request.WithArgument("_aFilters[Generic_Game]", gameId.Value.ToString());
 
                 var response = await request.AsJsonAsync();
 
@@ -220,8 +309,6 @@ public class GameBananaBackend : IModBackend
 
                 page++;
             }
-
-            _logger?.LogInformation("Found {Count} mods matching '{Query}'", result.Count, searchQuery);
         }
         catch (OperationCanceledException)
         {
@@ -229,7 +316,7 @@ public class GameBananaBackend : IModBackend
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to search mods for query '{Query}'", searchQuery);
+            _logger?.LogError(ex, "Failed to list mods");
         }
 
         return result;

@@ -511,6 +511,15 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
         return _graphQlClient.SearchCollectionsAsync(gameDomain, count, offset, ct);
     }
 
+    /// <summary>
+    /// Fetches the full mod list for a NexusMods collection by slug and game domain.
+    /// </summary>
+    public Task<NexusCollectionDetail?> GetCollectionDetailsAsync(
+        string slug, string gameDomain, CancellationToken ct = default)
+    {
+        return _graphQlClient.GetCollectionDetailsAsync(slug, gameDomain, ct);
+    }
+
     // --- ISearchableBackend ---
 
     public Task<ModSearchResult> SearchModsAsync(ModSearchQuery query, CancellationToken ct = default)
