@@ -1,0 +1,79 @@
+# Maintainer: superphenotype
+pkgname=modular-git
+pkgver=r82.g351bb35
+pkgrel=1
+pkgdesc="Extensible mod manager for downloading, organizing, and managing game modifications (CLI + GUI)"
+arch=('x86_64')
+url="https://github.com/MasterGenotype/Modular-1"
+license=('unknown')
+depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
+         'libx11' 'libxcb' 'libxkbcommon' 'libxrandr' 'libxcursor' 'libxi'
+         'fontconfig' 'freetype2' 'mesa')
+makedepends=('dotnet-sdk-8.0' 'git')
+provides=('modular')
+conflicts=('modular')
+source=("modular::git+ssh://git@github.com/MasterGenotype/Modular-1.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd modular
+    ( set -o pipefail
+      git describe --long --tags --abbrev=7 2>/dev/null \
+          | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+    ) || printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+    cd modular
+
+    export DOTNET_CLI_TELEMETRY_OPTOUT=1
+    export DOTNET_NOLOGO=1
+
+    # Build CLI — self-contained single-file executable
+    dotnet publish src/Modular.Cli/Modular.Cli.csproj \
+        -c Release \
+        -r linux-x64 \
+        --self-contained \
+        -p:PublishSingleFile=true \
+        -p:IncludeNativeLibrariesForSelfExtract=true \
+        -o publish/cli-linux
+
+    # Build GUI — self-contained
+    dotnet publish src/Modular.Gui/Modular.Gui.csproj \
+        -c Release \
+        -r linux-x64 \
+        --self-contained \
+        -o publish/gui-linux
+}
+
+package() {
+    cd modular
+
+    # Install CLI binary
+    install -Dm755 "publish/cli-linux/modular" "$pkgdir/usr/bin/modular"
+
+    # Install GUI — directory of files under /usr/share, symlink for the binary
+    install -dm755 "$pkgdir/usr/share/modular-gui"
+    cp -a publish/gui-linux/* "$pkgdir/usr/share/modular-gui/"
+    chmod 755 "$pkgdir/usr/share/modular-gui/Modular.Gui"
+
+    install -dm755 "$pkgdir/usr/bin"
+    ln -s /usr/share/modular-gui/Modular.Gui "$pkgdir/usr/bin/modular-gui"
+
+    # Documentation
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+    # Desktop entry
+    install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/modular.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Modular Mod Manager
+GenericName=Game Mod Manager
+Comment=Next-generation extensible mod manager with plugin support
+Exec=/usr/bin/modular-gui
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
+Keywords=mod;manager;game;nexusmods;gamebanana;
+EOF
+}

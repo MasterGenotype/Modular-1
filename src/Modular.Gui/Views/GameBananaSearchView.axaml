@@ -6,32 +6,35 @@
              xmlns:models="using:Modular.Gui.Models"
              xmlns:mi="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
-             x:Class="Modular.Gui.Views.NexusSearchView"
-             x:DataType="vm:NexusSearchViewModel">
+             x:Class="Modular.Gui.Views.GameBananaSearchView"
+             x:DataType="vm:GameBananaSearchViewModel">
 
     <Design.DataContext>
-        <vm:NexusSearchViewModel/>
+        <vm:GameBananaSearchViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Search bar -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,15">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
-                <TextBlock Text="Game:" VerticalAlignment="Center"/>
-                <AutoCompleteBox ItemsSource="{Binding AvailableGames}"
-                                 Text="{Binding SelectedGame}"
+                <TextBlock Text="Game ID:" VerticalAlignment="Center"/>
+                <AutoCompleteBox ItemsSource="{Binding AvailableGameIds}"
+                                 Text="{Binding GameIdText}"
                                  FilterMode="Contains"
-                                 MinWidth="220"
-                                 Watermark="Type or select a game domain"/>
+                                 MinWidth="140"
+                                 Watermark="e.g. 8694"/>
             </StackPanel>
 
             <TextBox Grid.Column="1"
                      Text="{Binding SearchText}"
-                     Watermark="Search mods... (leave empty to browse all)"
+                     Watermark="Search GameBanana mods..."
                      Margin="0,0,10,0">
                 <TextBox.InnerLeftContent>
                     <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
                 </TextBox.InnerLeftContent>
+                <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding ExecuteSearchCommand}"/>
+                </TextBox.KeyBindings>
             </TextBox>
 
             <Button Grid.Column="2" Command="{Binding ExecuteSearchCommand}"
@@ -43,21 +46,8 @@
             </Button>
         </Grid>
 
-        <!-- Sort options -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
-            <TextBlock Text="Sort:" VerticalAlignment="Center" Opacity="0.7"/>
-            <ComboBox SelectedIndex="0" MinWidth="150"
-                      SelectionChanged="OnSortChanged">
-                <ComboBoxItem Content="Relevance" Tag="Relevance"/>
-                <ComboBoxItem Content="Most Downloads" Tag="Downloads"/>
-                <ComboBoxItem Content="Most Endorsed" Tag="Endorsements"/>
-                <ComboBoxItem Content="Recently Updated" Tag="Updated"/>
-                <ComboBoxItem Content="Recently Added" Tag="Added"/>
-            </ComboBox>
-        </StackPanel>
-
         <!-- Selection bar -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
             <Button Command="{Binding SelectAllCommand}" Padding="8,4">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="CheckboxMultipleMarked" Width="14" Height="14"/>
@@ -77,7 +67,7 @@
         </StackPanel>
 
         <!-- Results grid -->
-        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 CornerRadius="8" Padding="1">
             <Grid>
                 <!-- Loading indicator -->
@@ -99,7 +89,7 @@
                     <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.6" FontSize="14"/>
                 </StackPanel>
 
-                <!-- Results DataGrid (only when we have results) -->
+                <!-- Results DataGrid -->
                 <DataGrid ItemsSource="{Binding SearchResults}"
                           AutoGenerateColumns="False"
                           CanUserResizeColumns="True"
@@ -125,22 +115,7 @@
                         <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80" IsReadOnly="True"/>
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
                         <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150" IsReadOnly="True"/>
-                        <DataGridTemplateColumn Header="Downloads" Width="110">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate x:DataType="models:ModDisplayModel">
-                                    <TextBlock Text="{Binding Mod.DownloadCount, StringFormat='{}{0:N0}'}"
-                                               VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Endorsements" Width="110">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate x:DataType="models:ModDisplayModel">
-                                    <TextBlock Text="{Binding Mod.EndorsementCount, StringFormat='{}{0:N0}'}"
-                                               VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Game" Binding="{Binding GameDomain}" Width="150" IsReadOnly="True"/>
                         <DataGridTemplateColumn Header="Updated" Width="110">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="models:ModDisplayModel">
@@ -154,28 +129,14 @@
             </Grid>
         </Border>
 
-        <!-- Footer: pagination + download -->
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,15,0,0">
-            <!-- Results count & pagination -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <TextBlock VerticalAlignment="Center" Opacity="0.7">
-                    <Run Text="{Binding TotalResults}"/>
-                    <Run Text=" results found"/>
-                </TextBlock>
-                <Button Command="{Binding PreviousPageCommand}"
-                        IsEnabled="{Binding HasPreviousPage}"
-                        Content="Previous" Padding="8,4"/>
-                <TextBlock VerticalAlignment="Center">
-                    <Run Text="Page "/>
-                    <Run Text="{Binding CurrentPage}"/>
-                </TextBlock>
-                <Button Command="{Binding NextPageCommand}"
-                        IsEnabled="{Binding HasNextPage}"
-                        Content="Next" Padding="8,4"/>
-            </StackPanel>
+        <!-- Footer -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
+                <Run Text="{Binding TotalResults}"/>
+                <Run Text=" results found"/>
+            </TextBlock>
 
-            <!-- Download Selected button -->
-            <Button Grid.Column="2"
+            <Button Grid.Column="1"
                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
                     IsEnabled="{Binding SelectedCount}"
                     Padding="16,10">

@@ -92,6 +92,56 @@ public partial class InstalledModsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task RemoveAllAsync()
+    {
+        if (_installService == null || _dialogService == null || Changesets.Count == 0)
+            return;
+
+        var confirmed = await _dialogService.ShowConfirmationAsync(
+            "Remove All Mods",
+            $"Are you sure you want to uninstall all {Changesets.Count} installed mod(s)?\n\nThis action cannot be undone.");
+
+        if (!confirmed) return;
+
+        IsLoading = true;
+        var total = Changesets.Count;
+        var removed = 0;
+        var failed = 0;
+
+        var snapshot = Changesets.ToList();
+        foreach (var changeset in snapshot)
+        {
+            StatusMessage = $"Uninstalling {changeset.ModId} ({removed + failed + 1}/{total})...";
+
+            try
+            {
+                var result = await _installService.UninstallAsync(changeset.ChangesetId);
+                if (result.Success)
+                {
+                    Changesets.Remove(changeset);
+                    removed++;
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        TotalInstalled = Changesets.Count;
+        IsLoading = false;
+
+        if (failed == 0)
+            StatusMessage = $"Successfully removed all {removed} mod(s)";
+        else
+            StatusMessage = $"Removed {removed} mod(s), {failed} failed";
+    }
+
+    [RelayCommand]
     private async Task UninstallModAsync(ChangesetDisplayModel? changeset)
     {
         if (_installService == null || _dialogService == null || changeset == null)

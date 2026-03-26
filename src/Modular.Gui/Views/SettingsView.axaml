@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:views="using:Modular.Gui.Views"
              xmlns:mi="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="Modular.Gui.Views.SettingsView"
@@ -12,338 +13,405 @@
         <vm:SettingsViewModel/>
     </Design.DataContext>
 
-    <ScrollViewer>
-        <StackPanel Spacing="25" MaxWidth="600">
-            <!-- NexusMods Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Web" Width="24" Height="24"/>
-                        <TextBlock Text="NexusMods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+    <Grid>
+        <!-- Sub-page: Profiles -->
+        <DockPanel IsVisible="{Binding ShowProfilesPage}">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,15">
+                <Button Command="{Binding NavigateBackCommand}" Padding="8,6">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="ArrowLeft" Width="18" Height="18"/>
+                        <TextBlock Text="Back to Settings" VerticalAlignment="Center"/>
                     </StackPanel>
+                </Button>
+                <TextBlock Text="Profiles" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <views:ProfilesView DataContext="{Binding ProfilesViewModel}"/>
+        </DockPanel>
 
-                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="API Key" Margin="0,0,0,5"/>
-                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="5">
-                            <!-- Hidden API key (masked) -->
-                            <TextBox Text="{Binding NexusApiKey}"
-                                     PasswordChar="*"
-                                     Width="350"
-                                     Watermark="Enter your NexusMods API key"
-                                     IsVisible="{Binding !ShowNexusApiKey}"/>
-                            <!-- Visible API key (plain text) -->
-                            <TextBox Text="{Binding NexusApiKey}"
-                                     Width="350"
-                                     Watermark="Enter your NexusMods API key"
-                                     IsVisible="{Binding ShowNexusApiKey}"/>
-                            <Button Command="{Binding ToggleApiKeyVisibilityCommand}" 
-                                    ToolTip.Tip="Toggle visibility" Padding="8">
-                                <Panel>
-                                    <mi:MaterialIcon Kind="Eye" Width="16" Height="16" IsVisible="{Binding !ShowNexusApiKey}"/>
-                                    <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" IsVisible="{Binding ShowNexusApiKey}"/>
-                                </Panel>
+        <!-- Sub-page: Plugins (Developer) -->
+        <DockPanel IsVisible="{Binding ShowPluginsPage}">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,15">
+                <Button Command="{Binding NavigateBackCommand}" Padding="8,6">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="ArrowLeft" Width="18" Height="18"/>
+                        <TextBlock Text="Back to Settings" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="Plugins (Developer)" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <views:PluginsView DataContext="{Binding PluginsViewModel}"/>
+        </DockPanel>
+
+        <!-- Main Settings Page -->
+        <ScrollViewer IsVisible="{Binding ShowMainSettings}">
+            <StackPanel Spacing="25" MaxWidth="600">
+                <!-- Profiles Navigation -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <Button Command="{Binding NavigateToSubPageCommand}" CommandParameter="Profiles"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="AccountGroup" Width="24" Height="24"/>
+                                <TextBlock Text="Profiles" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="Manage per-game mod profiles and loadouts"
+                                       FontSize="12" Opacity="0.6" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                            <mi:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="24" Height="24" Opacity="0.5"/>
+                        </Grid>
+                    </Button>
+                </Border>
+
+                <!-- Plugins Navigation (Developer) -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <Button Command="{Binding NavigateToSubPageCommand}" CommandParameter="Plugins"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Puzzle" Width="24" Height="24"/>
+                                <TextBlock Text="Plugins" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="Developer: manage plugin extensions"
+                                       FontSize="12" Opacity="0.6" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                            <mi:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="24" Height="24" Opacity="0.5"/>
+                        </Grid>
+                    </Button>
+                </Border>
+
+                <Separator Opacity="0.3"/>
+
+                <!-- NexusMods Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Web" Width="24" Height="24"/>
+                            <TextBlock Text="NexusMods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="API Key" Margin="0,0,0,5"/>
+                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="5">
+                                <TextBox Text="{Binding NexusApiKey}"
+                                         PasswordChar="*"
+                                         Width="350"
+                                         Watermark="Enter your NexusMods API key"
+                                         IsVisible="{Binding !ShowNexusApiKey}"/>
+                                <TextBox Text="{Binding NexusApiKey}"
+                                         Width="350"
+                                         Watermark="Enter your NexusMods API key"
+                                         IsVisible="{Binding ShowNexusApiKey}"/>
+                                <Button Command="{Binding ToggleApiKeyVisibilityCommand}"
+                                        ToolTip.Tip="Toggle visibility" Padding="8">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="Eye" Width="16" Height="16" IsVisible="{Binding !ShowNexusApiKey}"/>
+                                        <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" IsVisible="{Binding ShowNexusApiKey}"/>
+                                    </Panel>
+                                </Button>
+                            </StackPanel>
+                            <Button Grid.Row="1" Grid.Column="1" Margin="10,0,0,0"
+                                    Command="{Binding TestNexusConnectionCommand}"
+                                    IsEnabled="{Binding !IsTestingConnection}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Connection" Width="14" Height="14"
+                                                     IsVisible="{Binding !IsTestingConnection}"/>
+                                    <mi:MaterialIcon Kind="Loading" Width="14" Height="14"
+                                                     IsVisible="{Binding IsTestingConnection}"
+                                                     Classes="rotating"/>
+                                    <TextBlock Text="Test"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <StackPanel>
+                            <TextBlock Text="Application Slug" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding NexusApplicationSlug}"
+                                     Width="200" HorizontalAlignment="Left"
+                                     Watermark="vortex"/>
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding NexusSsoEnabled}"
+                                  Content="Enable SSO authentication"
+                                  ToolTip.Tip="When enabled and no API key is configured, opens browser for authorization"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Command="{Binding LoginViaSsoCommand}"
+                                    IsEnabled="{Binding !IsSsoLoggingIn}"
+                                    ToolTip.Tip="Authenticate via browser SSO (no API key needed)">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Login" Width="16" Height="16"/>
+                                    <TextBlock Text="Login via Browser"/>
+                                </StackPanel>
+                            </Button>
+                            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsSsoLoggingIn}"
+                                         Width="100" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SsoStatusMessage}" VerticalAlignment="Center"
+                                       FontSize="12" Opacity="0.7"
+                                       IsVisible="{Binding SsoStatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+
+                        <TextBlock Text="Get your API key from nexusmods.com/users/myaccount?tab=api+access"
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- GameBanana Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Gamepad" Width="24" Height="24"/>
+                            <TextBlock Text="GameBanana" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="User ID" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding GameBananaUserId}"
+                                     Width="200" HorizontalAlignment="Left"
+                                     Watermark="Enter your GameBanana user ID"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Game IDs (comma-separated)" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding GameBananaGameIds}"
+                                     Width="300" HorizontalAlignment="Left"
+                                     Watermark="e.g., 123, 456"
+                                     ToolTip.Tip="Filter subscriptions by game ID. Leave empty for all games."/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding GameBananaDownloadDir}"
+                                     Width="200" HorizontalAlignment="Left"
+                                     Watermark="gamebanana"/>
+                        </StackPanel>
+
+                        <TextBlock Text="Find your user ID in your GameBanana profile URL"
+                                   FontSize="12" Opacity="0.6"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Backends Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Server" Width="24" Height="24"/>
+                            <TextBlock Text="Enabled Backends" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding NexusModsBackendEnabled}"
+                                  Content="NexusMods"/>
+                        <CheckBox IsChecked="{Binding GameBananaBackendEnabled}"
+                                  Content="GameBanana"/>
+
+                        <TextBlock Text="Disabled backends will not be loaded at startup"
+                                   FontSize="12" Opacity="0.6"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Downloads Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Download" Width="24" Height="24"/>
+                            <TextBlock Text="Downloads" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Mods Directory" Margin="0,0,0,5"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Grid.Column="0" Text="{Binding ModsDirectory}"
+                                         Watermark="Select where to save downloaded mods"/>
+                                <Button Grid.Column="1" Content="Browse..." Margin="10,0,0,0"
+                                        Command="{Binding BrowseModsDirectoryCommand}"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Default Categories (comma-separated)" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding DefaultCategories}"
+                                     Width="300" HorizontalAlignment="Left"
+                                     Watermark="main, optional"
+                                     ToolTip.Tip="File categories to download by default"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Max Concurrent Downloads" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding ConcurrentDownloadOptions}"
+                                      SelectedItem="{Binding MaxConcurrentDownloads}"
+                                      Width="80" HorizontalAlignment="Left"/>
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding AutoRename}"
+                                  Content="Auto-rename mod folders to human-readable names"/>
+                        <CheckBox IsChecked="{Binding OrganizeByCategory}"
+                                  Content="Organize mods into category subdirectories"/>
+                        <CheckBox IsChecked="{Binding VerifyDownloads}"
+                                  Content="Verify downloads (MD5 checksum)"/>
+                        <CheckBox IsChecked="{Binding ValidateTracking}"
+                                  Content="Validate API tracking against web tracking center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Appearance Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Palette" Width="24" Height="24"/>
+                            <TextBlock Text="Appearance" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Theme" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding AvailableThemes}"
+                                      SelectedItem="{Binding SelectedTheme}"
+                                      Width="150" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Advanced Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
+                            <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding Verbose}"
+                                  Content="Enable verbose logging"/>
+
+                        <StackPanel>
+                            <TextBlock Text="Cookie File Path" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding CookieFile}"
+                                     Watermark="~/Documents/cookies.txt"
+                                     ToolTip.Tip="Path to cookie file for web scraping authentication"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Database Path" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding DatabasePath}"
+                                     Watermark="~/.config/Modular/downloads.json"
+                                     ToolTip.Tip="Path to the download database file"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Rate Limit State Path" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding RateLimitStatePath}"
+                                     Watermark="~/.config/Modular/rate_limit_state.json"
+                                     ToolTip.Tip="Path to the rate limiter state file"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Metadata Cache Path" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding MetadataCachePath}"
+                                     Watermark="~/.config/Modular/metadata_cache.json"
+                                     ToolTip.Tip="Path to the mod metadata cache file"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Diagnostics Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Stethoscope" Width="24" Height="24"/>
+                                <TextBlock Text="Diagnostics" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Command="{Binding RunDiagnosticsCommand}"
+                                    IsEnabled="{Binding !IsRunningDiagnostics}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
+                                    <TextBlock Text="Run Health Check"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsRunningDiagnostics}"/>
+
+                        <TextBlock Text="{Binding DiagnosticOverallStatus}" FontWeight="SemiBold"
+                                   IsVisible="{Binding DiagnosticOverallStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                        <ItemsControl ItemsSource="{Binding DiagnosticResults}"
+                                      IsVisible="{Binding DiagnosticResults.Count}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DiagnosticCheckItem">
+                                    <Grid ColumnDefinitions="Auto,*,2*" Margin="0,2">
+                                        <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12"
+                                                   FontWeight="SemiBold" Width="60" Opacity="0.8"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" Margin="10,0"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Message}" FontSize="12" Opacity="0.6"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="{Binding DiagnosticSystemInfo}" FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                                   IsVisible="{Binding DiagnosticSystemInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Telemetry Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="ChartBar" Width="24" Height="24"/>
+                            <TextBlock Text="Telemetry" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Command="{Binding LoadTelemetrySummaryCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"/>
+                                    <TextBlock Text="Load Summary"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding ExportTelemetryCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Export" Width="14" Height="14"/>
+                                    <TextBlock Text="Export"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding ClearTelemetryCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                    <TextBlock Text="Clear"/>
+                                </StackPanel>
                             </Button>
                         </StackPanel>
-                        <Button Grid.Row="1" Grid.Column="1" Margin="10,0,0,0"
-                                Command="{Binding TestNexusConnectionCommand}"
-                                IsEnabled="{Binding !IsTestingConnection}">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Connection" Width="14" Height="14" 
-                                                 IsVisible="{Binding !IsTestingConnection}"/>
-                                <mi:MaterialIcon Kind="Loading" Width="14" Height="14" 
-                                                 IsVisible="{Binding IsTestingConnection}"
-                                                 Classes="rotating"/>
-                                <TextBlock Text="Test"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
 
-                    <StackPanel>
-                        <TextBlock Text="Application Slug" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding NexusApplicationSlug}"
-                                 Width="200" HorizontalAlignment="Left"
-                                 Watermark="vortex"/>
+                        <TextBlock Text="{Binding TelemetrySummaryText}" FontSize="12" Opacity="0.7" TextWrapping="Wrap"
+                                   IsVisible="{Binding TelemetrySummaryText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Actions -->
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding StatusMessage}" Opacity="0.7"/>
+                        <Border Background="Orange" CornerRadius="4" Padding="8,4"
+                                IsVisible="{Binding HasUnsavedChanges}">
+                            <TextBlock Text="Unsaved changes" FontSize="12"/>
+                        </Border>
                     </StackPanel>
 
-                    <CheckBox IsChecked="{Binding NexusSsoEnabled}"
-                              Content="Enable SSO authentication"
-                              ToolTip.Tip="When enabled and no API key is configured, opens browser for authorization"/>
-
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Command="{Binding LoginViaSsoCommand}"
-                                IsEnabled="{Binding !IsSsoLoggingIn}"
-                                ToolTip.Tip="Authenticate via browser SSO (no API key needed)">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Login" Width="16" Height="16"/>
-                                <TextBlock Text="Login via Browser"/>
-                            </StackPanel>
-                        </Button>
-                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsSsoLoggingIn}"
-                                     Width="100" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SsoStatusMessage}" VerticalAlignment="Center"
-                                   FontSize="12" Opacity="0.7"
-                                   IsVisible="{Binding SsoStatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Get your API key from nexusmods.com/users/myaccount?tab=api+access"
-                               FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Border>
-
-            <!-- GameBanana Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Gamepad" Width="24" Height="24"/>
-                        <TextBlock Text="GameBanana" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="User ID" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding GameBananaUserId}"
-                                 Width="200" HorizontalAlignment="Left"
-                                 Watermark="Enter your GameBanana user ID"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Game IDs (comma-separated)" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding GameBananaGameIds}"
-                                 Width="300" HorizontalAlignment="Left"
-                                 Watermark="e.g., 123, 456"
-                                 ToolTip.Tip="Filter subscriptions by game ID. Leave empty for all games."/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding GameBananaDownloadDir}"
-                                 Width="200" HorizontalAlignment="Left"
-                                 Watermark="gamebanana"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Find your user ID in your GameBanana profile URL"
-                               FontSize="12" Opacity="0.6"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Backends Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Server" Width="24" Height="24"/>
-                        <TextBlock Text="Enabled Backends" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <CheckBox IsChecked="{Binding NexusModsBackendEnabled}"
-                              Content="NexusMods"/>
-                    <CheckBox IsChecked="{Binding GameBananaBackendEnabled}"
-                              Content="GameBanana"/>
-
-                    <TextBlock Text="Disabled backends will not be loaded at startup"
-                               FontSize="12" Opacity="0.6"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Downloads Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Download" Width="24" Height="24"/>
-                        <TextBlock Text="Downloads" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Mods Directory" Margin="0,0,0,5"/>
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Grid.Column="0" Text="{Binding ModsDirectory}"
-                                     Watermark="Select where to save downloaded mods"/>
-                            <Button Grid.Column="1" Content="Browse..." Margin="10,0,0,0"
-                                    Command="{Binding BrowseModsDirectoryCommand}"/>
-                        </Grid>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Default Categories (comma-separated)" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding DefaultCategories}"
-                                 Width="300" HorizontalAlignment="Left"
-                                 Watermark="main, optional"
-                                 ToolTip.Tip="File categories to download by default"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Max Concurrent Downloads" Margin="0,0,0,5"/>
-                        <ComboBox ItemsSource="{Binding ConcurrentDownloadOptions}"
-                                  SelectedItem="{Binding MaxConcurrentDownloads}"
-                                  Width="80" HorizontalAlignment="Left"/>
-                    </StackPanel>
-
-                    <CheckBox IsChecked="{Binding AutoRename}"
-                              Content="Auto-rename mod folders to human-readable names"/>
-                    <CheckBox IsChecked="{Binding OrganizeByCategory}"
-                              Content="Organize mods into category subdirectories"/>
-                    <CheckBox IsChecked="{Binding VerifyDownloads}"
-                              Content="Verify downloads (MD5 checksum)"/>
-                    <CheckBox IsChecked="{Binding ValidateTracking}"
-                              Content="Validate API tracking against web tracking center"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Appearance Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Palette" Width="24" Height="24"/>
-                        <TextBlock Text="Appearance" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Theme" Margin="0,0,0,5"/>
-                        <ComboBox ItemsSource="{Binding AvailableThemes}"
-                                  SelectedItem="{Binding SelectedTheme}"
-                                  Width="150" HorizontalAlignment="Left"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Advanced Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
-                        <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <CheckBox IsChecked="{Binding Verbose}"
-                              Content="Enable verbose logging"/>
-
-                    <StackPanel>
-                        <TextBlock Text="Cookie File Path" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding CookieFile}"
-                                 Watermark="~/Documents/cookies.txt"
-                                 ToolTip.Tip="Path to cookie file for web scraping authentication"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Database Path" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding DatabasePath}"
-                                 Watermark="~/.config/Modular/downloads.json"
-                                 ToolTip.Tip="Path to the download database file"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Rate Limit State Path" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding RateLimitStatePath}"
-                                 Watermark="~/.config/Modular/rate_limit_state.json"
-                                 ToolTip.Tip="Path to the rate limiter state file"/>
-                    </StackPanel>
-
-                    <StackPanel>
-                        <TextBlock Text="Metadata Cache Path" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding MetadataCachePath}"
-                                 Watermark="~/.config/Modular/metadata_cache.json"
-                                 ToolTip.Tip="Path to the mod metadata cache file"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Diagnostics Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Stethoscope" Width="24" Height="24"/>
-                            <TextBlock Text="Diagnostics" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" Command="{Binding RunDiagnosticsCommand}"
-                                IsEnabled="{Binding !IsRunningDiagnostics}">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
-                                <TextBlock Text="Run Health Check"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-
-                    <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsRunningDiagnostics}"/>
-
-                    <TextBlock Text="{Binding DiagnosticOverallStatus}" FontWeight="SemiBold"
-                               IsVisible="{Binding DiagnosticOverallStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-
-                    <ItemsControl ItemsSource="{Binding DiagnosticResults}"
-                                  IsVisible="{Binding DiagnosticResults.Count}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:DiagnosticCheckItem">
-                                <Grid ColumnDefinitions="Auto,*,2*" Margin="0,2">
-                                    <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12"
-                                               FontWeight="SemiBold" Width="60" Opacity="0.8"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" Margin="10,0"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding Message}" FontSize="12" Opacity="0.6"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="{Binding DiagnosticSystemInfo}" FontSize="12" Opacity="0.6" TextWrapping="Wrap"
-                               IsVisible="{Binding DiagnosticSystemInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Telemetry Section -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="ChartBar" Width="24" Height="24"/>
-                        <TextBlock Text="Telemetry" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Command="{Binding LoadTelemetrySummaryCommand}">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"/>
-                                <TextBlock Text="Load Summary"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding ExportTelemetryCommand}">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Export" Width="14" Height="14"/>
-                                <TextBlock Text="Export"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding ClearTelemetryCommand}">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
-                                <TextBlock Text="Clear"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-
-                    <TextBlock Text="{Binding TelemetrySummaryText}" FontSize="12" Opacity="0.7" TextWrapping="Wrap"
-                               IsVisible="{Binding TelemetrySummaryText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Actions -->
-            <Grid ColumnDefinitions="*,Auto,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusMessage}" Opacity="0.7"/>
-                    <Border Background="Orange" CornerRadius="4" Padding="8,4"
-                            IsVisible="{Binding HasUnsavedChanges}">
-                        <TextBlock Text="Unsaved changes" FontSize="12"/>
-                    </Border>
-                </StackPanel>
-
-                <Button Grid.Column="1" Content="Reset" Margin="0,0,10,0"
-                        Command="{Binding ResetSettingsCommand}"/>
-                <Button Grid.Column="2" Content="Save Settings" Classes="accent"
-                        Command="{Binding SaveSettingsCommand}"/>
-            </Grid>
-        </StackPanel>
-    </ScrollViewer>
+                    <Button Grid.Column="1" Content="Reset" Margin="0,0,10,0"
+                            Command="{Binding ResetSettingsCommand}"/>
+                    <Button Grid.Column="2" Content="Save Settings" Classes="accent"
+                            Command="{Binding SaveSettingsCommand}"/>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>

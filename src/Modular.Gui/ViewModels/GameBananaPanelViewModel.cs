@@ -8,6 +8,7 @@ namespace Modular.Gui.ViewModels;
 public partial class GameBananaPanelViewModel : ViewModelBase
 {
     public GameBananaViewModel? GameBananaViewModel { get; }
+    public GameBananaSearchViewModel? GameBananaSearchViewModel { get; }
 
     [ObservableProperty]
     private int _selectedTabIndex;
@@ -16,11 +17,15 @@ public partial class GameBananaPanelViewModel : ViewModelBase
     public GameBananaPanelViewModel()
     {
         GameBananaViewModel = new GameBananaViewModel();
+        GameBananaSearchViewModel = new GameBananaSearchViewModel();
     }
 
     // DI constructor
-    public GameBananaPanelViewModel(GameBananaViewModel gameBananaViewModel)
+    public GameBananaPanelViewModel(
+        GameBananaViewModel gameBananaViewModel,
+        GameBananaSearchViewModel gameBananaSearchViewModel)
     {
         GameBananaViewModel = gameBananaViewModel;
+        GameBananaSearchViewModel = gameBananaSearchViewModel;
     }
 }

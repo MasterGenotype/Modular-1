@@ -14,10 +14,19 @@
 
     <Grid RowDefinitions="Auto,*,Auto">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,15">
             <TextBlock Grid.Column="0" Text="{Binding TotalInstalled, StringFormat='{}{0} installed mod(s)'}"
                        VerticalAlignment="Center" Opacity="0.7"/>
-            <Button Grid.Column="1" Command="{Binding RefreshInstalledCommand}"
+            <Button Grid.Column="1" Command="{Binding RemoveAllCommand}"
+                    IsEnabled="{Binding !IsLoading}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Remove all installed mods">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="DeleteSweep" Width="16" Height="16"/>
+                    <TextBlock Text="Remove All"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Command="{Binding RefreshInstalledCommand}"
                     IsEnabled="{Binding !IsLoading}">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>

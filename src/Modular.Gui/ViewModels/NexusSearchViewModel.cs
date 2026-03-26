@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Utilities;
 using Modular.Gui.Models;
@@ -11,21 +10,15 @@ using Modular.Sdk.Backends.Common;
 namespace Modular.Gui.ViewModels;
 
 /// <summary>
-/// ViewModel for unified mod search across backends (NexusMods / GameBanana).
+/// ViewModel for NexusMods mod search.
 /// </summary>
 public partial class NexusSearchViewModel : ViewModelBase
 {
     private readonly NexusModsBackend? _nexusBackend;
-    private readonly GameBananaBackend? _gbBackend;
     private System.Threading.Timer? _debounceTimer;
 
     [ObservableProperty]
     private string _searchText = string.Empty;
-
-    [ObservableProperty]
-    private string _selectedBackend = "NexusMods";
-
-    public string[] AvailableBackends { get; } = ["NexusMods", "GameBanana"];
 
     [ObservableProperty]
     private string _selectedGame = string.Empty;
@@ -35,9 +28,6 @@ public partial class NexusSearchViewModel : ViewModelBase
 
     // Full game list for fuzzy matching (domain -> display name)
     private List<(string Domain, string Name)> _allGames = [];
-
-    [ObservableProperty]
-    private bool _showGameSelector = true;
 
     [ObservableProperty]
     private ModSortOrder _sortOrder = ModSortOrder.Relevance;
@@ -82,21 +72,10 @@ public partial class NexusSearchViewModel : ViewModelBase
     }
 
     // DI constructor
-    public NexusSearchViewModel(NexusModsBackend nexusBackend, GameBananaBackend gbBackend)
+    public NexusSearchViewModel(NexusModsBackend nexusBackend)
     {
         _nexusBackend = nexusBackend;
-        _gbBackend = gbBackend;
         _ = LoadAvailableGamesAsync();
-    }
-
-    partial void OnSelectedBackendChanged(string value)
-    {
-        // NexusMods requires a game domain; GameBanana does not
-        ShowGameSelector = value == "NexusMods";
-        SearchResults.Clear();
-        CurrentPage = 1;
-        TotalResults = 0;
-        StatusMessage = $"Search {value} — enter terms or browse all mods";
     }
 
     private async Task LoadAvailableGamesAsync()
@@ -131,10 +110,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     [RelayCommand]
     private async Task ExecuteSearchAsync()
     {
-        if (SelectedBackend == "NexusMods")
-            await SearchNexusModsAsync();
-        else
-            await SearchGameBananaAsync();
+        await SearchNexusModsAsync();
     }
 
     /// <summary>
@@ -216,37 +192,6 @@ public partial class NexusSearchViewModel : ViewModelBase
             HasNextPage = result.HasNextPage;
             HasPreviousPage = CurrentPage > 1;
             StatusMessage = $"Found {result.TotalCount} results (page {result.Page})";
-        }
-        catch (Exception ex) { StatusMessage = $"Search failed: {ex.Message}"; }
-        finally { IsLoading = false; }
-    }
-
-    private async Task SearchGameBananaAsync()
-    {
-        if (_gbBackend == null) { StatusMessage = "GameBanana backend not available"; return; }
-
-        IsLoading = true;
-        StatusMessage = $"Searching GameBanana for \"{SearchText}\"...";
-
-        try
-        {
-            var results = await _gbBackend.SearchModsAsync(SearchText, maxResults: 50);
-
-            // Re-rank by fuzzy score so the closest matches surface first
-            var ranked = FuzzyMatcher.Rank(SearchText, results, m => m.Name);
-
-            SearchResults.Clear();
-            foreach (var mod in ranked)
-            {
-                var display = new ModDisplayModel(mod);
-                display.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ModDisplayModel.IsSelected)) UpdateSelectedCount(); };
-                SearchResults.Add(display);
-            }
-
-            TotalResults = SearchResults.Count;
-            HasNextPage = false;
-            HasPreviousPage = false;
-            StatusMessage = $"Found {TotalResults} result(s) on GameBanana";
         }
         catch (Exception ex) { StatusMessage = $"Search failed: {ex.Message}"; }
         finally { IsLoading = false; }

@@ -90,27 +90,11 @@
                             </StackPanel>
                         </Button>
 
-                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Profiles"
-                                Classes="nav-button">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="AccountGroup" Width="20" Height="20"/>
-                                <TextBlock Text="Profiles" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-
                         <Button Command="{Binding NavigateToCommand}" CommandParameter="Backups"
                                 Classes="nav-button">
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <mi:MaterialIcon Kind="BackupRestore" Width="20" Height="20"/>
                                 <TextBlock Text="Backups" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-
-                        <Button Command="{Binding NavigateToCommand}" CommandParameter="Plugins"
-                                Classes="nav-button">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="Puzzle" Width="20" Height="20"/>
-                                <TextBlock Text="Plugins" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -166,14 +150,8 @@
                                 <DataTemplate DataType="vm:LibraryViewModel">
                                     <views:LibraryView/>
                                 </DataTemplate>
-                                <DataTemplate DataType="vm:PluginsViewModel">
-                                    <views:PluginsView/>
-                                </DataTemplate>
                                 <DataTemplate DataType="vm:GameDetectionViewModel">
                                     <views:GameDetectionView/>
-                                </DataTemplate>
-                                <DataTemplate DataType="vm:ProfilesCollectionsViewModel">
-                                    <views:ProfilesCollectionsView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:BackupsViewModel">
                                     <views:BackupsView/>

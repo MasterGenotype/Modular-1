@@ -23,6 +23,18 @@ public partial class ProfilesViewModel : ViewModelBase
     [ObservableProperty]
     private string _statusMessage = "Ready";
 
+    // Create profile fields
+    [ObservableProperty]
+    private string _newProfileName = string.Empty;
+
+    [ObservableProperty]
+    private string _newProfileGameId = string.Empty;
+
+    [ObservableProperty]
+    private string _newProfileType = "Single Player";
+
+    public string[] ProfileTypes { get; } = ["Single Player", "Multiplayer", "Custom"];
+
     // Designer constructor
     public ProfilesViewModel()
     {
@@ -30,6 +42,7 @@ public partial class ProfilesViewModel : ViewModelBase
         {
             Name = "Default Profile",
             GameId = "skyrimse",
+            ProfileType = "Single Player",
             ModCount = 42,
             CreatedAt = "2026-03-15"
         });
@@ -37,6 +50,7 @@ public partial class ProfilesViewModel : ViewModelBase
         {
             Name = "Minimal Setup",
             GameId = "skyrimse",
+            ProfileType = "Multiplayer",
             ModCount = 5,
             CreatedAt = "2026-03-18"
         });
@@ -49,6 +63,60 @@ public partial class ProfilesViewModel : ViewModelBase
     {
         _profileExporter = profileExporter;
         _dialogService = dialogService;
+    }
+
+    [RelayCommand]
+    private void CreateProfile()
+    {
+        if (string.IsNullOrWhiteSpace(NewProfileName))
+        {
+            StatusMessage = "Enter a profile name";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(NewProfileGameId))
+        {
+            StatusMessage = "Enter a game ID for this profile";
+            return;
+        }
+
+        var profile = new ProfileDisplayModel
+        {
+            Name = NewProfileName.Trim(),
+            GameId = NewProfileGameId.Trim(),
+            ProfileType = NewProfileType,
+            ModCount = 0,
+            CreatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd")
+        };
+
+        Profiles.Add(profile);
+        NewProfileName = string.Empty;
+        NewProfileGameId = string.Empty;
+        NewProfileType = "Single Player";
+        StatusMessage = $"Created profile '{profile.Name}' for {profile.GameId} ({profile.ProfileType})";
+    }
+
+    [RelayCommand]
+    private async Task DeleteProfileAsync()
+    {
+        if (SelectedProfile == null)
+        {
+            StatusMessage = "Select a profile to delete";
+            return;
+        }
+
+        if (_dialogService != null)
+        {
+            var confirmed = await _dialogService.ShowConfirmationAsync(
+                "Delete Profile",
+                $"Are you sure you want to delete the profile '{SelectedProfile.Name}'?");
+            if (!confirmed) return;
+        }
+
+        var name = SelectedProfile.Name;
+        Profiles.Remove(SelectedProfile);
+        SelectedProfile = null;
+        StatusMessage = $"Deleted profile '{name}'";
     }
 
     [RelayCommand]
@@ -98,12 +166,13 @@ public partial class ProfilesViewModel : ViewModelBase
     {
         if (_profileExporter == null || _dialogService == null) return;
 
-        var inputPath = await _dialogService.ShowInputAsync(
-            "Import Profile",
-            "Enter the full path to the profile file:",
-            "");
+        var files = await _dialogService.ShowFileBrowserAsync(
+            "Select Profile to Import",
+            allowMultiple: false);
 
-        if (string.IsNullOrEmpty(inputPath)) return;
+        if (files.Count == 0) return;
+
+        var inputPath = files[0];
 
         IsLoading = true;
         StatusMessage = "Importing profile...";
@@ -145,6 +214,9 @@ public partial class ProfileDisplayModel : ObservableObject
 
     [ObservableProperty]
     private string _gameId = string.Empty;
+
+    [ObservableProperty]
+    private string _profileType = "Single Player";
 
     [ObservableProperty]
     private int _modCount;

@@ -83,6 +83,95 @@ internal record NexusGraphQlGame
     public string DomainName { get; init; } = string.Empty;
 }
 
+// --- GraphQL collection models ---
+
+/// <summary>
+/// GraphQL response wrapper for collection search queries.
+/// </summary>
+internal record NexusGraphQlCollectionResponse
+{
+    [JsonPropertyName("data")]
+    public NexusGraphQlCollectionData? Data { get; init; }
+}
+
+internal record NexusGraphQlCollectionData
+{
+    [JsonPropertyName("collections")]
+    public NexusGraphQlCollectionsResult? Collections { get; init; }
+}
+
+internal record NexusGraphQlCollectionsResult
+{
+    [JsonPropertyName("nodes")]
+    public List<NexusGraphQlCollection> Nodes { get; init; } = [];
+
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; init; }
+}
+
+internal record NexusGraphQlCollection
+{
+    [JsonPropertyName("slug")]
+    public string Slug { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("endorsements")]
+    public int Endorsements { get; init; }
+
+    [JsonPropertyName("totalDownloads")]
+    public int TotalDownloads { get; init; }
+
+    [JsonPropertyName("user")]
+    public NexusGraphQlCollectionUser? User { get; init; }
+
+    [JsonPropertyName("game")]
+    public NexusGraphQlGame? Game { get; init; }
+
+    [JsonPropertyName("latestPublishedRevision")]
+    public NexusGraphQlCollectionRevision? LatestRevision { get; init; }
+}
+
+internal record NexusGraphQlCollectionUser
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+}
+
+internal record NexusGraphQlCollectionRevision
+{
+    [JsonPropertyName("revisionNumber")]
+    public int RevisionNumber { get; init; }
+
+    [JsonPropertyName("modCount")]
+    public int ModCount { get; init; }
+}
+
+/// <summary>
+/// Public model representing a NexusMods collection search result.
+/// </summary>
+public record NexusCollectionInfo
+{
+    public string Slug { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? Summary { get; init; }
+    public string? Description { get; init; }
+    public string? Author { get; init; }
+    public string GameDomain { get; init; } = string.Empty;
+    public int Endorsements { get; init; }
+    public int TotalDownloads { get; init; }
+    public int ModCount { get; init; }
+    public int RevisionNumber { get; init; }
+    public string Url => $"https://next.nexusmods.com/{GameDomain}/collections/{Slug}";
+}
+
 /// <summary>
 /// v1 API models for discovery endpoints (trending, latest, updated).
 /// </summary>

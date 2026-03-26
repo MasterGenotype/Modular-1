@@ -94,6 +94,23 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string _metadataCachePath = string.Empty;
 
+    // Sub-page navigation: "Main", "Profiles", "Plugins"
+    [ObservableProperty]
+    private string _currentSubPage = "Main";
+
+    [ObservableProperty]
+    private bool _showMainSettings = true;
+
+    [ObservableProperty]
+    private bool _showProfilesPage;
+
+    [ObservableProperty]
+    private bool _showPluginsPage;
+
+    // Child ViewModels for sub-pages
+    public ProfilesViewModel? ProfilesViewModel { get; }
+    public PluginsViewModel? PluginsViewModel { get; }
+
     // UI state
     [ObservableProperty]
     private string _selectedTheme = "System";
@@ -140,6 +157,8 @@ public partial class SettingsViewModel : ViewModelBase
         NexusApiKey = "your-api-key-here";
         GameBananaUserId = "12345";
         ModsDirectory = "~/Games/Mods-Lists";
+        ProfilesViewModel = new ProfilesViewModel();
+        PluginsViewModel = new PluginsViewModel();
     }
 
     // DI constructor
@@ -149,7 +168,9 @@ public partial class SettingsViewModel : ViewModelBase
         IDialogService dialogService,
         NexusSsoClient ssoClient,
         DiagnosticService diagnosticService,
-        TelemetryService telemetryService)
+        TelemetryService telemetryService,
+        ProfilesViewModel profilesViewModel,
+        PluginsViewModel pluginsViewModel)
     {
         _configService = configService;
         _settings = settings;
@@ -157,6 +178,8 @@ public partial class SettingsViewModel : ViewModelBase
         _ssoClient = ssoClient;
         _diagnosticService = diagnosticService;
         _telemetryService = telemetryService;
+        ProfilesViewModel = profilesViewModel;
+        PluginsViewModel = pluginsViewModel;
 
         LoadSettings();
     }
@@ -224,6 +247,25 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnDatabasePathChanged(string value) => HasUnsavedChanges = true;
     partial void OnRateLimitStatePathChanged(string value) => HasUnsavedChanges = true;
     partial void OnMetadataCachePathChanged(string value) => HasUnsavedChanges = true;
+
+    partial void OnCurrentSubPageChanged(string value)
+    {
+        ShowMainSettings = value == "Main";
+        ShowProfilesPage = value == "Profiles";
+        ShowPluginsPage = value == "Plugins";
+    }
+
+    [RelayCommand]
+    private void NavigateToSubPage(string page)
+    {
+        CurrentSubPage = page;
+    }
+
+    [RelayCommand]
+    private void NavigateBack()
+    {
+        CurrentSubPage = "Main";
+    }
 
     partial void OnSelectedThemeChanged(string value)
     {

@@ -232,6 +232,7 @@ sealed class Program
         services.AddTransient<PluginsViewModel>();
         services.AddTransient<GameDetectionViewModel>();
         services.AddTransient<NexusSearchViewModel>();
+        services.AddTransient<GameBananaSearchViewModel>();
         // Sub-ViewModels for combined panels
         services.AddTransient<InstallViewModel>();
         services.AddTransient<InstalledModsViewModel>();
@@ -240,7 +241,6 @@ sealed class Program
         // Combined wrapper ViewModels
         services.AddTransient<NexusModsViewModel>();
         services.AddTransient<GameBananaPanelViewModel>();
-        services.AddTransient<ProfilesCollectionsViewModel>();
         services.AddTransient<BackupsViewModel>();
         services.AddTransient<SnapshotViewModel>();
         services.AddTransient<ModManagerViewModel>();

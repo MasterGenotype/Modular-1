@@ -15,6 +15,28 @@ internal class NexusModsGraphQlClient
 {
     private const string GraphQlUrl = "https://api.nexusmods.com/v2/graphql";
 
+    private const string CollectionsQuery = """
+        query SearchCollections($filter: CollectionsFilter, $count: Int, $offset: Int) {
+          collections(filter: $filter, count: $count, offset: $offset) {
+            nodes {
+              slug
+              name
+              summary
+              description
+              endorsements
+              totalDownloads
+              user { name }
+              game { domainName }
+              latestPublishedRevision {
+                revisionNumber
+                modCount
+              }
+            }
+            totalCount
+          }
+        }
+        """;
+
     private const string ModsQuery = """
         query SearchMods($filter: ModsFilter, $sort: [ModsSort!], $count: Int, $offset: Int) {
           mods(filter: $filter, sort: $sort, count: $count, offset: $offset) {
@@ -150,6 +172,64 @@ internal class NexusModsGraphQlClient
             ThumbnailUrl = node.PictureUrl,
             UpdatedAt = updatedAt
         };
+    }
+
+    /// <summary>
+    /// Searches for collections on NexusMods filtered by game domain.
+    /// </summary>
+    public async Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
+        string gameDomain, int count = 20, int offset = 0, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(gameDomain))
+            throw new ArgumentException("GameDomain is required for collection search", nameof(gameDomain));
+
+        var filter = new Dictionary<string, object>
+        {
+            ["gameDomainName"] = new[] { new { value = gameDomain } }
+        };
+
+        var requestBody = new
+        {
+            query = CollectionsQuery,
+            variables = new { filter, count, offset }
+        };
+
+        _logger?.LogDebug("Searching NexusMods collections: game={Game}, count={Count}, offset={Offset}",
+            gameDomain, count, offset);
+
+        var json = await _client.PostAsync(GraphQlUrl)
+            .WithHeader("apikey", _apiKey)
+            .WithHeader("accept", "application/json")
+            .WithJsonBody(requestBody)
+            .AsStringAsync();
+
+        var response = JsonSerializer.Deserialize<NexusGraphQlCollectionResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        var result = response?.Data?.Collections;
+        if (result == null)
+        {
+            _logger?.LogWarning("GraphQL collection search returned no data. Response: {Response}", json);
+            return ([], 0);
+        }
+
+        var collections = result.Nodes.Select(n => new NexusCollectionInfo
+        {
+            Slug = n.Slug,
+            Name = n.Name,
+            Summary = n.Summary,
+            Description = n.Description,
+            Author = n.User?.Name,
+            GameDomain = n.Game?.DomainName ?? gameDomain,
+            Endorsements = n.Endorsements,
+            TotalDownloads = n.TotalDownloads,
+            ModCount = n.LatestRevision?.ModCount ?? 0,
+            RevisionNumber = n.LatestRevision?.RevisionNumber ?? 0
+        }).ToList();
+
+        return (collections, result.TotalCount);
     }
 
     /// <summary>
