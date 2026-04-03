@@ -1,6 +1,6 @@
 # Modular
 
-A next-generation, extensible C#/.NET mod manager for automating the downloading, organizing, and management of game modifications from multiple mod repositories. Features a plugin architecture, SSO authentication, both CLI and GUI interfaces built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
+A next-generation, extensible C#/.NET mod manager for automating the downloading, searching, installing, and management of game modifications from multiple mod repositories. Features a plugin architecture, SSO authentication, mod search and discovery, mod collections, Steam game detection, both CLI and GUI interfaces built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
 
 ## Table of Contents
 
@@ -14,6 +14,7 @@ A next-generation, extensible C#/.NET mod manager for automating the downloading
 - [Error Handling](#error-handling)
 - [Dependencies](#dependencies)
 - [Building](#building)
+- [Packaging](#packaging)
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [GUI Application](#gui-application)
@@ -35,24 +36,32 @@ The project implements a clean **plugin-based architecture** with a stable SDK f
 ### Core Functionality
 - **Plugin Architecture** - Extensible system for community-developed backends, installers, metadata enrichers, and UI extensions
 - **Multi-Repository Support** - Download mods from NexusMods and GameBanana with extensible backend abstraction for additional sources
+- **Mod Search & Discovery** - Full-text search with fuzzy re-ranking, trending/latest/updated feeds via NexusMods GraphQL API
+- **Mod Collections** - Create, manage, download, and share curated sets of mods with version tracking
 - **SSO Authentication** - Browser-based NexusMods authentication flow via WebSocket SSO (no manual API key required)
 - **Automatic Organization** - Organizes mods into game-specific directories with optional category-based subdirectories
 - **Smart Renaming** - Converts numeric mod ID folders to human-readable names using API metadata
-- **Download Verification** - MD5/SHA256 checksum verification with persistent download history database
+- **Download Verification** - MD5/SHA256 checksum verification with persistent SQLite download history database
 - **Tracking Validation** - Cross-validates API tracking against NexusMods web tracking center via web scraping
 - **Metadata Enrichment** - Plugin system for transforming backend-specific data into canonical format
-- **Custom Installers** - Extensible installer framework for handling different mod formats (FOMOD, loose files, etc.)
+- **Custom Installers** - Extensible installer framework for handling different mod formats (FOMOD, BepInEx, loose files, Steam mods)
+- **Steam Game Detection** - Automatic scanning of Steam library folders to detect installed games and game engines
+- **Mod Installation & Rollback** - Install mod archives with changeset tracking, backups, and uninstall support
+- **Snapshot Management** - Save and restore mod installation state
 
 ### Network & Performance
 - **Rate Limit Compliance** - Built-in rate limiter respects NexusMods API limits (20,000 requests/day, 500/hour)
-- **Retry Logic** - Automatic retry with exponential backoff for failed network requests
+- **Retry Logic** - Automatic retry with exponential backoff via Polly resilience policies
 - **Fluent HTTP API** - Modern chainable HTTP client with middleware support
+- **HTTP Caching** - Response caching to reduce redundant API calls
 - **Progress Callbacks** - Real-time progress tracking decoupled from UI
 
 ### Configuration & Usability
 - **Flexible Configuration** - Supports environment variables, config files, and command-line arguments
 - **Real-Time Progress** - Live progress bars for all download and organization operations
-- **Persistent State** - Rate limiter and download history persist between sessions
+- **Persistent State** - Rate limiter and download history persist between sessions via SQLite
+- **Credential Store** - Secure API key storage via config-based credential management
+- **Arch Linux Package** - PKGBUILD for building and installing via `makepkg`
 
 ## Architecture
 
@@ -64,15 +73,17 @@ Modular follows a clean **plugin-based architecture** with clear separation of c
 │       Avalonia UI, MVVM, visual mod management + plugins    │
 ├─────────────────────────────────────────────────────────────┤
 │                    CLI Layer (Modular.Cli)                  │
-│        Interactive menu, Spectre.Console, progress I/O      │
+│  Spectre.Console.Cli commands, interactive menu, progress   │
 ├─────────────────────────────────────────────────────────────┤
 │                  Core Library (Modular.Core)                │
 │   Plugin System, Backend Abstraction, Authentication (SSO), │
-│   Metadata, Installers, Dependencies, Diagnostics, Profiles │
+│   Metadata, Installers, Dependencies, Diagnostics, Profiles,│
+│   Archives, Collections, GameDetection, Security, Snapshots │
 ├─────────────────────────────────────────────────────────────┤
 │                    SDK Layer (Modular.Sdk)                  │
-│    Stable contracts for plugins: interfaces, records,       │
-│    IModBackend, IMetadataEnricher, IModInstaller            │
+│    Stable contracts: IModBackend, ISearchableBackend,       │
+│    IMetadataEnricher, IModInstaller, IUiExtension,          │
+│    IArchiveReader, IModCollectionRepository, IPluginMetadata │
 ├─────────────────────────────────────────────────────────────┤
 │             Fluent HTTP Client (Modular.FluentHttp)         │
 │    Modern fluent API, middleware filters, retry policies    │
@@ -85,16 +96,21 @@ Modular follows a clean **plugin-based architecture** with clear separation of c
 
 ### Layer Responsibilities
 
-1. **GUI Layer (`Modular.Gui`)** - Cross-platform graphical interface built with Avalonia UI 11.3 using MVVM architecture and Material Icons, featuring visual mod browsing, download queue management, plugin UI extensions, and settings configuration
-2. **CLI Layer (`Modular.Cli`)** - Interactive command-line interface using Spectre.Console and System.CommandLine with menu-driven operations and rich progress visualization
+1. **GUI Layer (`Modular.Gui`)** - Cross-platform graphical interface built with Avalonia UI 11.3 using MVVM architecture and Material Icons, featuring visual mod browsing, search, download queue management, game detection, mod installation, collections, profiles, snapshots, plugin management, and settings configuration
+2. **CLI Layer (`Modular.Cli`)** - Command-line interface using Spectre.Console.Cli with structured command groups (download, search, browse, install, collection, profile, plugins, diagnostics, telemetry) and rich progress visualization
 3. **Core Library (`Modular.Core`)** - Class library containing all business logic:
    - **Plugin System** - Dynamic loading via AssemblyLoadContext, MEF composition, plugin marketplace integration
-   - **Backend Abstraction** - Unified interface (IModBackend) with capability flags and registry
-   - **Authentication** - SSO flows (NexusMods WebSocket), OAuth2, API key management
-   - **Metadata & Installers** - Enrichers for canonical schema, extensible installer framework
-   - **Dependencies & Profiles** - Mod dependency resolution, conflict detection, profile management
+   - **Backend Abstraction** - Unified interface (IModBackend) with capability flags, search (ISearchableBackend), and registry
+   - **Authentication & Security** - SSO flows (NexusMods WebSocket), OAuth2, API key management, credential store
+   - **Metadata & Installers** - Enrichers for canonical schema, extensible installer framework (FOMOD, BepInEx, loose files, Steam)
+   - **Archives** - Archive reading (ZIP, SharpCompress), blob storage, inventory service
+   - **Collections** - Mod collection repository and service for curated mod sets
+   - **Game Detection** - Steam library scanning, game discovery, engine detection
+   - **Dependencies & Profiles** - Mod dependency resolution, conflict detection, profile management, operation graphs
+   - **Snapshots** - Save and restore mod installation state
    - **Diagnostics & Telemetry** - Health checks, performance metrics, error reporting
-4. **SDK Layer (`Modular.Sdk`)** - Stable plugin contracts defining extension points: `IModBackend`, `IMetadataEnricher`, `IModInstaller`, `IUiExtension`, and shared data models
+   - **Database** - SQLite-backed download repository, metadata cache, changeset tracking
+4. **SDK Layer (`Modular.Sdk`)** - Stable plugin contracts defining extension points: `IModBackend`, `ISearchableBackend`, `IMetadataEnricher`, `IModInstaller`, `IUiExtension`, `IArchiveReader`, `IModCollectionRepository`, `IPluginMetadata`, and shared data models (`BackendMod`, `BackendModFile`, `ModCollection`, `BackendCapabilities`)
 5. **Fluent HTTP Layer (`Modular.FluentHttp`)** - Modern fluent-style HTTP client library with chainable request building, middleware filters, and type-safe responses
 
 ## Project Structure
@@ -104,37 +120,110 @@ Modular/
 ├── Modular.sln                           # Visual Studio solution file
 ├── BUILD.md                              # Build and installation guide
 ├── Makefile                              # Build shortcuts
+├── pkg/
+│   └── PKGBUILD                          # Arch Linux package build script
 ├── src/
 │   ├── Modular.Gui/                      # GUI application (Avalonia 11.3)
 │   │   ├── Modular.Gui.csproj
 │   │   ├── Program.cs                    # Entry point and DI setup
 │   │   ├── App.axaml(.cs)                # Application and theme config
+│   │   ├── ViewLocator.cs                # View-ViewModel resolution
 │   │   ├── Views/                        # XAML views
+│   │   │   ├── MainWindow.axaml          # Main shell window
+│   │   │   ├── NexusModsView.axaml       # NexusMods tracked mods
+│   │   │   ├── NexusSearchView.axaml     # NexusMods search
+│   │   │   ├── GameBananaView.axaml      # GameBanana subscriptions
+│   │   │   ├── GameBananaSearchView.axaml # GameBanana search
+│   │   │   ├── GameBananaPanelView.axaml # GameBanana panel
+│   │   │   ├── DownloadQueueView.axaml   # Download queue
+│   │   │   ├── LibraryView.axaml         # Mod library
+│   │   │   ├── InstallView.axaml         # Mod installation
+│   │   │   ├── InstalledModsView.axaml   # Installed mods list
+│   │   │   ├── ModListView.axaml         # Generic mod list
+│   │   │   ├── ModManagerView.axaml      # Mod manager
+│   │   │   ├── GameDetectionView.axaml   # Steam game detection
+│   │   │   ├── CollectionView.axaml      # Mod collections
+│   │   │   ├── ProfilesView.axaml        # Profile management
+│   │   │   ├── ProfilesCollectionsView.axaml # Profiles & collections
+│   │   │   ├── PluginsView.axaml         # Plugin management
+│   │   │   ├── SnapshotView.axaml        # Snapshot management
+│   │   │   ├── BackupsView.axaml         # Backup management
+│   │   │   └── SettingsView.axaml        # Settings
 │   │   ├── ViewModels/                   # MVVM view models
 │   │   ├── Services/                     # GUI-specific services
+│   │   │   ├── DialogService.cs          # Dialog management
+│   │   │   ├── IDialogService.cs         # Dialog interface
+│   │   │   ├── DownloadHistoryService.cs # Download history
+│   │   │   └── ThumbnailService.cs       # Thumbnail loading
+│   │   ├── Messages/                     # MVVM messages
 │   │   ├── Converters/                   # Value converters
 │   │   ├── Models/                       # GUI data models
 │   │   └── Assets/                       # Icons, images, resources
 │   ├── Modular.Cli/                      # CLI application
 │   │   ├── Modular.Cli.csproj
-│   │   ├── Program.cs                    # Entry point and command handlers
+│   │   ├── Program.cs                    # Entry point and command registration
+│   │   ├── Commands/                     # CLI command implementations
+│   │   │   ├── InteractiveCommand.cs     # Default interactive mode
+│   │   │   ├── DownloadCommand.cs        # Download tracked mods
+│   │   │   ├── SearchCommand.cs          # Search mods with fuzzy re-ranking
+│   │   │   ├── BrowseCommand.cs          # Browse trending/latest/updated
+│   │   │   ├── RenameCommand.cs          # Rename mod folders
+│   │   │   ├── FetchCommand.cs           # Fetch and cache metadata
+│   │   │   ├── LoginCommand.cs           # NexusMods SSO authentication
+│   │   │   ├── InstallCommand.cs         # Install mod archives
+│   │   │   ├── UninstallCommand.cs       # Uninstall by changeset
+│   │   │   ├── ListInstalledCommand.cs   # List installed mods
+│   │   │   ├── SteamInstallCommand.cs    # Steam mod installation
+│   │   │   ├── CollectionCommand.cs      # Collection management
+│   │   │   ├── Diagnostics/              # Diagnostics command group
+│   │   │   ├── GameDetection/            # Game detection commands
+│   │   │   ├── Plugins/                  # Plugin management commands
+│   │   │   ├── Profile/                  # Profile management commands
+│   │   │   └── Telemetry/                # Telemetry management commands
+│   │   ├── Infrastructure/               # DI and service configuration
+│   │   │   ├── ServiceConfiguration.cs   # Service registration
+│   │   │   └── TypeRegistrar.cs          # Spectre.Console DI adapter
 │   │   └── UI/                           # Terminal UI components
+│   │       └── LiveProgressDisplay.cs    # Progress visualization
 │   ├── Modular.Core/                     # Core business logic library
 │   │   ├── Modular.Core.csproj
+│   │   ├── Archives/                     # Archive handling
+│   │   │   ├── ArchiveInventoryService.cs # Archive content analysis
+│   │   │   ├── ArchiveReaderFactory.cs   # Archive reader creation
+│   │   │   ├── BlobStore.cs              # Content-addressable blob storage
+│   │   │   ├── SharpCompressArchiveReader.cs # Multi-format archive reader
+│   │   │   └── ZipArchiveReader.cs       # ZIP archive reader
 │   │   ├── Authentication/               # Auth strategies (SSO, OAuth2)
 │   │   │   └── NexusSsoClient.cs         # NexusMods SSO WebSocket client
 │   │   ├── Backends/                     # Backend implementations
-│   │   │   ├── IModBackend.cs            # Backend interface
+│   │   │   ├── IModBackend.cs            # Backend interface (Core)
 │   │   │   ├── BackendRegistry.cs        # Backend discovery and registry
-│   │   │   ├── BackendCapabilities.cs    # Feature flags per backend
+│   │   │   ├── SdkTypeAliases.cs         # SDK type aliasing
 │   │   │   ├── NexusMods/                # NexusMods backend
+│   │   │   │   ├── NexusModsBackend.cs   # NexusMods API integration
+│   │   │   │   ├── NexusModsGraphQlClient.cs # GraphQL search client
+│   │   │   │   ├── NexusModsMetadataEnricher.cs # Metadata enricher
+│   │   │   │   ├── NexusModsModels.cs    # NexusMods data models
+│   │   │   │   └── NexusModsVersionProvider.cs # Version provider
 │   │   │   └── GameBanana/               # GameBanana backend
+│   │   │       ├── GameBananaBackend.cs   # GameBanana API integration
+│   │   │       ├── GameBananaMetadataEnricher.cs # Metadata enricher
+│   │   │       ├── GameBananaModels.cs    # GameBanana data models
+│   │   │       └── GameBananaVersionProvider.cs # Version provider
+│   │   ├── Collections/                  # Mod collections
+│   │   │   ├── ModCollectionRepository.cs # Collection persistence
+│   │   │   └── ModCollectionService.cs   # Collection business logic
 │   │   ├── Configuration/
 │   │   │   ├── AppSettings.cs            # Configuration model
 │   │   │   └── ConfigurationService.cs   # Configuration loading/validation
-│   │   ├── Database/
+│   │   ├── Database/                     # Data persistence (SQLite)
+│   │   │   ├── ModularDatabase.cs        # SQLite database manager
+│   │   │   ├── SqliteDownloadRepository.cs # SQLite download repository
+│   │   │   ├── IDownloadRepository.cs    # Download repository interface
+│   │   │   ├── IMetadataCache.cs         # Metadata cache interface
 │   │   │   ├── DownloadDatabase.cs       # Download history persistence
 │   │   │   ├── DownloadRecord.cs         # Download record model
+│   │   │   ├── DownloadStatus.cs         # Download status enum
 │   │   │   └── ModMetadataCache.cs       # Mod metadata caching
 │   │   ├── Dependencies/                 # Dependency resolution
 │   │   │   ├── DependencyGraph.cs        # Mod dependency graph
@@ -142,7 +231,9 @@ Modular/
 │   │   │   ├── ModNode.cs               # Graph node model
 │   │   │   ├── FileConflictIndex.cs     # File conflict detection
 │   │   │   ├── ConflictResolver.cs      # Conflict resolution strategies
-│   │   │   ├── GreedyDependencyResolver.cs       # PubGrub-inspired version resolver
+│   │   │   ├── GreedyDependencyResolver.cs # PubGrub-inspired version resolver
+│   │   │   ├── AggregateVersionProvider.cs # Multi-backend version aggregation
+│   │   │   ├── OperationGraph.cs        # Dependency-ordered operations
 │   │   │   ├── ModProfile.cs            # Mod profile/collection model
 │   │   │   └── ResolutionResult.cs      # Resolution result model
 │   │   ├── Diagnostics/                  # Health checks and diagnostics
@@ -155,15 +246,28 @@ Modular/
 │   │   ├── ErrorHandling/               # Error isolation
 │   │   │   ├── ErrorBoundary.cs          # Plugin error isolation
 │   │   │   └── RetryPolicy.cs           # Retry configuration
+│   │   ├── GameDetection/               # Steam game detection
+│   │   │   ├── SteamLocator.cs          # Steam installation finder
+│   │   │   ├── SteamLibraryScanner.cs   # Library folder scanner
+│   │   │   ├── SteamGameScanner.cs      # Game discovery
+│   │   │   └── EngineDetection.cs       # Game engine detection
 │   │   ├── Http/
 │   │   │   ├── ModularHttpClient.cs      # HTTP client wrapper
-│   │   │   ├── RetryPolicy.cs            # Retry logic
-│   │   │   └── HttpCache.cs             # Response caching
+│   │   │   ├── RetryConfig.cs            # Retry configuration
+│   │   │   ├── HttpCache.cs             # Response caching
+│   │   │   └── HttpServiceExtensions.cs # HTTP service DI extensions
 │   │   ├── Installers/                   # Installer framework
 │   │   │   ├── InstallerManager.cs       # Installer orchestration
+│   │   │   ├── ModInstallationService.cs # High-level install service
+│   │   │   ├── StagingManager.cs        # Staging directory management
+│   │   │   ├── ChangesetManager.cs      # Install/uninstall changeset tracking
 │   │   │   ├── FomodInstaller.cs        # FOMOD format support
 │   │   │   ├── BepInExInstaller.cs      # BepInEx plugin installer
-│   │   │   └── LooseFileInstaller.cs    # Simple file extraction
+│   │   │   ├── LooseFileInstaller.cs    # Simple file extraction
+│   │   │   └── Steam/                   # Steam-specific installers
+│   │   │       ├── SteamModInstaller.cs  # Steam mod installer
+│   │   │       ├── SteamConstraintSolver.cs # Dependency constraint solver
+│   │   │       └── SteamModMetadata.cs   # Steam mod metadata
 │   │   ├── Metadata/                     # Metadata enrichment
 │   │   │   ├── IMetadataEnricher.cs      # Enricher interface
 │   │   │   ├── CanonicalMod.cs          # Unified metadata schema
@@ -188,24 +292,45 @@ Modular/
 │   │   │   ├── IRateLimiter.cs           # Rate limiter interface
 │   │   │   ├── NexusRateLimiter.cs       # NexusMods rate limiter
 │   │   │   └── RateLimitScheduler.cs     # Request scheduling
+│   │   ├── Security/                     # Credential management
+│   │   │   ├── ICredentialStore.cs       # Credential store interface
+│   │   │   └── ConfigCredentialStore.cs  # Config-based credential store
 │   │   ├── Services/
-│   │   │   ├── NexusModsService.cs       # NexusMods API (legacy, use NexusModsBackend)
-│   │   │   ├── GameBananaService.cs      # GameBanana API (legacy, use GameBananaBackend)
+│   │   │   ├── IRenameService.cs          # Rename service interface
 │   │   │   ├── RenameService.cs          # Mod renaming and organization
 │   │   │   └── TrackingValidatorService.cs # Web scraping validation
+│   │   ├── Snapshots/                    # Snapshot management
+│   │   │   └── SnapshotManager.cs        # Save/restore mod state
 │   │   ├── Telemetry/                    # Performance metrics
 │   │   │   └── TelemetryService.cs       # Metrics collection
 │   │   ├── Utilities/
 │   │   │   ├── FileUtils.cs              # File operation utilities
-│   │   │   └── Md5Calculator.cs          # MD5 checksum calculation
+│   │   │   ├── FuzzyMatcher.cs           # Fuzzy string matching for search
+│   │   │   ├── HashUtility.cs            # Hash computation utilities
+│   │   │   ├── KeyValuesParser.cs        # Key-value file parser (Steam VDF)
+│   │   │   ├── Md5Calculator.cs          # MD5 checksum calculation
+│   │   │   └── PathSanitizer.cs          # Path sanitization utilities
 │   │   └── Versioning/                   # Version comparison
 │   │       ├── SemanticVersion.cs        # SemVer implementation
 │   │       └── VersionRange.cs           # Version range constraints
 │   ├── Modular.Sdk/                      # Plugin SDK contracts
 │   │   ├── Modular.Sdk.csproj
+│   │   ├── IPluginMetadata.cs            # Plugin metadata contract
+│   │   ├── Archives/                     # Archive contracts
+│   │   │   └── IArchiveReader.cs         # Archive reader interface
 │   │   ├── Backends/                     # Backend contracts
 │   │   │   ├── IModBackend.cs            # Backend interface
-│   │   │   └── BackendModels.cs          # Shared models
+│   │   │   ├── ISearchableBackend.cs     # Search interface
+│   │   │   ├── BackendCapabilities.cs    # Feature flags per backend
+│   │   │   ├── DownloadOptions.cs        # Download configuration
+│   │   │   ├── DownloadProgress.cs       # Progress reporting
+│   │   │   └── Common/                   # Shared backend models
+│   │   │       ├── BackendMod.cs         # Unified mod model
+│   │   │       ├── BackendModFile.cs     # Unified file model
+│   │   │       └── FileFilter.cs         # File filter options
+│   │   ├── Collections/                  # Collection contracts
+│   │   │   ├── IModCollectionRepository.cs # Collection repository interface
+│   │   │   └── ModCollection.cs          # Collection model
 │   │   ├── Installers/                   # Installer contracts
 │   │   │   └── IModInstaller.cs          # Installer interface
 │   │   ├── Metadata/                     # Metadata contracts
@@ -232,13 +357,18 @@ Modular/
 │   └── ExamplePlugin/                    # Example plugin project
 │       ├── ExamplePlugin.csproj
 │       ├── plugin.json                   # Plugin manifest
-│       └── ExampleBackend.cs             # Sample backend implementation
+│       └── ExamplePlugin.cs              # Sample metadata enricher
 ├── tests/
 │   ├── Modular.Core.Tests/               # Core library tests
 │   │   ├── Modular.Core.Tests.csproj
 │   │   ├── ConfigurationTests.cs
 │   │   ├── DatabaseTests.cs
 │   │   ├── UtilityTests.cs
+│   │   ├── FuzzyMatcherTests.cs
+│   │   ├── IntegrationTests.cs
+│   │   ├── SteamModInstallerTests.cs
+│   │   ├── VersionProviderTests.cs
+│   │   ├── VersionRangeTests.cs
 │   │   └── Backends/                     # Backend-specific tests
 │   │       ├── BackendRegistryTests.cs
 │   │       ├── NexusModsBackendTests.cs
@@ -246,13 +376,13 @@ Modular/
 │   └── Modular.FluentHttp.Tests/         # Fluent HTTP client tests
 │       ├── Modular.FluentHttp.Tests.csproj
 │       └── FluentClientTests.cs
-└── docs/                                 # Documentation
-    ├── PLUGIN_DEVELOPMENT.md             # Plugin development guide
-    ├── NEXUSMODS_SSO_INTEGRATION.md      # SSO integration docs
-    ├── API-BACKENDS-GUIDE.md             # Backend development guide
-    ├── GAMEBANANA-API-GUIDE.md           # GameBanana API guide
-    ├── Modular_1_Blueprint.md            # Architecture blueprint
-    └── fluent/                           # Fluent HTTP docs
+├── docs/                                 # Documentation
+│   ├── plans/                            # Implementation plans
+│   ├── archive/                          # Historical docs
+│   ├── fluent/                           # Fluent HTTP docs
+│   └── *.md                              # Various guides (see Documentation section)
+└── pkg/                                  # Distribution packaging
+    └── PKGBUILD                          # Arch Linux PKGBUILD
 ```
 
 ## Plugin System
@@ -263,7 +393,8 @@ Modular features a robust plugin architecture enabling community-developed exten
 
 **Mod Backends (`IModBackend`)** - Add support for new mod repositories
 - Implement `ListUserModsAsync`, `ListFilesAsync`, `DownloadAsync`
-- Declare backend capabilities via `BackendCapabilities` (game domains, categories, rate limits, etc.)
+- Optionally implement `ISearchableBackend` for full-text search support
+- Declare backend capabilities via `BackendCapabilities` (game domains, categories, search, rate limits, etc.)
 - Examples: NexusMods, GameBanana, Modrinth, CurseForge
 
 **Metadata Enrichers (`IMetadataEnricher`)** - Transform backend-specific data to canonical format
@@ -275,12 +406,18 @@ Modular features a robust plugin architecture enabling community-developed exten
 - `DetectAsync` - Analyze archive structure and determine compatibility
 - `AnalyzeAsync` - Generate installation plan with file operations
 - `InstallAsync` - Execute installation with progress reporting
-- Examples: FOMOD installers, BepInEx plugins, loose file extraction
+- Examples: FOMOD installers, BepInEx plugins, loose file extraction, Steam mod installer
 
 **UI Extensions (`IUiExtension`)** - Add custom panels to the GUI
 - Integrate seamlessly into the Avalonia UI
 - Access core services via dependency injection
 - Respond to lifecycle events (activation/deactivation)
+
+**Archive Readers (`IArchiveReader`)** - Support additional archive formats
+- Built-in: ZIP and SharpCompress (7z, RAR, TAR, etc.)
+
+**Plugin Metadata (`IPluginMetadata`)** - Declare plugin identity
+- Id, DisplayName, Version, Description, Author
 
 ### Plugin Loading
 
@@ -292,7 +429,7 @@ Plugins are loaded dynamically at runtime using:
 ### Plugin Development
 
 1. Reference `Modular.Sdk.csproj` (stable contracts)
-2. Implement desired interface (`IModBackend`, `IMetadataEnricher`, etc.)
+2. Implement `IPluginMetadata` and desired interface (`IModBackend`, `IMetadataEnricher`, etc.)
 3. Create `plugin.json` manifest with metadata and entry assembly
 4. Build and package as a DLL
 5. Install to `~/.config/Modular/plugins/`
@@ -305,11 +442,12 @@ See [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) and [`examples/Ex
 
 Unified interface for mod repositories:
 - **IModBackend** - Standard operations across all backends
+- **ISearchableBackend** - Optional full-text search interface
 - **BackendRegistry** - Runtime backend discovery and selection
-- **BackendCapabilities** - Feature flags (game domains, file categories, MD5 verification, rate limiting)
+- **BackendCapabilities** - Feature flags (game domains, file categories, search, MD5 verification, rate limiting)
 
 Implementations:
-- **NexusModsBackend** - Full API integration with SSO authentication
+- **NexusModsBackend** - Full API + GraphQL integration with SSO authentication, search, browse feeds (trending/latest/updated)
 - **GameBananaBackend** - API v11 integration with courtesy throttling
 
 ### Authentication (`src/Modular.Core/Authentication/`)
@@ -351,9 +489,38 @@ PubGrub-inspired version constraint solver:
 
 Extensible mod installation system:
 - **InstallerManager** - Orchestrates installer selection by priority and confidence
+- **ModInstallationService** - High-level install/uninstall orchestration with game directory resolution
+- **StagingManager** - Manages staging directories for atomic installations
+- **ChangesetManager** - Tracks installed files for rollback/uninstall support
 - **FomodInstaller** - Parses FOMOD `ModuleConfig.xml` (simplified; UI selection not yet integrated)
 - **BepInExInstaller** - Detects and installs BepInEx plugins
 - **LooseFileInstaller** - Simple archive extraction fallback
+- **SteamModInstaller** - Steam game mod installation with dependency constraint solving
+
+### Archive System (`src/Modular.Core/Archives/`)
+
+Multi-format archive handling:
+- **ArchiveReaderFactory** - Creates readers based on archive format
+- **ZipArchiveReader** - .NET built-in ZIP support
+- **SharpCompressArchiveReader** - 7z, RAR, TAR, GZ support via SharpCompress
+- **ArchiveInventoryService** - Analyzes archive contents for installer selection
+- **BlobStore** - Content-addressable blob storage for deduplication
+
+### Collections (`src/Modular.Core/Collections/`)
+
+Mod collection management:
+- **ModCollectionService** - Create, update, download, verify, and share mod collections
+- **ModCollectionRepository** - Persistent collection storage
+- Export/import collections as JSON for sharing
+- Check for updates across all collection mods
+
+### Game Detection (`src/Modular.Core/GameDetection/`)
+
+Automatic Steam game discovery:
+- **SteamLocator** - Finds Steam installation directory across platforms
+- **SteamLibraryScanner** - Parses `libraryfolders.vdf` to find all library paths
+- **SteamGameScanner** - Discovers installed games and their metadata
+- **EngineDetection** - Identifies game engines (Unity, Unreal, Source, etc.) for installer hints
 
 ### NexusRateLimiter (`src/Modular.Core/RateLimiting/NexusRateLimiter.cs`)
 
@@ -363,16 +530,14 @@ Tracks NexusMods API rate limits from response headers:
 - Implements async waiting when limits exhausted
 - Supports state persistence between sessions
 
-### Legacy Services (Deprecated)
+### Database (`src/Modular.Core/Database/`)
 
-> **Note:** `NexusModsService` and `GameBananaService` in `src/Modular.Core/Services/` are marked `[Obsolete]`. New code should use `NexusModsBackend` and `GameBananaBackend` via the backend abstraction instead. The CLI still references these services for some commands pending migration (see [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md)).
-
-### DownloadDatabase (`src/Modular.Core/Database/DownloadDatabase.cs`)
-
-JSON-based download history persistence:
-- Stores: game_domain, mod_id, file_id, filename, filepath, MD5, download time, status
-- Operations: add, find, query by domain/mod, verification updates, removal
-- Human-readable format for debugging
+SQLite-backed data persistence:
+- **ModularDatabase** - SQLite database initialization and management
+- **SqliteDownloadRepository** - Download history with full query support
+- **ModMetadataCache** - API response caching to reduce network calls
+- **IDownloadRepository** / **IMetadataCache** - Repository interfaces for testability
+- Stores: game_domain, mod_id, file_id, filename, filepath, checksums, download time, status
 
 ### ConfigurationService (`src/Modular.Core/Configuration/ConfigurationService.cs`)
 
@@ -381,12 +546,24 @@ Configuration management using Microsoft.Extensions.Configuration:
 - Precedence: Environment variables > Config file > Defaults
 - Settings: API keys, paths, preferences
 
+### Security (`src/Modular.Core/Security/`)
+
+Credential management:
+- **ICredentialStore** - Abstract credential storage interface
+- **ConfigCredentialStore** - Config file-based credential persistence
+
 ### RenameService (`src/Modular.Core/Services/RenameService.cs`)
 
 Mod folder organization and renaming:
 - Renames numeric ID folders to human-readable names
 - Organizes mods into category subdirectories
 - Caches metadata to reduce API calls
+
+### Snapshot Manager (`src/Modular.Core/Snapshots/SnapshotManager.cs`)
+
+Mod state snapshot management:
+- Save current mod installation state
+- Restore previous snapshots for rollback
 
 ### LiveProgressDisplay (`src/Modular.Cli/UI/LiveProgressDisplay.cs`)
 
@@ -566,16 +743,22 @@ catch (ModularException ex)
 | Dependency | Purpose | Version |
 |------------|---------|---------|
 | **.NET SDK** | Runtime and build | 8.0+ |
-| **System.CommandLine** | CLI argument parsing | 2.0.0-beta4 |
 | **Spectre.Console** | Rich terminal UI and progress | 0.49.1 |
+| **Spectre.Console.Cli** | CLI command framework | 0.49.1 |
 | **System.Composition** | MEF plugin composition | 10.0.3 |
 | **Microsoft.Extensions.Configuration** | Configuration management | 8.0.0 |
 | **Microsoft.Extensions.Logging** | Logging abstractions | 8.0.0 |
 | **Microsoft.Extensions.Hosting** | DI and hosting (CLI) | 8.0.0 |
-| **Microsoft.Extensions.Options** | Options pattern | 8.0.0 |
+| **Microsoft.Extensions.Http** | HttpClient factory | 8.0.0 |
+| **Microsoft.Extensions.Http.Polly** | Polly integration for HTTP | 8.0.0 |
+| **Microsoft.Extensions.DependencyInjection** | DI container (GUI) | 8.0.0 |
+| **Microsoft.Data.Sqlite** | SQLite database access | 8.0.0 |
+| **Polly** | Resilience and transient fault handling | 8.3.0 |
+| **SharpCompress** | Multi-format archive support (7z, RAR, TAR) | 0.36.0 |
 | **System.Text.Json** | JSON serialization | 8.0.5 |
 | **Avalonia** | Cross-platform GUI framework | 11.3.11 |
 | **Avalonia.Themes.Fluent** | Fluent design theme | 11.3.11 |
+| **Avalonia.Fonts.Inter** | Inter font family | 11.3.11 |
 | **Avalonia.Controls.DataGrid** | DataGrid control | 11.3.11 |
 | **Material.Icons.Avalonia** | Material Design icons | 2.1.10 |
 | **CommunityToolkit.Mvvm** | MVVM helpers and attributes | 8.3.2 |
@@ -626,25 +809,55 @@ dotnet build -c Debug
 
 ### Installing to ~/.local/bin
 
-**Framework-Dependent (Recommended):**
+**Using the Makefile (Recommended):**
 ```bash
-# Publish the CLI project
-dotnet publish src/Modular.Cli/Modular.Cli.csproj -c Release -o ~/.local/share/modular --self-contained false
+# Install CLI
+make install
 
-# Create launcher script
-cat > ~/.local/bin/modular << 'EOF'
-#!/bin/bash
-exec dotnet "$HOME/.local/share/modular/Modular.Cli.dll" "$@"
-EOF
+# Install GUI
+make install-gui
 
+# Create desktop entry
+make install-desktop
+
+# Uninstall
+make uninstall-all
+```
+
+**Self-Contained (Manual):**
+```bash
+dotnet publish src/Modular.Cli/Modular.Cli.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o ~/.local/share/modular
+cp ~/.local/share/modular/modular ~/.local/bin/modular
 chmod +x ~/.local/bin/modular
 ```
 
-**Self-Contained (No .NET Runtime Required):**
+## Packaging
+
+### Arch Linux (PKGBUILD)
+
+An Arch Linux `PKGBUILD` is provided in the `pkg/` directory for building and installing both the CLI and GUI as system packages:
+
 ```bash
-dotnet publish src/Modular.Cli/Modular.Cli.csproj -c Release -r linux-x64 --self-contained -o ~/.local/share/modular
-cp ~/.local/share/modular/Modular.Cli ~/.local/bin/modular
-chmod +x ~/.local/bin/modular
+cd pkg
+makepkg -si
+```
+
+This installs:
+- `modular` CLI to `/usr/bin/modular`
+- `modular-gui` to `/usr/bin/modular-gui`
+- A desktop entry for the GUI application
+
+### Cross-Platform Publishing
+
+```bash
+# Publish for all platforms
+make publish-all
+
+# Or individually
+make publish-linux
+make publish-windows
+make publish-macos
+make publish-macos-arm
 ```
 
 ## Configuration
@@ -696,47 +909,79 @@ Configuration is stored in `~/.config/Modular/config.json`:
 modular
 ```
 
-This presents a menu with options:
-1. NexusMods - Download tracked mods
-2. GameBanana - Download subscribed mods
-3. Rename - Rename mod folders to human-readable names
+This presents a menu with options for NexusMods downloads, GameBanana downloads, renaming, and more.
 
-### Command-Line Arguments
+### Commands
 
 ```bash
-# Download mods for a specific game domain
-modular skyrimspecialedition
+# Download tracked mods
+modular download stardewvalley
+modular download --backend nexusmods skyrimspecialedition
+modular download --all
 
-# Filter by category
-modular skyrimspecialedition --categories main optional
+# Search for mods
+modular search SKSE64 --game skyrimspecialedition
+modular search "armor retexture" --sort downloads --limit 10
 
-# Dry run (show what would be downloaded)
-modular skyrimspecialedition --dry-run
+# Browse discovery feeds
+modular browse trending --game skyrimspecialedition
+modular browse latest --game stardewvalley
+modular browse updated --game skyrimspecialedition --period 1w
 
-# Force re-download of existing files
-modular skyrimspecialedition --force
+# Install/uninstall mods
+modular install mod.zip --game 730
+modular install mod.zip --game "Counter-Strike" --dry-run
+modular uninstall a1b2c3d4e5f6
+modular installed --game 730
 
-# Organize mods into category subdirectories
-modular skyrimspecialedition --organize-by-category
-
-# Verbose output
-modular skyrimspecialedition --verbose
-```
-
-### Subcommands
-
-```bash
 # Rename mod folders
-modular rename skyrimspecialedition
+modular rename stardewvalley
+modular rename --organize-by-category
 
-# Rename all game domains
-modular rename
+# Fetch and cache metadata
+modular fetch stardewvalley
 
-# Download from GameBanana
-modular gamebanana
+# Authenticate
+modular login
 
-# Fetch and cache metadata without renaming
-modular fetch skyrimspecialedition
+# Manage collections
+modular collection create "My Skyrim Build" --game skyrimspecialedition
+modular collection add "My Skyrim Build" 1234 --file-id 5678
+modular collection download "My Skyrim Build" --verify
+modular collection export "My Skyrim Build" --output ./export.json
+modular collection import ./export.json
+modular collection check-updates "My Skyrim Build"
+
+# Steam game detection
+modular detect-games
+modular detect-games --engines --verbose
+modular detect-engine 730
+
+# Steam mod installation
+modular steam-install /path/to/game --manifest mods.json
+modular steam-install /path/to/game --archive mod.zip --dry-run
+
+# Profile management
+modular profile list
+modular profile export my-profile --format archive
+modular profile import ./my-profile.json
+
+# Plugin management
+modular plugins list
+modular plugins list --marketplace
+modular plugins install my-plugin
+modular plugins update
+modular plugins remove my-plugin
+
+# Diagnostics
+modular diagnostics run
+modular diagnostics run --json
+modular diagnostics validate ./my-plugin
+
+# Telemetry
+modular telemetry summary --days 7
+modular telemetry export --output ./telemetry.json
+modular telemetry clear
 ```
 
 ### Output Structure
@@ -767,8 +1012,16 @@ Modular includes a full-featured graphical user interface built with Avalonia UI
 ### GUI Features
 
 - **Multi-Platform Browsing** - Browse NexusMods tracked mods and GameBanana subscriptions in dedicated views
+- **Mod Search** - Search NexusMods and GameBanana from within the GUI
 - **Download Queue** - Visual download queue with progress tracking, pause/resume, and drag-and-drop reordering
+- **Mod Installation** - Install mods to game directories with visual progress
+- **Installed Mods Management** - View and manage installed mods
 - **Mod Library** - Browse and manage downloaded mods with search and filtering
+- **Game Detection** - Scan for installed Steam games and detect game engines
+- **Collections** - Create and manage mod collections visually
+- **Profiles** - Profile management with export/import
+- **Snapshots & Backups** - Save/restore mod state and manage backups
+- **Plugin Management** - Install, update, and remove plugins from the GUI
 - **Update Checking** - Check for mod updates with visual status indicators
 - **Download History** - Track download statistics and history
 - **Settings Management** - Configure all options through a visual interface
@@ -778,7 +1031,7 @@ Modular includes a full-featured graphical user interface built with Avalonia UI
 
 ```bash
 # Build the GUI
-make gui
+make build-gui
 
 # Or using dotnet directly
 dotnet build src/Modular.Gui/Modular.Gui.csproj -c Release
@@ -788,7 +1041,7 @@ dotnet build src/Modular.Gui/Modular.Gui.csproj -c Release
 
 ```bash
 # Run via Makefile
-make gui-run
+make run-gui
 
 # Or using dotnet directly
 dotnet run --project src/Modular.Gui/Modular.Gui.csproj
@@ -798,12 +1051,16 @@ dotnet run --project src/Modular.Gui/Modular.Gui.csproj
 
 ```bash
 # Publish for Linux (self-contained)
-make gui-publish-linux
+make publish-linux
 
 # Publish for Windows (self-contained)
-make gui-publish-windows
+make publish-windows
 
-# Output is in publish/gui-linux-x64/ or publish/gui-win-x64/
+# Publish for macOS
+make publish-macos
+make publish-macos-arm
+
+# Output is in publish/linux/gui/, publish/windows/gui/, etc.
 ```
 
 ### GUI Keyboard Shortcuts
@@ -823,10 +1080,17 @@ make gui-publish-windows
 - Select mods and add to download queue
 - Check for updates across all tracked mods
 
+**NexusMods Search View**
+- Full-text search across NexusMods catalog
+- Filter by game, sort by relevance/downloads/endorsements
+
 **GameBanana View**
 - Displays subscribed mods from your GameBanana account
 - Browse by game with search filtering
 - Add mods to download queue
+
+**GameBanana Search View**
+- Search GameBanana for mods
 
 **Downloads View**
 - Active download queue with real-time progress
@@ -834,10 +1098,36 @@ make gui-publish-windows
 - Pause, resume, or cancel individual downloads
 - Download history statistics panel
 
+**Install View**
+- Install mod archives to game directories
+- Visual progress and changeset tracking
+
+**Installed Mods View**
+- View all installed mods with changeset details
+- Uninstall mods with rollback support
+
 **Library View**
 - Browse all downloaded mods
 - Search and filter by name or game
 - View mod details and file locations
+
+**Game Detection View**
+- Scan Steam libraries for installed games
+- Detect game engines for installer hints
+
+**Collections View**
+- Create, manage, and share mod collections
+
+**Profiles View**
+- Manage mod profiles with export/import
+
+**Snapshots & Backups View**
+- Save and restore mod installation snapshots
+- Manage file backups
+
+**Plugins View**
+- Browse installed and marketplace plugins
+- Install, update, and remove plugins
 
 **Settings View**
 - Configure API keys (NexusMods, GameBanana)
@@ -848,11 +1138,15 @@ make gui-publish-windows
 
 ```bash
 # Run all tests
-dotnet test
+make test
+# or: dotnet test Modular.sln
 
 # Run specific test project
-dotnet test tests/Modular.Core.Tests/
-dotnet test tests/Modular.FluentHttp.Tests/
+make test-core
+make test-http
+
+# Run a single test by filter
+dotnet test --filter "FullyQualifiedName~TestClassName.TestMethodName"
 
 # Run with verbose output
 dotnet test --verbosity normal
@@ -861,11 +1155,15 @@ dotnet test --verbosity normal
 ### Test Coverage
 
 - Configuration loading and validation
-- Utility functions (filename sanitization, MD5 calculation)
+- Utility functions (filename sanitization, MD5 calculation, path sanitization)
+- Fuzzy string matching for search re-ranking
 - Database operations (add, find, query, remove)
 - Backend registry and discovery
 - NexusMods backend operations
 - GameBanana backend operations
+- Version providers and version range constraints
+- Steam mod installer operations
+- Integration tests
 - Fluent HTTP client request building
 
 ## Workflows
@@ -927,9 +1225,15 @@ Additional documentation is available in the `/docs/` directory:
 | Document | Description |
 |----------|-------------|
 | [`Modular_1_Blueprint.md`](docs/Modular_1_Blueprint.md) | Next-generation architecture blueprint and evolution roadmap |
+| [`ARCHITECTURE_ANALYSIS.md`](docs/ARCHITECTURE_ANALYSIS.md) | Architecture analysis and patterns |
 | [`IMPLEMENTATION_GUIDE.md`](docs/IMPLEMENTATION_GUIDE.md) | Guide to completing placeholder and partial implementations |
+| [`IMPLEMENTATION_GUIDE_2.md`](docs/IMPLEMENTATION_GUIDE_2.md) | Extended implementation guide |
 | [`CODEBASE_REVIEW_RECOMMENDATIONS.md`](docs/CODEBASE_REVIEW_RECOMMENDATIONS.md) | Comprehensive codebase review and recommendations |
+| [`CODEBASE_ERRORS_ANALYSIS.md`](docs/CODEBASE_ERRORS_ANALYSIS.md) | Codebase error analysis |
+| [`CONCEPTUAL_REPLACEMENTS_ANALYSIS.md`](docs/CONCEPTUAL_REPLACEMENTS_ANALYSIS.md) | Conceptual replacements analysis |
+| [`INTEGRATION_ANALYSIS.md`](docs/INTEGRATION_ANALYSIS.md) | Integration analysis |
 | [`EVOLUTION_SUMMARY.md`](docs/EVOLUTION_SUMMARY.md) | Project evolution history and milestones |
+| [`dependency_sorted_file_operations.md`](docs/dependency_sorted_file_operations.md) | Dependency-sorted file operations |
 
 ### Plugin Development
 
@@ -947,6 +1251,7 @@ Additional documentation is available in the `/docs/` directory:
 | [`RATE_LIMITING_FIXES_SUMMARY.md`](docs/RATE_LIMITING_FIXES_SUMMARY.md) | Rate limiting implementation details |
 | [`TRACKING_VALIDATION.md`](docs/TRACKING_VALIDATION.md) | Web scraping validation methodology |
 | [`NEXUSMODS_TRACKING_ANALYSIS.md`](docs/NEXUSMODS_TRACKING_ANALYSIS.md) | API tracking analysis and discrepancies |
+| [`NEXUSMODS_DISCREPANCIES.md`](docs/NEXUSMODS_DISCREPANCIES.md) | NexusMods API discrepancy details |
 
 ### Features & Workflows
 
@@ -954,14 +1259,24 @@ Additional documentation is available in the `/docs/` directory:
 |----------|-------------|
 | [`CATEGORY_ORGANIZATION.md`](docs/CATEGORY_ORGANIZATION.md) | Category-based organization system |
 | [`REORGANIZE_GUIDE.md`](docs/REORGANIZE_GUIDE.md) | Mod reorganization workflows |
+| [`REORGANIZATION_IMPROVEMENTS.md`](docs/REORGANIZATION_IMPROVEMENTS.md) | Reorganization improvements |
 | [`PRIORITIZED_DOWNLOADS.md`](docs/PRIORITIZED_DOWNLOADS.md) | Priority-based download queue |
 | [`IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) | Feature improvements and API enhancements |
+| [`TASKS.md`](docs/TASKS.md) | Current task list |
+
+### Steam & Game Detection
+
+| Document | Description |
+|----------|-------------|
+| [`Steam-Client-Game-Operations.md`](docs/Steam-Client-Game-Operations.md) | Steam client game operations |
+| [`steam-mod-installer-plan.md`](docs/steam-mod-installer-plan.md) | Steam mod installer implementation plan |
 
 ### GUI Development
 
 | Document | Description |
 |----------|-------------|
 | [`GUI_RECOMMENDATIONS.md`](docs/GUI_RECOMMENDATIONS.md) | GUI implementation recommendations and patterns |
+| [`GUI Feature Parity Audit & Implementation Plan.md`](docs/GUI%20Feature%20Parity%20Audit%20&%20Implementation%20Plan.md) | GUI feature parity audit and plan |
 
 ### HTTP Client Library
 
@@ -970,6 +1285,12 @@ Additional documentation is available in the `/docs/` directory:
 | [`fluent/README.md`](docs/fluent/README.md) | Fluent HTTP client user guide |
 | [`fluent/INTERFACES.md`](docs/fluent/INTERFACES.md) | Fluent API interface documentation |
 | [`MODULAR_INTEGRATION_COMPARISON.md`](docs/MODULAR_INTEGRATION_COMPARISON.md) | Fluent vs traditional HTTP client comparison |
+
+### Testing
+
+| Document | Description |
+|----------|-------------|
+| [`TEST_RESULTS.md`](docs/TEST_RESULTS.md) | Test results and coverage |
 
 ## Contributing
 
@@ -998,5 +1319,8 @@ MIT License - See LICENSE file for details.
 
 - [NexusMods](https://www.nexusmods.com/) for their comprehensive modding API
 - [GameBanana](https://gamebanana.com/) for their mod hosting platform
-- [System.CommandLine](https://github.com/dotnet/command-line-api) for CLI argument parsing
-- [Microsoft.Extensions](https://github.com/dotnet/runtime) for configuration and logging
+- [Spectre.Console](https://spectreconsole.net/) for CLI framework and rich terminal UI
+- [Avalonia](https://avaloniaui.net/) for cross-platform GUI framework
+- [Polly](https://github.com/App-vNext/Polly) for resilience and transient fault handling
+- [SharpCompress](https://github.com/adamhathcock/sharpcompress) for multi-format archive support
+- [Microsoft.Extensions](https://github.com/dotnet/runtime) for configuration, logging, and DI
