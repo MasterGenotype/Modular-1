@@ -54,6 +54,9 @@
                 <ComboBoxItem Content="Recently Updated" Tag="Updated"/>
                 <ComboBoxItem Content="Recently Added" Tag="Added"/>
             </ComboBox>
+            <CheckBox Content="Include Adult Content"
+                      IsChecked="{Binding IncludeAdultContent}"
+                      VerticalAlignment="Center" Margin="20,0,0,0"/>
         </StackPanel>
 
         <!-- Selection bar -->

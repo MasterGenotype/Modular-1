@@ -506,9 +506,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
     /// Searches for NexusMods collections for a given game domain.
     /// </summary>
     public Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
-        string gameDomain, int count = 20, int offset = 0, CancellationToken ct = default)
+        string gameDomain, string? searchTerm = null, int count = 20, int offset = 0, CancellationToken ct = default)
     {
-        return _graphQlClient.SearchCollectionsAsync(gameDomain, count, offset, ct);
+        return _graphQlClient.SearchCollectionsAsync(gameDomain, searchTerm, count, offset, ct);
     }
 
     /// <summary>

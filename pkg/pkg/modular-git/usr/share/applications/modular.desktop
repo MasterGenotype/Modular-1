@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Modular Mod Manager
+GenericName=Game Mod Manager
+Comment=Next-generation extensible mod manager with plugin support
+Exec=/usr/bin/modular-gui
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
+Keywords=mod;manager;game;nexusmods;gamebanana;

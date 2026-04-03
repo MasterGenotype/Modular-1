@@ -33,6 +33,9 @@ public partial class NexusSearchViewModel : ViewModelBase
     private ModSortOrder _sortOrder = ModSortOrder.Relevance;
 
     [ObservableProperty]
+    private bool _includeAdultContent;
+
+    [ObservableProperty]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -177,11 +180,20 @@ public partial class NexusSearchViewModel : ViewModelBase
                 GameDomain = resolvedDomain,
                 SortBy = SortOrder,
                 Page = CurrentPage,
-                PageSize = 20
+                PageSize = 20,
+                AdultContent = IncludeAdultContent
             });
 
+            // Re-rank results by fuzzy match score when search terms are present,
+            // but keep all API results (sort best matches to top, don't discard)
+            var ranked = !string.IsNullOrWhiteSpace(SearchText)
+                ? result.Mods
+                    .OrderByDescending(m => FuzzyMatcher.Score(SearchText, m.Name))
+                    .ToList()
+                : result.Mods;
+
             SearchResults.Clear();
-            foreach (var mod in result.Mods)
+            foreach (var mod in ranked)
             {
                 var display = new ModDisplayModel(mod);
                 display.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ModDisplayModel.IsSelected)) UpdateSelectedCount(); };

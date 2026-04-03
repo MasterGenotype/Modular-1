@@ -44,9 +44,9 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
         [Description("Include adult content in results")]
         public bool Adult { get; init; }
 
-        [CommandOption("--fuzzy")]
-        [Description("Re-rank results by fuzzy match score against the search terms")]
-        public bool Fuzzy { get; init; }
+        [CommandOption("--no-fuzzy")]
+        [Description("Disable fuzzy re-ranking of results by mod name")]
+        public bool NoFuzzy { get; init; }
 
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
@@ -108,8 +108,12 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
                 return 0;
             }
 
-            var mods = settings.Fuzzy
-                ? FuzzyMatcher.Rank(settings.Terms, result.Mods, m => m.Name).ToList()
+            // Fuzzy re-rank by mod name is on by default; --no-fuzzy disables it
+            // Sort best matches first but keep all API results
+            var mods = !settings.NoFuzzy && !string.IsNullOrWhiteSpace(settings.Terms)
+                ? result.Mods
+                    .OrderByDescending(m => FuzzyMatcher.Score(settings.Terms, m.Name))
+                    .ToList()
                 : result.Mods;
 
             var table = new Table();

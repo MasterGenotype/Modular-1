@@ -51,6 +51,9 @@ public partial class CollectionViewModel : ViewModelBase
     private string _searchGameDomain = string.Empty;
 
     [ObservableProperty]
+    private string _searchText = string.Empty;
+
+    [ObservableProperty]
     private ObservableCollection<NexusCollectionDisplayModel> _onlineCollections = new();
 
     [ObservableProperty]
@@ -64,6 +67,11 @@ public partial class CollectionViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _searchStatusMessage = "Enter a game domain to browse NexusMods collections";
+
+    /// <summary>
+    /// All fetched results before client-side filtering.
+    /// </summary>
+    private List<NexusCollectionDisplayModel> _allOnlineCollections = [];
 
     // Designer constructor
     public CollectionViewModel()
@@ -291,23 +299,32 @@ public partial class CollectionViewModel : ViewModelBase
         }
 
         IsSearching = true;
-        SearchStatusMessage = $"Searching collections for \"{SearchGameDomain}\"...";
+        var hasSearch = !string.IsNullOrWhiteSpace(SearchText);
+        SearchStatusMessage = hasSearch
+            ? $"Searching collections for \"{SearchText}\" in {SearchGameDomain}..."
+            : $"Searching collections for \"{SearchGameDomain}\"...";
 
         try
         {
+            var searchTerm = hasSearch ? SearchText.Trim() : null;
             var (collections, totalCount) = await _backend.SearchCollectionsAsync(
-                SearchGameDomain.Trim(), count: 20);
+                SearchGameDomain.Trim(), searchTerm: searchTerm, count: 20);
 
-            OnlineCollections.Clear();
-            foreach (var c in collections)
-            {
-                OnlineCollections.Add(new NexusCollectionDisplayModel(c));
-            }
+            _allOnlineCollections = collections
+                .Select(c => new NexusCollectionDisplayModel(c))
+                .ToList();
+
+            ApplyClientFuzzyFilter();
 
             OnlineTotalResults = totalCount;
-            SearchStatusMessage = totalCount == 0
-                ? $"No collections found for \"{SearchGameDomain}\""
-                : $"Found {totalCount} collection(s) for \"{SearchGameDomain}\"";
+            var displayCount = OnlineCollections.Count;
+            SearchStatusMessage = displayCount == 0
+                ? hasSearch
+                    ? $"No collections matching \"{SearchText}\" found for \"{SearchGameDomain}\""
+                    : $"No collections found for \"{SearchGameDomain}\""
+                : hasSearch
+                    ? $"Showing {displayCount} of {totalCount} collection(s) matching \"{SearchText}\" in \"{SearchGameDomain}\""
+                    : $"Found {totalCount} collection(s) for \"{SearchGameDomain}\"";
         }
         catch (Exception ex)
         {
@@ -317,6 +334,51 @@ public partial class CollectionViewModel : ViewModelBase
         {
             IsSearching = false;
         }
+    }
+
+    /// <summary>
+    /// Applies client-side fuzzy matching on collection name, summary, and author
+    /// using the current SearchText value.
+    /// </summary>
+    private void ApplyClientFuzzyFilter()
+    {
+        OnlineCollections.Clear();
+
+        var term = SearchText?.Trim();
+        IEnumerable<NexusCollectionDisplayModel> filtered = _allOnlineCollections;
+
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            filtered = _allOnlineCollections.Where(c => FuzzyMatch(c, term));
+        }
+
+        foreach (var c in filtered)
+            OnlineCollections.Add(c);
+    }
+
+    /// <summary>
+    /// Simple fuzzy match: checks if all characters in the search term appear
+    /// in order within the collection name, summary, or author.
+    /// </summary>
+    private static bool FuzzyMatch(NexusCollectionDisplayModel model, string term)
+    {
+        return FuzzyContains(model.Name, term)
+            || FuzzyContains(model.Summary, term)
+            || FuzzyContains(model.Author, term);
+    }
+
+    private static bool FuzzyContains(string? text, string term)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+
+        // Check subsequence match (all chars in order, case-insensitive)
+        int ti = 0;
+        foreach (var ch in text)
+        {
+            if (ti < term.Length && char.ToLowerInvariant(ch) == char.ToLowerInvariant(term[ti]))
+                ti++;
+        }
+        return ti == term.Length;
     }
 
     [RelayCommand]

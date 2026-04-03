@@ -9,6 +9,18 @@ internal record NexusGraphQlResponse
 {
     [JsonPropertyName("data")]
     public NexusGraphQlData? Data { get; init; }
+
+    [JsonPropertyName("errors")]
+    public List<NexusGraphQlError>? Errors { get; init; }
+}
+
+internal record NexusGraphQlError
+{
+    [JsonPropertyName("message")]
+    public string Message { get; init; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public List<string>? Path { get; init; }
 }
 
 internal record NexusGraphQlData
@@ -92,6 +104,9 @@ internal record NexusGraphQlCollectionResponse
 {
     [JsonPropertyName("data")]
     public NexusGraphQlCollectionData? Data { get; init; }
+
+    [JsonPropertyName("errors")]
+    public List<NexusGraphQlError>? Errors { get; init; }
 }
 
 internal record NexusGraphQlCollectionData

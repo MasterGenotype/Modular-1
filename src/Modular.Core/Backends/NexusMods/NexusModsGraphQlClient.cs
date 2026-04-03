@@ -112,11 +112,15 @@ internal class NexusModsGraphQlClient
         };
         if (hasTerms)
         {
-            // Wrap search terms in wildcards so partial matches work with the WILDCARD operator
-            var wildcardTerms = query.Terms!.Trim();
-            if (!wildcardTerms.StartsWith('*')) wildcardTerms = "*" + wildcardTerms;
-            if (!wildcardTerms.EndsWith('*')) wildcardTerms = wildcardTerms + "*";
-            filter["name"] = new[] { new { value = wildcardTerms, op = "WILDCARD" } };
+            // Use nameStemmed with MATCHES for full-text search (handles stemming,
+            // partial words, and fuzzy matching server-side)
+            filter["nameStemmed"] = new[] { new { value = query.Terms!.Trim(), op = "MATCHES" } };
+        }
+
+        // Include adult content when requested
+        if (query.AdultContent)
+        {
+            filter["adultContent"] = new[] { new { value = true, op = "EQUALS" } };
         }
 
         var requestBody = new
@@ -131,8 +135,8 @@ internal class NexusModsGraphQlClient
             }
         };
 
-        _logger?.LogDebug("Searching NexusMods GraphQL: terms={Terms}, game={Game}, page={Page}",
-            query.Terms, query.GameDomain, query.Page);
+        _logger?.LogDebug("Searching NexusMods GraphQL: terms={Terms}, game={Game}, page={Page}, adult={Adult}",
+            query.Terms, query.GameDomain, query.Page, query.AdultContent);
 
         var json = await _client.PostAsync(GraphQlUrl)
             .WithHeader("apikey", _apiKey)
@@ -146,6 +150,13 @@ internal class NexusModsGraphQlClient
         {
             PropertyNameCaseInsensitive = true
         });
+
+        if (response?.Errors is { Count: > 0 })
+        {
+            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
+            _logger?.LogWarning("GraphQL returned errors: {Errors}", errorMessages);
+            throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
+        }
 
         var modsResult = response?.Data?.Mods;
         if (modsResult == null)
@@ -202,7 +213,7 @@ internal class NexusModsGraphQlClient
     /// Searches for collections on NexusMods filtered by game domain.
     /// </summary>
     public async Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
-        string gameDomain, int count = 20, int offset = 0, CancellationToken ct = default)
+        string gameDomain, string? searchTerm = null, int count = 20, int offset = 0, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(gameDomain))
             throw new ArgumentException("GameDomain is required for collection search", nameof(gameDomain));
@@ -211,6 +222,14 @@ internal class NexusModsGraphQlClient
         {
             ["gameDomain"] = new[] { new { value = gameDomain } }
         };
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var wildcardTerm = searchTerm.Trim();
+            if (!wildcardTerm.StartsWith('*')) wildcardTerm = "*" + wildcardTerm;
+            if (!wildcardTerm.EndsWith('*')) wildcardTerm = wildcardTerm + "*";
+            filter["name"] = new[] { new { value = wildcardTerm, op = "WILDCARD" } };
+        }
 
         var requestBody = new
         {
