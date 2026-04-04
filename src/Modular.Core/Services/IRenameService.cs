@@ -19,8 +19,9 @@ public interface IRenameService
 
     /// <summary>
     /// Gets mod metadata from cache, or fetches from API if not cached.
+    /// For hidden/removed mods, fallbackName is used when the API returns no name.
     /// </summary>
-    Task<ModMetadata?> GetOrFetchModMetadataAsync(string gameDomain, int modId, CancellationToken ct = default);
+    Task<ModMetadata?> GetOrFetchModMetadataAsync(string gameDomain, int modId, CancellationToken ct = default, string? fallbackName = null);
 
     /// <summary>
     /// Fetches metadata for multiple mods, using cache where available.

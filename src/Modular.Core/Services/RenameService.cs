@@ -56,12 +56,10 @@ public class RenameService : IRenameService
 
     /// <summary>
     /// Gets mod metadata from cache, or fetches from API if not cached.
+    /// For hidden/removed mods where the API returns name=null, the category_id
+    /// is still available. The caller can supply a fallback name (e.g. from directory contents).
     /// </summary>
-    /// <param name="gameDomain">Game domain</param>
-    /// <param name="modId">Mod ID</param>
-    /// <param name="ct">Cancellation token</param>
-    /// <returns>Mod metadata or null if unavailable</returns>
-    public async Task<ModMetadata?> GetOrFetchModMetadataAsync(string gameDomain, int modId, CancellationToken ct = default)
+    public async Task<ModMetadata?> GetOrFetchModMetadataAsync(string gameDomain, int modId, CancellationToken ct = default, string? fallbackName = null)
     {
         // Check cache first
         var cached = _cache.GetModMetadata(gameDomain, modId);
@@ -90,6 +88,11 @@ public class RenameService : IRenameService
             if (response.RootElement.TryGetProperty("category_id", out var catProp))
                 categoryId = catProp.GetInt32();
 
+            // Hidden/removed mods return name=null but still have category_id.
+            // Use the fallback name (derived from directory contents) if API name is missing.
+            if (string.IsNullOrEmpty(name))
+                name = fallbackName;
+
             if (!string.IsNullOrEmpty(name))
             {
                 var metadata = new ModMetadata
@@ -102,6 +105,8 @@ public class RenameService : IRenameService
                 _cache.SetModMetadata(gameDomain, metadata);
                 return metadata;
             }
+
+            _logger?.LogDebug("Mod {ModId} has no name from API and no fallback", modId);
         }
         catch (Exception ex)
         {
@@ -255,8 +260,35 @@ public class RenameService : IRenameService
         {
             ct.ThrowIfCancellationRequested();
 
+            // Derive a fallback name from directory contents for hidden/removed mods
+            // (NexusMods API returns name=null for these, but category_id is still available).
+            string? fallbackName = null;
+            if (!isRenamed && Directory.Exists(oldPath))
+            {
+                var subdirs = Directory.GetDirectories(oldPath);
+                if (subdirs.Length >= 1)
+                {
+                    // Use the first subdirectory's name as the mod name
+                    fallbackName = Path.GetFileName(subdirs[0]);
+                }
+                else
+                {
+                    // No subdirs — use first file's name without extension
+                    var files = Directory.GetFiles(oldPath);
+                    if (files.Length > 0)
+                        fallbackName = Path.GetFileNameWithoutExtension(files[0]);
+                }
+            }
+            else if (isRenamed)
+            {
+                // Already-renamed directory — its name IS the mod name
+                fallbackName = Path.GetFileName(oldPath);
+            }
+            // Last resort: use mod ID
+            fallbackName ??= $"Mod_{modId}";
+
             // Get metadata from cache (or fetch if not cached)
-            var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
+            var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct, fallbackName);
 
             // If cached metadata has no category and we need categories, re-fetch from REST
             // to get the reliable category_id (GraphQL sometimes returns null modCategory)
@@ -264,7 +296,7 @@ public class RenameService : IRenameService
             {
                 _logger?.LogDebug("Re-fetching mod {ModId} via REST for category data", modId);
                 _cache.RemoveModMetadata(gameDomain, modId);
-                metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
+                metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct, fallbackName);
             }
 
             if (metadata == null || string.IsNullOrEmpty(metadata.Name))
