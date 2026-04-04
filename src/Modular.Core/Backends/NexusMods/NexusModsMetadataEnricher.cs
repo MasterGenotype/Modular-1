@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Configuration;
 using Modular.Core.Metadata;
+using Modular.Core.RateLimiting;
 using Modular.Core.Versioning;
 using Modular.FluentHttp.Implementation;
 using Modular.FluentHttp.Interfaces;
@@ -16,15 +17,18 @@ public class NexusModsMetadataEnricher : IMetadataEnricher
 
     private readonly AppSettings _settings;
     private readonly IFluentClient _client;
+    private readonly Core.RateLimiting.IRateLimiter? _rateLimiter;
     private readonly ILogger<NexusModsMetadataEnricher>? _logger;
 
     public string BackendId => "nexusmods";
 
     public NexusModsMetadataEnricher(
         AppSettings settings,
+        Core.RateLimiting.IRateLimiter? rateLimiter = null,
         ILogger<NexusModsMetadataEnricher>? logger = null)
     {
         _settings = settings;
+        _rateLimiter = rateLimiter;
         _logger = logger;
         _client = FluentClientFactory.Create(BaseUrl);
         _client.SetUserAgent("Modular/1.0");
@@ -229,8 +233,9 @@ public class NexusModsMetadataEnricher : IMetadataEnricher
                 results.Add(mod);
             }
 
-            // Rate limiting: wait a bit between requests
-            await Task.Delay(250, ct);
+            // Use adaptive pacing from rate limiter, or fall back to 250ms
+            var delay = _rateLimiter?.GetRecommendedDelay() ?? TimeSpan.FromMilliseconds(250);
+            await Task.Delay(delay, ct);
         }
 
         return results;

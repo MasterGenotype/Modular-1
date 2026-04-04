@@ -36,6 +36,9 @@ public partial class LibraryViewModel : ViewModelBase
     private bool _isLoading;
 
     [ObservableProperty]
+    private bool _isReorganizing;
+
+    [ObservableProperty]
     private string _statusMessage = "Select a game to view downloaded mods";
 
     [ObservableProperty]
@@ -190,6 +193,64 @@ public partial class LibraryViewModel : ViewModelBase
         catch (Exception ex)
         {
             _dialogService?.ShowErrorAsync("Error", $"Could not open folder: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task ReorganizeModsAsync()
+    {
+        if (SelectedDomain == null || _renameService == null || _dialogService == null || _settings == null) return;
+
+        var confirmed = await _dialogService.ShowConfirmationAsync(
+            "Re-organize Mods",
+            $"This will reorganize mods in '{SelectedDomain.Name}' into category folders and rename them. Continue?");
+
+        if (!confirmed) return;
+
+        var gameDomain = SelectedDomain.Name;
+        var gameDomainPath = SelectedDomain.Path;
+
+        try
+        {
+            IsReorganizing = true;
+
+            // Fetch and cache metadata for all mods first (same as download flow)
+            StatusMessage = $"Fetching mod metadata for {gameDomain}...";
+            await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, gameDomain);
+
+            // Reorganize and rename mods (matches download flow)
+            StatusMessage = $"Reorganizing mods in {gameDomain}...";
+            var renamed = await _renameService.ReorganizeAndRenameModsAsync(
+                gameDomainPath,
+                _settings.OrganizeByCategory);
+
+            // Rename category folders from Category_N to actual names
+            if (_settings.OrganizeByCategory)
+            {
+                await _renameService.RenameCategoryFoldersAsync(gameDomainPath);
+            }
+
+            StatusMessage = renamed > 0
+                ? $"Organized {renamed} mod(s) in {gameDomain}"
+                : $"Mods in {gameDomain} already organized";
+
+            // Refresh the mod list to reflect the new structure
+            LoadModFolders(SelectedDomain);
+
+            // Update the mod count on the domain item
+            if (Directory.Exists(gameDomainPath))
+            {
+                SelectedDomain.ModCount = Directory.GetDirectories(gameDomainPath).Length;
+            }
+        }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync("Error", $"Failed to reorganize mods: {ex.Message}");
+            StatusMessage = $"Reorganization failed: {ex.Message}";
+        }
+        finally
+        {
+            IsReorganizing = false;
         }
     }
 

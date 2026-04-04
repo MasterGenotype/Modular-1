@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.Models;
@@ -12,12 +13,15 @@ namespace Modular.Core.Services;
 
 /// <summary>
 /// Service for renaming mod folders and organizing by category.
-/// Uses a metadata cache to minimize API calls.
+/// Uses GraphQL batch queries to minimize API calls and adaptive pacing
+/// to spread requests evenly across the hourly rate limit window.
 /// </summary>
 public class RenameService : IRenameService
 {
     private const string BaseUrl = "https://api.nexusmods.com";
     private readonly IFluentClient _client;
+    private readonly NexusModsGraphQlClient _graphQlClient;
+    private readonly Modular.Core.RateLimiting.IRateLimiter _rateLimiter;
     private readonly AppSettings _settings;
     private readonly ModMetadataCache _cache;
     private readonly ILogger<RenameService>? _logger;
@@ -25,10 +29,13 @@ public class RenameService : IRenameService
     public RenameService(AppSettings settings, Modular.Core.RateLimiting.IRateLimiter rateLimiter, ModMetadataCache cache, ILogger<RenameService>? logger = null)
     {
         _settings = settings;
+        _rateLimiter = rateLimiter;
         _cache = cache;
         _logger = logger;
-        _client = FluentClientFactory.Create(BaseUrl, new RateLimiterAdapter(rateLimiter), logger);
+        var adapter = new RateLimiterAdapter(rateLimiter);
+        _client = FluentClientFactory.Create(BaseUrl, adapter, logger);
         _client.SetUserAgent("Modular/1.0");
+        _graphQlClient = new NexusModsGraphQlClient(settings.NexusApiKey, adapter, logger);
     }
 
     /// <summary>
@@ -104,28 +111,81 @@ public class RenameService : IRenameService
     }
 
     /// <summary>
-    /// Fetches metadata for multiple mods, using cache where available.
+    /// Fetches metadata for multiple mods using GraphQL batch queries.
+    /// Fetches up to 20 mods per API call (vs 1 per call with REST),
+    /// and uses adaptive pacing to avoid exhausting the hourly rate limit.
+    /// Falls back to individual REST calls if GraphQL fails.
     /// </summary>
-    /// <param name="gameDomain">Game domain</param>
-    /// <param name="modIds">List of mod IDs to fetch</param>
-    /// <param name="ct">Cancellation token</param>
-    /// <returns>Number of mods successfully fetched/cached</returns>
     public async Task<int> FetchModMetadataBatchAsync(string gameDomain, IEnumerable<int> modIds, CancellationToken ct = default)
     {
-        var fetchedCount = 0;
         var modIdList = modIds.ToList();
         var uncachedIds = modIdList.Where(id => _cache.GetModMetadata(gameDomain, id) == null).ToList();
 
         _logger?.LogInformation("Fetching metadata: {Cached} cached, {ToFetch} to fetch",
             modIdList.Count - uncachedIds.Count, uncachedIds.Count);
 
-        foreach (var modId in uncachedIds)
+        if (uncachedIds.Count == 0)
+            return modIdList.Count - uncachedIds.Count;
+
+        // Try GraphQL batch first (20 mods per request vs 1)
+        var fetchedCount = 0;
+        try
+        {
+            var pacingDelay = _rateLimiter.GetRecommendedDelay();
+            _logger?.LogDebug("Using GraphQL batch with {Delay}ms pacing between batches", pacingDelay.TotalMilliseconds);
+
+            var results = await _graphQlClient.FetchModsByIdsBatchedAsync(gameDomain, uncachedIds, pacingDelay, ct);
+
+            foreach (var mod in results)
+            {
+                var metadata = new ModMetadata
+                {
+                    ModId = mod.ModId,
+                    Name = mod.Name,
+                    CategoryId = mod.ModCategory?.CategoryId ?? 0,
+                    FetchedAt = DateTime.UtcNow
+                };
+                _cache.SetModMetadata(gameDomain, metadata);
+                fetchedCount++;
+            }
+
+            // Check for any IDs that GraphQL didn't return (removed/hidden mods)
+            var returnedIds = results.Select(m => m.ModId).ToHashSet();
+            var missingIds = uncachedIds.Where(id => !returnedIds.Contains(id)).ToList();
+            if (missingIds.Count > 0)
+            {
+                _logger?.LogDebug("{Count} mod(s) not returned by GraphQL, falling back to REST", missingIds.Count);
+                fetchedCount += await FetchModMetadataIndividuallyAsync(gameDomain, missingIds, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "GraphQL batch fetch failed, falling back to individual REST calls");
+            fetchedCount = await FetchModMetadataIndividuallyAsync(gameDomain, uncachedIds, ct);
+        }
+
+        return fetchedCount;
+    }
+
+    /// <summary>
+    /// Fallback: fetches mod metadata one at a time via REST API with adaptive pacing.
+    /// </summary>
+    private async Task<int> FetchModMetadataIndividuallyAsync(string gameDomain, List<int> modIds, CancellationToken ct)
+    {
+        var fetchedCount = 0;
+
+        foreach (var modId in modIds)
         {
             ct.ThrowIfCancellationRequested();
 
             var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
             if (metadata != null)
                 fetchedCount++;
+
+            // Adaptive pacing between individual requests
+            var delay = _rateLimiter.GetRecommendedDelay();
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, ct);
         }
 
         return fetchedCount;

@@ -85,6 +85,8 @@ internal class NexusModsGraphQlClient
         }
         """;
 
+    private const int MaxModsPerQuery = 20;
+
     private readonly IFluentClient _client;
     private readonly string _apiKey;
     private readonly ILogger? _logger;
@@ -207,6 +209,83 @@ internal class NexusModsGraphQlClient
             ThumbnailUrl = node.PictureUrl,
             UpdatedAt = updatedAt
         };
+    }
+
+    /// <summary>
+    /// Fetches mod metadata for multiple mod IDs in a single GraphQL request.
+    /// Returns up to <see cref="MaxModsPerQuery"/> mods per call.
+    /// </summary>
+    public async Task<List<NexusGraphQlMod>> FetchModsByIdsAsync(
+        string gameDomain, IReadOnlyList<int> modIds, CancellationToken ct = default)
+    {
+        if (modIds.Count == 0) return [];
+
+        var filter = new Dictionary<string, object>
+        {
+            ["gameDomainName"] = new[] { new { value = gameDomain } },
+            ["modId"] = modIds.Select(id => new { value = id }).ToArray()
+        };
+
+        var requestBody = new
+        {
+            query = ModsQuery,
+            variables = new
+            {
+                filter,
+                count = Math.Min(modIds.Count, MaxModsPerQuery),
+                offset = 0
+            }
+        };
+
+        _logger?.LogDebug("GraphQL batch fetch: {Count} mod(s) for {Game}", modIds.Count, gameDomain);
+
+        var json = await _client.PostAsync(GraphQlUrl)
+            .WithHeader("apikey", _apiKey)
+            .WithHeader("accept", "application/json")
+            .WithJsonBody(requestBody)
+            .AsStringAsync();
+
+        var response = JsonSerializer.Deserialize<NexusGraphQlResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (response?.Errors is { Count: > 0 })
+        {
+            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
+            _logger?.LogWarning("GraphQL batch fetch errors: {Errors}", errorMessages);
+            throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
+        }
+
+        return response?.Data?.Mods?.Nodes ?? [];
+    }
+
+    /// <summary>
+    /// Fetches mod metadata for a large number of mod IDs, automatically batching
+    /// into groups of <see cref="MaxModsPerQuery"/> and pacing requests.
+    /// </summary>
+    public async Task<List<NexusGraphQlMod>> FetchModsByIdsBatchedAsync(
+        string gameDomain, IReadOnlyList<int> modIds, TimeSpan pacingDelay, CancellationToken ct = default)
+    {
+        var results = new List<NexusGraphQlMod>();
+
+        // Chunk into groups of MaxModsPerQuery
+        for (var i = 0; i < modIds.Count; i += MaxModsPerQuery)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chunk = modIds.Skip(i).Take(MaxModsPerQuery).ToList();
+            var batch = await FetchModsByIdsAsync(gameDomain, chunk, ct);
+            results.AddRange(batch);
+
+            // Pace between batches (not after the last one)
+            if (i + MaxModsPerQuery < modIds.Count && pacingDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(pacingDelay, ct);
+            }
+        }
+
+        return results;
     }
 
     /// <summary>

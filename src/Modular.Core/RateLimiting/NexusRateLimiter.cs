@@ -172,6 +172,33 @@ public class NexusRateLimiter : IRateLimiter
         }
     }
 
+    /// <inheritdoc />
+    public TimeSpan GetRecommendedDelay()
+    {
+        lock (_lock)
+        {
+            CheckAndResetLimits();
+
+            if (_hourlyRemaining <= 0)
+                return TimeSpan.Zero; // WaitIfNeededAsync handles the hard block
+
+            // Calculate time until hourly reset
+            var now = DateTimeOffset.UtcNow;
+            var timeUntilReset = _hourlyReset - now;
+            if (timeUntilReset <= TimeSpan.Zero)
+                return TimeSpan.Zero;
+
+            // Space requests evenly across remaining time, reserving 10% headroom
+            var usableBudget = Math.Max(1, (int)(_hourlyRemaining * 0.9));
+            var delayMs = timeUntilReset.TotalMilliseconds / usableBudget;
+
+            // Clamp: minimum 100ms (don't spin), maximum 30s (don't stall)
+            delayMs = Math.Clamp(delayMs, 100, 30000);
+
+            return TimeSpan.FromMilliseconds(delayMs);
+        }
+    }
+
     /// <summary>
     /// Maximum time to wait for daily rate limit reset. Daily limits are too long to wait for.
     /// </summary>

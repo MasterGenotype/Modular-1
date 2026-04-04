@@ -70,4 +70,11 @@ public interface IRateLimiter
     /// Gets the time when the hourly limit resets.
     /// </summary>
     DateTimeOffset HourlyReset { get; }
+
+    /// <summary>
+    /// Gets a recommended delay between requests to spread usage evenly
+    /// across the current hourly window, avoiding bursts that exhaust the limit.
+    /// Returns TimeSpan.Zero if no pacing is needed.
+    /// </summary>
+    TimeSpan GetRecommendedDelay();
 }
