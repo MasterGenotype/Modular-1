@@ -290,6 +290,20 @@ public class ModMetadataCache : IMetadataCache
     }
 
     /// <summary>
+    /// Removes a single mod's cached metadata, forcing a re-fetch on next access.
+    /// </summary>
+    public void RemoveModMetadata(string gameDomain, int modId)
+    {
+        lock (_lock)
+        {
+            if (_data.Mods.TryGetValue(gameDomain, out var mods))
+            {
+                mods.Remove(modId);
+            }
+        }
+    }
+
+    /// <summary>
     /// Clears all cached data for a specific game domain.
     /// </summary>
     /// <param name="gameDomain">Game domain to clear</param>

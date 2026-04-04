@@ -112,20 +112,25 @@ public class RenameService : IRenameService
 
     /// <summary>
     /// Fetches metadata for multiple mods using GraphQL batch queries.
-    /// Fetches up to 20 mods per API call (vs 1 per call with REST),
-    /// and uses adaptive pacing to avoid exhausting the hourly rate limit.
+    /// Fetches up to 20 mods per API call (vs 1 per call with REST).
     /// Falls back to individual REST calls if GraphQL fails.
     /// </summary>
     public async Task<int> FetchModMetadataBatchAsync(string gameDomain, IEnumerable<int> modIds, CancellationToken ct = default)
     {
         var modIdList = modIds.ToList();
         var uncachedIds = modIdList.Where(id => _cache.GetModMetadata(gameDomain, id) == null).ToList();
+        var cachedCount = modIdList.Count - uncachedIds.Count;
 
         _logger?.LogInformation("Fetching metadata: {Cached} cached, {ToFetch} to fetch",
-            modIdList.Count - uncachedIds.Count, uncachedIds.Count);
+            cachedCount, uncachedIds.Count);
 
         if (uncachedIds.Count == 0)
-            return modIdList.Count - uncachedIds.Count;
+            return cachedCount;
+
+        // Pre-fetch game categories so we can resolve GraphQL category strings to IDs
+        var gameCategories = await GetOrFetchGameCategoriesAsync(gameDomain, ct);
+        var reverseCategoryLookup = gameCategories.ToDictionary(
+            kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase);
 
         // Try GraphQL batch first (20 mods per request vs 1)
         var fetchedCount = 0;
@@ -134,23 +139,36 @@ public class RenameService : IRenameService
             var pacingDelay = _rateLimiter.GetRecommendedDelay();
             _logger?.LogDebug("Using GraphQL batch with {Delay}ms pacing between batches", pacingDelay.TotalMilliseconds);
 
+            var requestedIds = uncachedIds.ToHashSet();
             var results = await _graphQlClient.FetchModsByIdsBatchedAsync(gameDomain, uncachedIds, pacingDelay, ct);
 
             foreach (var mod in results)
             {
+                // Only cache mods we actually requested
+                if (!requestedIds.Contains(mod.ModId)) continue;
+
+                // Resolve category ID: prefer modCategory.categoryId, fall back to
+                // reverse-looking up the category string name in the game categories
+                var categoryId = mod.ModCategory?.CategoryId ?? 0;
+                if (categoryId == 0 && !string.IsNullOrEmpty(mod.Category) && reverseCategoryLookup.TryGetValue(mod.Category, out var resolvedId))
+                {
+                    categoryId = resolvedId;
+                }
+
                 var metadata = new ModMetadata
                 {
                     ModId = mod.ModId,
                     Name = mod.Name,
-                    CategoryId = mod.ModCategory?.CategoryId ?? 0,
+                    CategoryId = categoryId,
                     FetchedAt = DateTime.UtcNow
                 };
                 _cache.SetModMetadata(gameDomain, metadata);
                 fetchedCount++;
             }
 
-            // Check for any IDs that GraphQL didn't return (removed/hidden mods)
-            var returnedIds = results.Select(m => m.ModId).ToHashSet();
+            // Fetch any IDs that GraphQL didn't return (removed/hidden mods) via REST
+            var returnedIds = results.Where(m => requestedIds.Contains(m.ModId))
+                                     .Select(m => m.ModId).ToHashSet();
             var missingIds = uncachedIds.Where(id => !returnedIds.Contains(id)).ToList();
             if (missingIds.Count > 0)
             {
@@ -168,7 +186,8 @@ public class RenameService : IRenameService
     }
 
     /// <summary>
-    /// Fallback: fetches mod metadata one at a time via REST API with adaptive pacing.
+    /// Fallback: fetches mod metadata one at a time via REST API.
+    /// FluentClient already handles rate limiting — no additional pacing needed.
     /// </summary>
     private async Task<int> FetchModMetadataIndividuallyAsync(string gameDomain, List<int> modIds, CancellationToken ct)
     {
@@ -181,11 +200,6 @@ public class RenameService : IRenameService
             var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
             if (metadata != null)
                 fetchedCount++;
-
-            // Adaptive pacing between individual requests
-            var delay = _rateLimiter.GetRecommendedDelay();
-            if (delay > TimeSpan.Zero)
-                await Task.Delay(delay, ct);
         }
 
         return fetchedCount;
@@ -243,6 +257,15 @@ public class RenameService : IRenameService
 
             // Get metadata from cache (or fetch if not cached)
             var metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
+
+            // If cached metadata has no category and we need categories, re-fetch from REST
+            // to get the reliable category_id (GraphQL sometimes returns null modCategory)
+            if (metadata != null && organizeByCategory && metadata.CategoryId == 0)
+            {
+                _logger?.LogDebug("Re-fetching mod {ModId} via REST for category data", modId);
+                _cache.RemoveModMetadata(gameDomain, modId);
+                metadata = await GetOrFetchModMetadataAsync(gameDomain, modId, ct);
+            }
 
             if (metadata == null || string.IsNullOrEmpty(metadata.Name))
             {
