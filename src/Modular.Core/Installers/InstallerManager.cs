@@ -32,6 +32,7 @@ public class InstallerManager
         RegisterInstaller(new FomodInstaller(factory));
         RegisterInstaller(new BepInExInstaller(factory));
         RegisterInstaller(new SteamModInstaller(factory));
+        RegisterInstaller(new UnrealPakInstaller(factory));
     }
 
     /// <summary>
