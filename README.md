@@ -1,6 +1,6 @@
 # Modular
 
-A next-generation, extensible C#/.NET mod manager for automating the downloading, searching, installing, and management of game modifications from multiple mod repositories. Features a plugin architecture, SSO authentication, mod search and discovery, mod collections, Steam game detection, both CLI and GUI interfaces built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
+A next-generation, extensible C#/.NET mod manager for automating the downloading, searching, installing, and management of game modifications from multiple mod repositories. Features a plugin architecture, SSO authentication, mod search and discovery with thumbnail previews and an embedded mod page browser, mod collections, Steam game detection, both CLI and GUI interfaces built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
 
 ## Table of Contents
 
@@ -36,7 +36,8 @@ The project implements a clean **plugin-based architecture** with a stable SDK f
 ### Core Functionality
 - **Plugin Architecture** - Extensible system for community-developed backends, installers, metadata enrichers, and UI extensions
 - **Multi-Repository Support** - Download mods from NexusMods and GameBanana with extensible backend abstraction for additional sources
-- **Mod Search & Discovery** - Full-text search with fuzzy re-ranking, trending/latest/updated feeds via NexusMods GraphQL API
+- **Mod Search & Discovery** - Full-text search with fuzzy re-ranking, thumbnail previews, trending/latest/updated feeds via NexusMods GraphQL API
+- **Embedded Mod Browser** - View NexusMods mod pages in an in-app WebView browser without leaving the application
 - **Mod Collections** - Create, manage, download, and share curated sets of mods with version tracking
 - **SSO Authentication** - Browser-based NexusMods authentication flow via WebSocket SSO (no manual API key required)
 - **Automatic Organization** - Organizes mods into game-specific directories with optional category-based subdirectories
@@ -96,7 +97,7 @@ Modular follows a clean **plugin-based architecture** with clear separation of c
 
 ### Layer Responsibilities
 
-1. **GUI Layer (`Modular.Gui`)** - Cross-platform graphical interface built with Avalonia UI 11.3 using MVVM architecture and Material Icons, featuring visual mod browsing, search, download queue management, game detection, mod installation, collections, profiles, snapshots, plugin management, and settings configuration
+1. **GUI Layer (`Modular.Gui`)** - Cross-platform graphical interface built with Avalonia UI 11.3 using MVVM architecture and Material Icons, featuring visual mod browsing with thumbnail previews, search with embedded WebView mod page browser, download queue management, game detection, mod installation, collections, profiles, snapshots, plugin management, and settings configuration
 2. **CLI Layer (`Modular.Cli`)** - Command-line interface using Spectre.Console.Cli with structured command groups (download, search, browse, install, collection, profile, plugins, diagnostics, telemetry) and rich progress visualization
 3. **Core Library (`Modular.Core`)** - Class library containing all business logic:
    - **Plugin System** - Dynamic loading via AssemblyLoadContext, MEF composition, plugin marketplace integration
@@ -762,6 +763,7 @@ catch (ModularException ex)
 | **Avalonia.Controls.DataGrid** | DataGrid control | 11.3.11 |
 | **Material.Icons.Avalonia** | Material Design icons | 2.1.10 |
 | **CommunityToolkit.Mvvm** | MVVM helpers and attributes | 8.3.2 |
+| **WebView.Avalonia.Desktop** | Embedded browser (WebView) | 11.0.0.1 |
 
 ## Building
 
@@ -769,6 +771,10 @@ catch (ModularException ex)
 
 - .NET SDK 8.0 or later
   - Check with: `dotnet --version`
+- `webkit2gtk` (Linux only, required for the embedded WebView mod browser in the GUI)
+  - Arch Linux: `sudo pacman -S webkit2gtk`
+  - Debian/Ubuntu: `sudo apt install libwebkit2gtk-4.1-dev`
+  - Fedora: `sudo dnf install webkit2gtk4.1-devel`
 
 ### Installing .NET SDK
 
@@ -1012,7 +1018,8 @@ Modular includes a full-featured graphical user interface built with Avalonia UI
 ### GUI Features
 
 - **Multi-Platform Browsing** - Browse NexusMods tracked mods and GameBanana subscriptions in dedicated views
-- **Mod Search** - Search NexusMods and GameBanana from within the GUI
+- **Mod Search** - Search NexusMods and GameBanana with thumbnail previews and fuzzy re-ranking
+- **Embedded Mod Browser** - View NexusMods mod pages in an embedded WebView without leaving the app
 - **Download Queue** - Visual download queue with progress tracking, pause/resume, and drag-and-drop reordering
 - **Mod Installation** - Install mods to game directories with visual progress
 - **Installed Mods Management** - View and manage installed mods
@@ -1081,8 +1088,12 @@ make publish-macos-arm
 - Check for updates across all tracked mods
 
 **NexusMods Search View**
-- Full-text search across NexusMods catalog
+- Full-text search across NexusMods catalog with fuzzy re-ranking
 - Filter by game, sort by relevance/downloads/endorsements
+- Thumbnail previews in search result listings
+- Detail panel with mod info, stats, and summary when a mod is selected
+- Embedded WebView to browse mod pages inline (toggle on/off)
+- Open mod page in external browser
 
 **GameBanana View**
 - Displays subscribed mods from your GameBanana account
@@ -1117,6 +1128,7 @@ make publish-macos-arm
 
 **Collections View**
 - Create, manage, and share mod collections
+- Browse NexusMods collections online with thumbnail previews
 
 **Profiles View**
 - Manage mod profiles with export/import
@@ -1313,7 +1325,7 @@ Additional documentation is available in the `/docs/` directory:
 
 ## License
 
-MIT License - See LICENSE file for details.
+This project is not yet licensed. A license will be added in a future release.
 
 ## Acknowledgments
 

@@ -5,6 +5,7 @@
              xmlns:vm="using:Modular.Gui.ViewModels"
              xmlns:models="using:Modular.Gui.Models"
              xmlns:mi="using:Material.Icons.Avalonia"
+             xmlns:wv="using:AvaloniaWebView"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="Modular.Gui.Views.NexusSearchView"
              x:DataType="vm:NexusSearchViewModel">
@@ -176,67 +177,81 @@
             </Border>
 
             <!-- Right: mod detail panel (visible when a mod is selected) -->
-            <Border Grid.Column="1" Width="280" Margin="10,0,0,0"
+            <Border Grid.Column="1" Margin="10,0,0,0"
                     Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="12"
-                    IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="10" DataContext="{Binding SelectedMod}">
-                        <!-- Thumbnail -->
-                        <Border CornerRadius="6" ClipToBounds="True" Height="160"
-                                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-                            <Image Source="{Binding Thumbnail}"
-                                   Stretch="UniformToFill"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Center"/>
-                        </Border>
-
-                        <!-- Mod name -->
-                        <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"
-                                   TextWrapping="Wrap"/>
-
-                        <!-- Author -->
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <mi:MaterialIcon Kind="Account" Width="14" Height="14" Opacity="0.6"/>
-                            <TextBlock Text="{Binding Author}" Opacity="0.8"/>
-                        </StackPanel>
-
-                        <!-- Stats row -->
-                        <StackPanel Orientation="Horizontal" Spacing="14">
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <mi:MaterialIcon Kind="Download" Width="14" Height="14" Opacity="0.6"/>
-                                <TextBlock Text="{Binding Mod.DownloadCount, StringFormat='{}{0:N0}'}"
-                                           FontSize="12" Opacity="0.7"/>
+                    CornerRadius="8" Padding="0"
+                    IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    Width="{Binding DetailPanelWidth}">
+                <Grid RowDefinitions="Auto,*">
+                    <!-- Toggle bar -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="12,8">
+                        <ToggleButton IsChecked="{Binding ShowWebView}" Padding="8,4">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="Web" Width="14" Height="14"/>
+                                <TextBlock Text="Mod Page" FontSize="12"/>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <mi:MaterialIcon Kind="ThumbUp" Width="14" Height="14" Opacity="0.6"/>
-                                <TextBlock Text="{Binding Mod.EndorsementCount, StringFormat='{}{0:N0}'}"
-                                           FontSize="12" Opacity="0.7"/>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <!-- Updated -->
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <mi:MaterialIcon Kind="CalendarClock" Width="14" Height="14" Opacity="0.6"/>
-                            <TextBlock Text="{Binding UpdatedAt, StringFormat='Updated {0:yyyy-MM-dd}'}"
-                                       FontSize="12" Opacity="0.7"/>
-                        </StackPanel>
-
-                        <!-- Summary -->
-                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
-                                   FontSize="12" Opacity="0.8" MaxHeight="120"/>
-
-                        <!-- Open on NexusMods button -->
-                        <Button Command="{Binding $parent[UserControl].((vm:NexusSearchViewModel)DataContext).OpenModPageCommand}"
-                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                Margin="0,4,0,0" Padding="10,8">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16"/>
-                                <TextBlock Text="View on NexusMods"/>
-                            </StackPanel>
+                        </ToggleButton>
+                        <Button Command="{Binding OpenModPageCommand}" Padding="8,4"
+                                ToolTip.Tip="Open in browser">
+                            <mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/>
                         </Button>
                     </StackPanel>
-                </ScrollViewer>
+
+                    <!-- Summary view (when WebView is off) -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding !ShowWebView}">
+                        <StackPanel Spacing="10" Margin="12,0,12,12" DataContext="{Binding SelectedMod}">
+                            <!-- Thumbnail -->
+                            <Border CornerRadius="6" ClipToBounds="True" Height="160"
+                                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                <Image Source="{Binding Thumbnail}"
+                                       Stretch="UniformToFill"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Center"/>
+                            </Border>
+
+                            <!-- Mod name -->
+                            <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"
+                                       TextWrapping="Wrap"/>
+
+                            <!-- Author -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Account" Width="14" Height="14" Opacity="0.6"/>
+                                <TextBlock Text="{Binding Author}" Opacity="0.8"/>
+                            </StackPanel>
+
+                            <!-- Stats row -->
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="Download" Width="14" Height="14" Opacity="0.6"/>
+                                    <TextBlock Text="{Binding Mod.DownloadCount, StringFormat='{}{0:N0}'}"
+                                               FontSize="12" Opacity="0.7"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="ThumbUp" Width="14" Height="14" Opacity="0.6"/>
+                                    <TextBlock Text="{Binding Mod.EndorsementCount, StringFormat='{}{0:N0}'}"
+                                               FontSize="12" Opacity="0.7"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Updated -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="CalendarClock" Width="14" Height="14" Opacity="0.6"/>
+                                <TextBlock Text="{Binding UpdatedAt, StringFormat='Updated {0:yyyy-MM-dd}'}"
+                                           FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <!-- Summary -->
+                            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
+                                       FontSize="12" Opacity="0.8" MaxHeight="120"/>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Embedded WebView (when toggled on) -->
+                    <wv:WebView Grid.Row="1"
+                                Url="{Binding WebViewUrl}"
+                                IsVisible="{Binding ShowWebView}"/>
+                </Grid>
             </Border>
         </Grid>
 

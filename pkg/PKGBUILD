@@ -1,6 +1,6 @@
 # Maintainer: superphenotype
 pkgname=modular-git
-pkgver=r89.ga294ae8
+pkgver=r90.gecd63f9
 pkgrel=1
 pkgdesc="Extensible mod manager for downloading, organizing, and managing game modifications (CLI + GUI)"
 arch=('x86_64')
@@ -8,7 +8,8 @@ url="https://github.com/MasterGenotype/Modular-1"
 license=('unknown')
 depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
          'libx11' 'libxcb' 'libxkbcommon' 'libxrandr' 'libxcursor' 'libxi'
-         'fontconfig' 'freetype2' 'mesa')
+         'fontconfig' 'freetype2' 'mesa'
+         'webkit2gtk')
 makedepends=('dotnet-sdk-8.0' 'git')
 provides=('modular')
 conflicts=('modular')

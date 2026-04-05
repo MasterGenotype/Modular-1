@@ -64,6 +64,30 @@ public partial class NexusSearchViewModel : ViewModelBase
     [ObservableProperty]
     private ModDisplayModel? _selectedMod;
 
+    [ObservableProperty]
+    private bool _showWebView;
+
+    [ObservableProperty]
+    private Uri? _webViewUrl;
+
+    [ObservableProperty]
+    private double _detailPanelWidth = 280;
+
+    partial void OnSelectedModChanged(ModDisplayModel? value)
+    {
+        if (value?.Url != null && ShowWebView)
+            WebViewUrl = new Uri(value.Url);
+    }
+
+    partial void OnShowWebViewChanged(bool value)
+    {
+        DetailPanelWidth = value ? 600 : 280;
+        if (value && SelectedMod?.Url != null)
+            WebViewUrl = new Uri(SelectedMod.Url);
+        else if (!value)
+            WebViewUrl = null;
+    }
+
     // Designer constructor
     public NexusSearchViewModel()
     {

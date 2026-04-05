@@ -25,5 +25,10 @@ project.assets.json
 # Published builds
 publish/
 
+# Package build artifacts
+pkg/modular/
+pkg/pkg/
+pkg/src/
+
 # OS
 .DS_Store
