@@ -25,7 +25,7 @@ internal class NexusModsGraphQlClient
               description
               endorsements
               totalDownloads
-              tileImage { url thumbnailUrl }
+              tileImage { url }
               user { name }
               game { domainName }
               latestPublishedRevision {
@@ -293,14 +293,16 @@ internal class NexusModsGraphQlClient
     /// Searches for collections on NexusMods filtered by game domain.
     /// </summary>
     public async Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
-        string gameDomain, string? searchTerm = null, int count = 20, int offset = 0, CancellationToken ct = default)
+        int gameId, string gameDomain, string? searchTerm = null, int count = 20, int offset = 0, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(gameDomain))
-            throw new ArgumentException("GameDomain is required for collection search", nameof(gameDomain));
-
         var filter = new Dictionary<string, object>
         {
-            ["gameDomain"] = new[] { new { value = gameDomain } }
+            ["gameId"] = new[] { new { op = "EQUALS", value = gameId.ToString() } },
+            ["collectionStatus"] = new[]
+            {
+                new { op = "EQUALS", value = "listed" },
+                new { op = "EQUALS", value = "published" }
+            }
         };
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
@@ -308,7 +310,7 @@ internal class NexusModsGraphQlClient
             var wildcardTerm = searchTerm.Trim();
             if (!wildcardTerm.StartsWith('*')) wildcardTerm = "*" + wildcardTerm;
             if (!wildcardTerm.EndsWith('*')) wildcardTerm = wildcardTerm + "*";
-            filter["name"] = new[] { new { value = wildcardTerm, op = "WILDCARD" } };
+            filter["generalSearch"] = new[] { new { value = wildcardTerm, op = "WILDCARD" } };
         }
 
         var requestBody = new
@@ -317,8 +319,8 @@ internal class NexusModsGraphQlClient
             variables = new { filter, count, offset }
         };
 
-        _logger?.LogDebug("Searching NexusMods collections: game={Game}, count={Count}, offset={Offset}",
-            gameDomain, count, offset);
+        _logger?.LogDebug("Searching NexusMods collections: gameId={GameId}, game={Game}, count={Count}, offset={Offset}",
+            gameId, gameDomain, count, offset);
 
         var json = await _client.PostAsync(GraphQlUrl)
             .WithHeader("apikey", _apiKey)
@@ -326,10 +328,19 @@ internal class NexusModsGraphQlClient
             .WithJsonBody(requestBody)
             .AsStringAsync();
 
+        _logger?.LogDebug("GraphQL collection response: {Response}", json.Length > 1000 ? json[..1000] : json);
+
         var response = JsonSerializer.Deserialize<NexusGraphQlCollectionResponse>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
         });
+
+        if (response?.Errors is { Count: > 0 })
+        {
+            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
+            _logger?.LogWarning("GraphQL collection search errors: {Errors}", errorMessages);
+            throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
+        }
 
         var result = response?.Data?.Collections;
         if (result == null)

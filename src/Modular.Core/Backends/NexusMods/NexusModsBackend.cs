@@ -500,15 +500,42 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
     }
     private List<(string Domain, string Name)>? _gamesCache;
 
+    /// <summary>
+    /// Resolves a game domain name (e.g. "baldursgate3") to its numeric NexusMods game ID.
+    /// Results are cached per domain.
+    /// </summary>
+    public async Task<int> ResolveGameIdAsync(string gameDomain, CancellationToken ct = default)
+    {
+        if (_gameIdCache.TryGetValue(gameDomain, out var cached))
+            return cached;
+
+        var response = await _client.GetAsync($"v1/games/{gameDomain}.json")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .AsJsonAsync();
+
+        if (response.RootElement.TryGetProperty("id", out var idProp))
+        {
+            var id = idProp.GetInt32();
+            _gameIdCache[gameDomain] = id;
+            return id;
+        }
+
+        throw new InvalidOperationException($"Could not resolve game ID for domain '{gameDomain}'");
+    }
+    private readonly Dictionary<string, int> _gameIdCache = new(StringComparer.OrdinalIgnoreCase);
+
     // --- Collections ---
 
     /// <summary>
     /// Searches for NexusMods collections for a given game domain.
+    /// Resolves the domain name to a numeric game ID before querying the GraphQL API.
     /// </summary>
-    public Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
+    public async Task<(List<NexusCollectionInfo> Collections, int TotalCount)> SearchCollectionsAsync(
         string gameDomain, string? searchTerm = null, int count = 20, int offset = 0, CancellationToken ct = default)
     {
-        return _graphQlClient.SearchCollectionsAsync(gameDomain, searchTerm, count, offset, ct);
+        var gameId = await ResolveGameIdAsync(gameDomain, ct);
+        return await _graphQlClient.SearchCollectionsAsync(gameId, gameDomain, searchTerm, count, offset, ct);
     }
 
     /// <summary>
