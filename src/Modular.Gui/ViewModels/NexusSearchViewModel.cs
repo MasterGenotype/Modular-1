@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.NexusMods;
@@ -65,27 +66,132 @@ public partial class NexusSearchViewModel : ViewModelBase
     private ModDisplayModel? _selectedMod;
 
     [ObservableProperty]
-    private bool _showWebView;
-
-    [ObservableProperty]
-    private Uri? _webViewUrl;
-
-    [ObservableProperty]
     private double _detailPanelWidth = 280;
+
+    // --- Image gallery state ---
+
+    /// <summary>All image URLs for the currently selected mod.</summary>
+    private List<string> _imageUrls = [];
+
+    /// <summary>Cancellation source for any in-flight image load.</summary>
+    private CancellationTokenSource? _imageLoadCts;
+
+    [ObservableProperty]
+    private Bitmap? _currentImage;
+
+    [ObservableProperty]
+    private int _currentImageIndex;
+
+    [ObservableProperty]
+    private int _imageCount;
+
+    [ObservableProperty]
+    private bool _isLoadingImage;
+
+    [ObservableProperty]
+    private string _imageLabel = string.Empty;
+
+    public bool HasPreviousImage => CurrentImageIndex > 0;
+    public bool HasNextImage => CurrentImageIndex < ImageCount - 1;
 
     partial void OnSelectedModChanged(ModDisplayModel? value)
     {
-        if (value?.Url != null && ShowWebView)
-            WebViewUrl = new Uri(value.Url);
+        // Cancel any previous image load
+        _imageLoadCts?.Cancel();
+        _imageUrls = [];
+        CurrentImage = null;
+        CurrentImageIndex = 0;
+        ImageCount = 0;
+        ImageLabel = string.Empty;
+
+        if (value != null)
+            _ = LoadModImagesAsync(value);
     }
 
-    partial void OnShowWebViewChanged(bool value)
+    private async Task LoadModImagesAsync(ModDisplayModel mod)
     {
-        DetailPanelWidth = value ? 600 : 280;
-        if (value && SelectedMod?.Url != null)
-            WebViewUrl = new Uri(SelectedMod.Url);
-        else if (!value)
-            WebViewUrl = null;
+        if (_nexusBackend == null || _thumbnailService == null) return;
+        if (string.IsNullOrEmpty(mod.GameDomain) || string.IsNullOrEmpty(mod.ModId)) return;
+
+        _imageLoadCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _imageLoadCts = cts;
+
+        IsLoadingImage = true;
+        try
+        {
+            // Show thumbnail immediately while fetching the full gallery
+            if (mod.Thumbnail != null)
+                CurrentImage = mod.Thumbnail;
+
+            var urls = await _nexusBackend.GetModImagesAsync(mod.ModId, mod.GameDomain, cts.Token);
+            if (cts.Token.IsCancellationRequested) return;
+
+            // If no images from API, fall back to the thumbnail URL
+            if (urls.Count == 0 && mod.ThumbnailUrl != null)
+                urls = [mod.ThumbnailUrl];
+
+            _imageUrls = urls;
+            ImageCount = urls.Count;
+            CurrentImageIndex = 0;
+            UpdateImageNavProperties();
+
+            if (urls.Count > 0)
+                await LoadImageAtIndexAsync(0, cts.Token);
+        }
+        catch (OperationCanceledException) { /* Selection changed */ }
+        catch { /* Failed to load images */ }
+        finally { IsLoadingImage = false; }
+    }
+
+    private async Task LoadImageAtIndexAsync(int index, CancellationToken ct)
+    {
+        if (_thumbnailService == null || index < 0 || index >= _imageUrls.Count) return;
+
+        IsLoadingImage = true;
+        try
+        {
+            var url = _imageUrls[index];
+            var bitmap = await Task.Run(() => _thumbnailService.GetThumbnailAsync(url, ct), ct);
+            if (ct.IsCancellationRequested) return;
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                CurrentImage = bitmap;
+                CurrentImageIndex = index;
+                UpdateImageNavProperties();
+            });
+        }
+        catch (OperationCanceledException) { }
+        catch { /* Image load failed */ }
+        finally { IsLoadingImage = false; }
+    }
+
+    [RelayCommand]
+    private async Task NextImageAsync()
+    {
+        if (CurrentImageIndex >= _imageUrls.Count - 1) return;
+        _imageLoadCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _imageLoadCts = cts;
+        await LoadImageAtIndexAsync(CurrentImageIndex + 1, cts.Token);
+    }
+
+    [RelayCommand]
+    private async Task PreviousImageAsync()
+    {
+        if (CurrentImageIndex <= 0) return;
+        _imageLoadCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _imageLoadCts = cts;
+        await LoadImageAtIndexAsync(CurrentImageIndex - 1, cts.Token);
+    }
+
+    private void UpdateImageNavProperties()
+    {
+        OnPropertyChanged(nameof(HasPreviousImage));
+        OnPropertyChanged(nameof(HasNextImage));
+        ImageLabel = ImageCount > 0 ? $"{CurrentImageIndex + 1} / {ImageCount}" : string.Empty;
     }
 
     // Designer constructor

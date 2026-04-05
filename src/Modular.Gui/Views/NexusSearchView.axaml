@@ -5,7 +5,6 @@
              xmlns:vm="using:Modular.Gui.ViewModels"
              xmlns:models="using:Modular.Gui.Models"
              xmlns:mi="using:Material.Icons.Avalonia"
-             xmlns:wv="using:AvaloniaWebView"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="Modular.Gui.Views.NexusSearchView"
              x:DataType="vm:NexusSearchViewModel">
@@ -183,32 +182,59 @@
                     IsVisible="{Binding SelectedMod, Converter={x:Static ObjectConverters.IsNotNull}}"
                     Width="{Binding DetailPanelWidth}">
                 <Grid RowDefinitions="Auto,*">
-                    <!-- Toggle bar -->
+                    <!-- Header bar -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="12,8">
-                        <ToggleButton IsChecked="{Binding ShowWebView}" Padding="8,4">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <mi:MaterialIcon Kind="Web" Width="14" Height="14"/>
-                                <TextBlock Text="Mod Page" FontSize="12"/>
-                            </StackPanel>
-                        </ToggleButton>
                         <Button Command="{Binding OpenModPageCommand}" Padding="8,4"
-                                ToolTip.Tip="Open in browser">
-                            <mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/>
+                                ToolTip.Tip="Open mod page in browser">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/>
+                                <TextBlock Text="Open in Browser" FontSize="12"/>
+                            </StackPanel>
                         </Button>
                     </StackPanel>
 
-                    <!-- Summary view (when WebView is off) -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                                  IsVisible="{Binding !ShowWebView}">
-                        <StackPanel Spacing="10" Margin="12,0,12,12" DataContext="{Binding SelectedMod}">
-                            <!-- Thumbnail -->
-                            <Border CornerRadius="6" ClipToBounds="True" Height="160"
+                    <!-- Detail panel -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="10" Margin="12,0,12,12">
+                            <!-- Image gallery -->
+                            <Border CornerRadius="6" ClipToBounds="True" Height="200"
                                     Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-                                <Image Source="{Binding Thumbnail}"
-                                       Stretch="UniformToFill"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"/>
+                                <Grid>
+                                    <!-- Current image -->
+                                    <Image Source="{Binding CurrentImage}"
+                                           Stretch="Uniform"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center"/>
+
+                                    <!-- Loading spinner -->
+                                    <ProgressBar IsIndeterminate="True" Width="80"
+                                                 IsVisible="{Binding IsLoadingImage}"
+                                                 VerticalAlignment="Center" HorizontalAlignment="Center"/>
+
+                                    <!-- Navigation overlay -->
+                                    <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Bottom"
+                                          Margin="4,0,4,4">
+                                        <Button Grid.Column="0" Command="{Binding PreviousImageCommand}"
+                                                IsEnabled="{Binding HasPreviousImage}"
+                                                Padding="6,3" Opacity="0.85"
+                                                ToolTip.Tip="Previous image">
+                                            <mi:MaterialIcon Kind="ChevronLeft" Width="16" Height="16"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1" Text="{Binding ImageLabel}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   FontSize="11" Opacity="0.7"/>
+                                        <Button Grid.Column="2" Command="{Binding NextImageCommand}"
+                                                IsEnabled="{Binding HasNextImage}"
+                                                Padding="6,3" Opacity="0.85"
+                                                ToolTip.Tip="Next image">
+                                            <mi:MaterialIcon Kind="ChevronRight" Width="16" Height="16"/>
+                                        </Button>
+                                    </Grid>
+                                </Grid>
                             </Border>
+
+                            <!-- Mod details (bound to SelectedMod) -->
+                            <StackPanel Spacing="10" DataContext="{Binding SelectedMod}">
 
                             <!-- Mod name -->
                             <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"
@@ -241,16 +267,27 @@
                                            FontSize="12" Opacity="0.7"/>
                             </StackPanel>
 
-                            <!-- Summary -->
+                            <!-- Game domain -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="GamepadVariant" Width="14" Height="14" Opacity="0.6"/>
+                                <TextBlock Text="{Binding GameDomain}" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <!-- Mod ID -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Identifier" Width="14" Height="14" Opacity="0.6"/>
+                                <TextBlock FontSize="12" Opacity="0.7">
+                                    <Run Text="Mod ID: "/>
+                                    <Run Text="{Binding ModId}"/>
+                                </TextBlock>
+                            </StackPanel>
+
+                            <!-- Summary / Description -->
                             <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"
-                                       FontSize="12" Opacity="0.8" MaxHeight="120"/>
+                                       FontSize="12" Opacity="0.8"/>
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
-
-                    <!-- Embedded WebView (when toggled on) -->
-                    <wv:WebView Grid.Row="1"
-                                Url="{Binding WebViewUrl}"
-                                IsVisible="{Binding ShowWebView}"/>
                 </Grid>
             </Border>
         </Grid>

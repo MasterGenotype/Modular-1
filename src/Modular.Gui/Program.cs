@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.WebView.Desktop;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Backends;
@@ -88,8 +87,7 @@ sealed class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
-            .LogToTrace()
-            .UseDesktopWebView();
+            .LogToTrace();
 
     private static IServiceProvider ConfigureServices()
     {

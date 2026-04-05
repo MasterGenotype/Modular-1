@@ -527,6 +527,90 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
         return _graphQlClient.SearchAsync(query, ct);
     }
 
+    /// <summary>
+    /// Fetches gallery image URLs for a specific mod via the v1 API.
+    /// Returns the main picture URL plus any additional images from the mod detail.
+    /// </summary>
+    public async Task<List<string>> GetModImagesAsync(string modId, string gameDomain, CancellationToken ct = default)
+    {
+        var images = new List<string>();
+        try
+        {
+            var response = await _client.GetAsync($"v1/games/{gameDomain}/mods/{modId}.json")
+                .WithHeader("apikey", _settings.NexusApiKey)
+                .WithHeader("accept", "application/json")
+                .AsJsonAsync();
+
+            var root = response.RootElement;
+
+            // Main picture (full-size version)
+            if (root.TryGetProperty("picture_url", out var picProp))
+            {
+                var picUrl = picProp.GetString();
+                if (!string.IsNullOrEmpty(picUrl))
+                    images.Add(picUrl);
+            }
+
+            // The v1 mod detail description often contains embedded image URLs.
+            // Extract them as additional gallery images.
+            if (root.TryGetProperty("description", out var descProp))
+            {
+                var description = descProp.GetString() ?? string.Empty;
+                foreach (var url in ExtractImageUrls(description))
+                {
+                    if (!images.Contains(url))
+                        images.Add(url);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to fetch images for mod {ModId}", modId);
+        }
+        return images;
+    }
+
+    /// <summary>
+    /// Extracts image URLs from NexusMods BBCode/HTML mod descriptions.
+    /// Matches [img]...[/img] tags and common image URL patterns.
+    /// </summary>
+    private static IEnumerable<string> ExtractImageUrls(string description)
+    {
+        if (string.IsNullOrEmpty(description)) yield break;
+
+        // Match [img]URL[/img] BBCode tags (common in NexusMods descriptions)
+        var bbcodeRegex = new System.Text.RegularExpressions.Regex(
+            @"\[img\](https?://[^\[\]\s]+?)\[/img\]",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match match in bbcodeRegex.Matches(description))
+        {
+            var url = match.Groups[1].Value.Trim();
+            if (IsImageUrl(url))
+                yield return url;
+        }
+
+        // Match <img src="..."> HTML tags
+        var htmlRegex = new System.Text.RegularExpressions.Regex(
+            @"<img[^>]+src=""(https?://[^""]+)""",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match match in htmlRegex.Matches(description))
+        {
+            var url = match.Groups[1].Value.Trim();
+            if (IsImageUrl(url))
+                yield return url;
+        }
+    }
+
+    private static bool IsImageUrl(string url)
+    {
+        return url.Contains("staticdelivery.nexusmods.com", StringComparison.OrdinalIgnoreCase) ||
+               url.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               url.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+               url.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+               url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+               url.EndsWith(".gif", StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- Discovery endpoints (v1 API) ---
 
     /// <summary>

@@ -84,4 +84,10 @@ public class BackendMod
     /// Whether this mod contains adult content.
     /// </summary>
     public bool IsAdult { get; set; }
+
+    /// <summary>
+    /// URLs to gallery images for the mod, if available.
+    /// The first image is typically the main/header image.
+    /// </summary>
+    public List<string>? ImageUrls { get; set; }
 }
