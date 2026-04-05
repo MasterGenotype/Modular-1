@@ -144,6 +144,9 @@ internal record NexusGraphQlCollection
     [JsonPropertyName("totalDownloads")]
     public int TotalDownloads { get; init; }
 
+    [JsonPropertyName("tileImage")]
+    public NexusGraphQlTileImage? TileImage { get; init; }
+
     [JsonPropertyName("user")]
     public NexusGraphQlCollectionUser? User { get; init; }
 
@@ -152,6 +155,15 @@ internal record NexusGraphQlCollection
 
     [JsonPropertyName("latestPublishedRevision")]
     public NexusGraphQlCollectionRevision? LatestRevision { get; init; }
+}
+
+internal record NexusGraphQlTileImage
+{
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+
+    [JsonPropertyName("thumbnailUrl")]
+    public string? ThumbnailUrl { get; init; }
 }
 
 internal record NexusGraphQlCollectionUser
@@ -269,6 +281,7 @@ public record NexusCollectionInfo
     public int TotalDownloads { get; init; }
     public int ModCount { get; init; }
     public int RevisionNumber { get; init; }
+    public string? TileImageUrl { get; init; }
     public string Url => $"https://next.nexusmods.com/{GameDomain}/collections/{Slug}";
 }
 

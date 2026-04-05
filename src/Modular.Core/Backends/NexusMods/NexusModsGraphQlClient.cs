@@ -25,6 +25,7 @@ internal class NexusModsGraphQlClient
               description
               endorsements
               totalDownloads
+              tileImage { url thumbnailUrl }
               user { name }
               game { domainName }
               latestPublishedRevision {
@@ -348,7 +349,8 @@ internal class NexusModsGraphQlClient
             Endorsements = n.Endorsements,
             TotalDownloads = n.TotalDownloads,
             ModCount = n.LatestRevision?.ModCount ?? 0,
-            RevisionNumber = n.LatestRevision?.RevisionNumber ?? 0
+            RevisionNumber = n.LatestRevision?.RevisionNumber ?? 0,
+            TileImageUrl = n.TileImage?.ThumbnailUrl ?? n.TileImage?.Url
         }).ToList();
 
         return (collections, result.TotalCount);

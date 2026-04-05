@@ -185,9 +185,24 @@
                           AutoGenerateColumns="False"
                           CanUserResizeColumns="True"
                           GridLinesVisibility="Horizontal"
+                          RowHeight="48"
                           IsReadOnly="True"
                           SelectionMode="Single">
                     <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="52">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:NexusCollectionDisplayModel">
+                                    <Border Width="44" Height="44" Margin="2"
+                                            CornerRadius="4" ClipToBounds="True"
+                                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                        <Image Source="{Binding Thumbnail}"
+                                               Stretch="UniformToFill"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"/>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
                         <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="130"/>
                         <DataGridTextColumn Header="Summary" Binding="{Binding Summary}" Width="2*"/>

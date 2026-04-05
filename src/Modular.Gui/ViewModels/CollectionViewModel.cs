@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.NexusMods;
@@ -24,6 +25,7 @@ public partial class CollectionViewModel : ViewModelBase
     private readonly NexusModsBackend? _backend;
     private readonly IDialogService? _dialogService;
     private readonly AppSettings? _settings;
+    private readonly ThumbnailService? _thumbnailService;
 
     [ObservableProperty]
     private ObservableCollection<ModCollection> _collections = new();
@@ -96,10 +98,12 @@ public partial class CollectionViewModel : ViewModelBase
     public CollectionViewModel(
         NexusModsBackend backend,
         IDialogService dialogService,
+        ThumbnailService thumbnailService,
         AppSettings? settings = null)
     {
         _backend = backend;
         _dialogService = dialogService;
+        _thumbnailService = thumbnailService;
         _settings = settings;
         _repository = new ModCollectionRepository();
         _service = new ModCollectionService(_repository, backend);
@@ -321,6 +325,8 @@ public partial class CollectionViewModel : ViewModelBase
             foreach (var c in _allOnlineCollections)
                 OnlineCollections.Add(c);
 
+            _ = LoadCollectionThumbnailsAsync(_allOnlineCollections);
+
             OnlineTotalResults = totalCount;
             var displayCount = OnlineCollections.Count;
             SearchStatusMessage = displayCount == 0
@@ -334,6 +340,30 @@ public partial class CollectionViewModel : ViewModelBase
         finally
         {
             IsSearching = false;
+        }
+    }
+
+    private async Task LoadCollectionThumbnailsAsync(List<NexusCollectionDisplayModel> models)
+    {
+        if (_thumbnailService == null) return;
+
+        foreach (var m in models.Where(m => m.TileImageUrl != null))
+        {
+            try
+            {
+                var bitmap = await Task.Run(() => _thumbnailService.GetThumbnailAsync(m.TileImageUrl));
+                if (bitmap != null)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        m.Thumbnail = bitmap;
+                    });
+                }
+            }
+            catch
+            {
+                // Thumbnail load failed — leave as placeholder
+            }
         }
     }
 
@@ -426,8 +456,14 @@ public partial class CollectionViewModel : ViewModelBase
 /// <summary>
 /// Display model for NexusMods collections in the search results.
 /// </summary>
-public class NexusCollectionDisplayModel
+public partial class NexusCollectionDisplayModel : ObservableObject
 {
+    [ObservableProperty]
+    private Bitmap? _thumbnail;
+
+    [ObservableProperty]
+    private bool _isLoadingThumbnail;
+
     public NexusCollectionDisplayModel(NexusCollectionInfo info)
     {
         Info = info;
@@ -442,5 +478,6 @@ public class NexusCollectionDisplayModel
     public int ModCount => Info.ModCount;
     public int Endorsements => Info.Endorsements;
     public int TotalDownloads => Info.TotalDownloads;
+    public string? TileImageUrl => Info.TileImageUrl;
     public string Url => Info.Url;
 }

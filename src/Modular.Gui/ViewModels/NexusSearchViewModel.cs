@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Utilities;
 using Modular.Gui.Models;
+using Modular.Gui.Services;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
 
@@ -15,6 +16,7 @@ namespace Modular.Gui.ViewModels;
 public partial class NexusSearchViewModel : ViewModelBase
 {
     private readonly NexusModsBackend? _nexusBackend;
+    private readonly ThumbnailService? _thumbnailService;
     private System.Threading.Timer? _debounceTimer;
 
     [ObservableProperty]
@@ -59,6 +61,9 @@ public partial class NexusSearchViewModel : ViewModelBase
     [ObservableProperty]
     private int _selectedCount;
 
+    [ObservableProperty]
+    private ModDisplayModel? _selectedMod;
+
     // Designer constructor
     public NexusSearchViewModel()
     {
@@ -75,9 +80,10 @@ public partial class NexusSearchViewModel : ViewModelBase
     }
 
     // DI constructor
-    public NexusSearchViewModel(NexusModsBackend nexusBackend)
+    public NexusSearchViewModel(NexusModsBackend nexusBackend, ThumbnailService thumbnailService)
     {
         _nexusBackend = nexusBackend;
+        _thumbnailService = thumbnailService;
         _ = LoadAvailableGamesAsync();
     }
 
@@ -172,6 +178,7 @@ public partial class NexusSearchViewModel : ViewModelBase
             ? $"Loading mods for {domainLabel}..."
             : $"Searching {domainLabel} for \"{SearchText}\"...";
 
+        List<ModDisplayModel> modelsToLoad = [];
         try
         {
             var result = await _nexusBackend.SearchModsAsync(new ModSearchQuery
@@ -200,6 +207,8 @@ public partial class NexusSearchViewModel : ViewModelBase
                 SearchResults.Add(display);
             }
 
+            modelsToLoad = SearchResults.ToList();
+
             TotalResults = result.TotalCount;
             HasNextPage = result.HasNextPage;
             HasPreviousPage = CurrentPage > 1;
@@ -207,6 +216,10 @@ public partial class NexusSearchViewModel : ViewModelBase
         }
         catch (Exception ex) { StatusMessage = $"Search failed: {ex.Message}"; }
         finally { IsLoading = false; }
+
+        // Load thumbnails after IsLoading=false so the DataGrid is visible
+        if (modelsToLoad.Count > 0)
+            await LoadThumbnailsAsync(modelsToLoad);
     }
 
     [RelayCommand]
@@ -249,5 +262,49 @@ public partial class NexusSearchViewModel : ViewModelBase
     public IEnumerable<ModDisplayModel> GetSelectedMods()
     {
         return SearchResults.Where(m => m.IsSelected);
+    }
+
+    [RelayCommand]
+    private void OpenModPage()
+    {
+        if (SelectedMod?.Url == null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = SelectedMod.Url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Failed to open browser
+        }
+    }
+
+    private async Task LoadThumbnailsAsync(List<ModDisplayModel> models)
+    {
+        if (_thumbnailService == null) return;
+
+        foreach (var m in models.Where(m => m.ThumbnailUrl != null))
+        {
+            // Load each thumbnail sequentially to avoid overwhelming the UI thread
+            // with concurrent dispatches. ThumbnailService handles its own concurrency.
+            try
+            {
+                var bitmap = await Task.Run(() => _thumbnailService.GetThumbnailAsync(m.ThumbnailUrl));
+                if (bitmap != null)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        m.Thumbnail = bitmap;
+                    });
+                }
+            }
+            catch
+            {
+                // Thumbnail load failed — leave as placeholder
+            }
+        }
     }
 }
