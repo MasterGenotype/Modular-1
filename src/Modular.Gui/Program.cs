@@ -19,6 +19,7 @@ using Modular.Core.Telemetry;
 using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Modular.Gui;
@@ -33,9 +34,19 @@ sealed class Program
     private static ModMetadataCache? _metadataCache;
     private static DownloadHistoryService? _downloadHistory;
 
+    private const string MutexName = "Global\\Modular_ModManager_SingleInstance";
+
     [STAThread]
     public static void Main(string[] args)
     {
+        using var mutex = new Mutex(initiallyOwned: false, MutexName);
+
+        if (!mutex.WaitOne(millisecondsTimeout: 0, exitContext: false))
+        {
+            Console.Error.WriteLine("Modular is already running.");
+            return;
+        }
+
         try
         {
             // Run async initialization on a background thread to avoid deadlock issues
@@ -51,6 +62,10 @@ sealed class Program
         {
             Console.Error.WriteLine($"Fatal error: {ex}");
             throw;
+        }
+        finally
+        {
+            mutex.ReleaseMutex();
         }
     }
 
