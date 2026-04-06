@@ -6,6 +6,7 @@ using Modular.Core.Backends.NexusMods;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
 
+using Modular.Core.Utilities;
 using Modular.Gui.Services;
 using Modular.Sdk.Collections;
 
@@ -71,8 +72,19 @@ public partial class CollectionViewModel : ViewModelBase
     [ObservableProperty]
     private string _searchStatusMessage = "Enter a game domain to browse NexusMods collections";
 
+    private const int CollectionPageSize = 20;
+
+    [ObservableProperty]
+    private int _currentSearchPage = 1;
+
+    [ObservableProperty]
+    private bool _hasNextCollectionPage;
+
+    [ObservableProperty]
+    private bool _hasPreviousCollectionPage;
+
     /// <summary>
-    /// All fetched results before client-side filtering.
+    /// Current page results for thumbnail loading.
     /// </summary>
     private List<NexusCollectionDisplayModel> _allOnlineCollections = [];
 
@@ -291,6 +303,28 @@ public partial class CollectionViewModel : ViewModelBase
     [RelayCommand]
     private async Task SearchOnlineCollectionsAsync()
     {
+        CurrentSearchPage = 1;
+        await FetchCollectionPageAsync();
+    }
+
+    [RelayCommand]
+    private async Task NextCollectionPageAsync()
+    {
+        if (!HasNextCollectionPage) return;
+        CurrentSearchPage++;
+        await FetchCollectionPageAsync();
+    }
+
+    [RelayCommand]
+    private async Task PreviousCollectionPageAsync()
+    {
+        if (!HasPreviousCollectionPage) return;
+        CurrentSearchPage--;
+        await FetchCollectionPageAsync();
+    }
+
+    private async Task FetchCollectionPageAsync()
+    {
         if (_backend == null)
         {
             SearchStatusMessage = "NexusMods backend not available";
@@ -309,17 +343,24 @@ public partial class CollectionViewModel : ViewModelBase
         try
         {
             var gameDomain = SearchGameDomain.Trim();
+            var searchTerm = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim();
+            var offset = (CurrentSearchPage - 1) * CollectionPageSize;
 
-            // Always fetch all collections for the game domain (no server-side name filter)
-            // and sort client-side by popularity (endorsements + downloads)
             var (collections, totalCount) = await _backend.SearchCollectionsAsync(
-                gameDomain, searchTerm: null, count: 50);
+                gameDomain, searchTerm: searchTerm, count: CollectionPageSize, offset: offset);
 
-            _allOnlineCollections = collections
-                .Select(c => new NexusCollectionDisplayModel(c))
-                .OrderByDescending(c => c.Endorsements)
-                .ThenByDescending(c => c.TotalDownloads)
-                .ToList();
+            // Re-rank by fuzzy match score when search text is present,
+            // otherwise sort by popularity (endorsements + downloads)
+            var models = collections.Select(c => new NexusCollectionDisplayModel(c));
+            _allOnlineCollections = !string.IsNullOrWhiteSpace(SearchText)
+                ? models
+                    .OrderByDescending(c => FuzzyMatcher.Score(SearchText, c.Name))
+                    .ThenByDescending(c => c.Endorsements + c.TotalDownloads)
+                    .ToList()
+                : models
+                    .OrderByDescending(c => c.Endorsements)
+                    .ThenByDescending(c => c.TotalDownloads)
+                    .ToList();
 
             OnlineCollections.Clear();
             foreach (var c in _allOnlineCollections)
@@ -328,10 +369,14 @@ public partial class CollectionViewModel : ViewModelBase
             _ = LoadCollectionThumbnailsAsync(_allOnlineCollections);
 
             OnlineTotalResults = totalCount;
+            HasNextCollectionPage = offset + CollectionPageSize < totalCount;
+            HasPreviousCollectionPage = CurrentSearchPage > 1;
+
             var displayCount = OnlineCollections.Count;
+            var pageInfo = totalCount > CollectionPageSize ? $" (page {CurrentSearchPage})" : "";
             SearchStatusMessage = displayCount == 0
                 ? $"No collections found for \"{SearchGameDomain}\""
-                : $"Found {displayCount} of {totalCount} collection(s) for \"{SearchGameDomain}\"";
+                : $"Found {totalCount} collection(s){pageInfo}";
         }
         catch (Exception ex)
         {
