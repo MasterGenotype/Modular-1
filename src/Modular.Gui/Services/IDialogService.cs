@@ -59,6 +59,12 @@ public interface IDialogService
     Task<List<string>> ShowFileBrowserAsync(string? title = null, bool allowMultiple = false, string? initialDirectory = null);
 
     /// <summary>
+    /// Shows a list picker dialog.
+    /// </summary>
+    /// <returns>The selected index, or -1 if cancelled.</returns>
+    Task<int> ShowListPickerAsync(string title, string message, List<string> items);
+
+    /// <summary>
     /// Shows a progress dialog for long-running operations.
     /// </summary>
     /// <param name="title">Dialog title.</param>

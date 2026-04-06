@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Modular.Core.Collections;
+using Modular.Core.Configuration;
 using Modular.Core.GameDetection;
 using Modular.Core.Installers;
 using Modular.Gui.Services;
+using Modular.Sdk.Collections;
 using Modular.Sdk.Installers;
 
 namespace Modular.Gui.ViewModels;
@@ -13,6 +16,7 @@ public partial class InstallViewModel : ViewModelBase
     private readonly ModInstallationService? _installService;
     private readonly SteamGameScanner? _scanner;
     private readonly IDialogService? _dialogService;
+    private readonly AppSettings? _settings;
 
     [ObservableProperty]
     private ObservableCollection<string> _archivePaths = new();
@@ -71,11 +75,13 @@ public partial class InstallViewModel : ViewModelBase
     public InstallViewModel(
         ModInstallationService installService,
         SteamGameScanner scanner,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        AppSettings settings)
     {
         _installService = installService;
         _scanner = scanner;
         _dialogService = dialogService;
+        _settings = settings;
     }
 
     partial void OnSelectedGameChanged(GameDisplayModel? value)
@@ -147,6 +153,87 @@ public partial class InstallViewModel : ViewModelBase
     private void ClearArchives()
     {
         ArchivePaths.Clear();
+    }
+
+    [RelayCommand]
+    private async Task InstallCollectionAsync()
+    {
+        if (_dialogService == null) return;
+
+        var repository = new ModCollectionRepository();
+        var collections = await repository.ListAsync();
+
+        if (collections.Count == 0)
+        {
+            StatusMessage = "No collections found. Create or download collections in the Collections tab first.";
+            return;
+        }
+
+        var modsDir = _settings?.ModsDirectory;
+
+        // Build display items and find archives for each collection
+        var displayItems = new List<string>();
+        var collectionArchives = new List<List<string>>();
+
+        foreach (var collection in collections)
+        {
+            var archives = FindCollectionArchives(collection, modsDir);
+            collectionArchives.Add(archives);
+            var archiveInfo = archives.Count > 0
+                ? $"{archives.Count} file(s) on disk"
+                : "no files downloaded";
+            displayItems.Add(
+                $"{collection.Name}  [{collection.GameId}]  \u2014  {collection.Entries.Count} mod(s), {archiveInfo}");
+        }
+
+        var selectedIndex = await _dialogService.ShowListPickerAsync(
+            "Install Collection",
+            "Select a collection to load its downloaded archives:",
+            displayItems);
+
+        if (selectedIndex < 0 || selectedIndex >= collections.Count) return;
+
+        var selected = collections[selectedIndex];
+        var archivesToAdd = collectionArchives[selectedIndex];
+
+        if (archivesToAdd.Count == 0)
+        {
+            StatusMessage = $"No downloaded files found for '{selected.Name}'. Download the collection first.";
+            return;
+        }
+
+        var added = 0;
+        foreach (var archive in archivesToAdd)
+        {
+            if (!ArchivePaths.Contains(archive))
+            {
+                ArchivePaths.Add(archive);
+                added++;
+            }
+        }
+
+        StatusMessage = $"Loaded {added} archive(s) from collection '{selected.Name}'";
+    }
+
+    private static List<string> FindCollectionArchives(ModCollection collection, string? modsDir)
+    {
+        var archives = new List<string>();
+        if (string.IsNullOrEmpty(modsDir) || !Directory.Exists(modsDir)) return archives;
+
+        foreach (var entry in collection.Entries)
+        {
+            var modDir = Path.Combine(modsDir, collection.GameId, entry.ModId);
+            if (!Directory.Exists(modDir)) continue;
+
+            // Include all files — downloaded collection files often lack archive
+            // extensions because entry.FileName is a display name, not a filename
+            foreach (var file in Directory.EnumerateFiles(modDir, "*", SearchOption.AllDirectories))
+            {
+                archives.Add(file);
+            }
+        }
+
+        return archives;
     }
 
     [RelayCommand]

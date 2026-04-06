@@ -281,6 +281,74 @@ public class DialogService : IDialogService
         return result;
     }
 
+    public async Task<int> ShowListPickerAsync(string title, string message, List<string> items)
+    {
+        var window = GetMainWindow();
+        if (window == null) return -1;
+
+        var result = -1;
+        var listBox = new ListBox
+        {
+            ItemsSource = items,
+            MinHeight = 150,
+            MaxHeight = 350,
+            SelectedIndex = items.Count > 0 ? 0 : -1
+        };
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 500,
+            Height = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 15,
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    listBox,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        Spacing = 10,
+                        Children =
+                        {
+                            new Button { Content = "Select", MinWidth = 80 },
+                            new Button { Content = "Cancel", MinWidth = 80 }
+                        }
+                    }
+                }
+            }
+        };
+
+        if (dialog.Content is StackPanel panel && panel.Children[2] is StackPanel btnPanel)
+        {
+            if (btnPanel.Children[0] is Button selectBtn)
+            {
+                selectBtn.Click += (_, _) => { result = listBox.SelectedIndex; dialog.Close(); };
+            }
+            if (btnPanel.Children[1] is Button cancelBtn)
+            {
+                cancelBtn.Click += (_, _) => { result = -1; dialog.Close(); };
+            }
+        }
+
+        listBox.DoubleTapped += (_, _) =>
+        {
+            if (listBox.SelectedIndex >= 0)
+            {
+                result = listBox.SelectedIndex;
+                dialog.Close();
+            }
+        };
+
+        await dialog.ShowDialog(window);
+        return result;
+    }
+
     public Task<IProgressDialog> ShowProgressAsync(string title, string message, bool cancellable = true)
     {
         var window = GetMainWindow();
