@@ -202,15 +202,17 @@ public class CyberpunkModInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var destPath = Path.Combine(plan.TargetDirectory, operation.DestinationPath);
-                destPath = Path.GetFullPath(destPath);
-
-                // Safety: ensure we never write outside the target directory
-                if (!destPath.StartsWith(Path.GetFullPath(plan.TargetDirectory)))
+                string destPath;
+                try
+                {
+                    destPath = PathSanitizer.SanitizeEntryPath(
+                        operation.DestinationPath, plan.TargetDirectory);
+                }
+                catch (InvalidOperationException ex)
                 {
                     _logger?.LogWarning(
-                        "Skipping path traversal attempt: {Source} -> {Dest}",
-                        operation.SourcePath, destPath);
+                        "Skipping unsafe entry: {Source} — {Reason}",
+                        operation.SourcePath, ex.Message);
                     continue;
                 }
 
