@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
+using Modular.Core.Installers.Cyberpunk;
 using Modular.Core.Installers.Steam;
 using Modular.Core.Telemetry;
 using Modular.Sdk.Archives;
@@ -33,6 +34,7 @@ public class InstallerManager
         RegisterInstaller(new BepInExInstaller(factory));
         RegisterInstaller(new SteamModInstaller(factory));
         RegisterInstaller(new UnrealPakInstaller(factory));
+        RegisterInstaller(new CyberpunkModInstaller(factory));
     }
 
     /// <summary>
