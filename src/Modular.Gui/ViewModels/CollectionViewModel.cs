@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
-
+using Modular.Core.Database;
 using Modular.Core.Utilities;
 using Modular.Gui.Services;
 using Modular.Sdk.Collections;
@@ -111,14 +111,15 @@ public partial class CollectionViewModel : ViewModelBase
         NexusModsBackend backend,
         IDialogService dialogService,
         ThumbnailService thumbnailService,
-        AppSettings? settings = null)
+        AppSettings? settings = null,
+        ModMetadataCache? metadataCache = null)
     {
         _backend = backend;
         _dialogService = dialogService;
         _thumbnailService = thumbnailService;
         _settings = settings;
         _repository = new ModCollectionRepository();
-        _service = new ModCollectionService(_repository, backend);
+        _service = new ModCollectionService(_repository, backend, metadataCache: metadataCache);
         _ = RefreshCollectionsAsync();
     }
 

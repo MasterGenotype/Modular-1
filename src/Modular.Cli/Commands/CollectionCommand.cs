@@ -358,7 +358,7 @@ public sealed class CollectionVerifyCommand : AsyncCommand<CollectionVerifyComma
             var registry = services.CreateBackendRegistry();
             var backend = registry.Get("nexusmods")!;
             var repo = new ModCollectionRepository();
-            var service = new ModCollectionService(repo, backend);
+            var service = new ModCollectionService(repo, backend, metadataCache: services.MetadataCache);
 
             var (collection, _) = await repo.FindByNameAsync(settings.Name);
             if (collection == null)

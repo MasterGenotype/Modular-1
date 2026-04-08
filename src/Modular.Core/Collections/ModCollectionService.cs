@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Modular.Core.Database;
 using Modular.Core.Utilities;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
@@ -14,16 +15,19 @@ public class ModCollectionService
 {
     private readonly ModCollectionRepository _repository;
     private readonly IModBackend _backend;
+    private readonly ModMetadataCache? _metadataCache;
     private readonly ILogger<ModCollectionService>? _logger;
 
     public ModCollectionService(
         ModCollectionRepository repository,
         IModBackend backend,
-        ILogger<ModCollectionService>? logger = null)
+        ILogger<ModCollectionService>? logger = null,
+        ModMetadataCache? metadataCache = null)
     {
         _repository = repository;
         _backend = backend;
         _logger = logger;
+        _metadataCache = metadataCache;
     }
 
     public async Task<ModCollection> CreateAsync(string name, string gameId, CancellationToken ct = default)
@@ -185,19 +189,46 @@ public class ModCollectionService
     {
         var results = new List<(ModCollectionEntry entry, bool exists, bool md5Match)>();
 
+        // Build a modId → directory path map that includes renamed/categorized directories
+        var modDirMap = BuildModDirectoryMap(collection.GameId, outputDirectory);
+
         foreach (var entry in collection.Entries)
         {
             ct.ThrowIfCancellationRequested();
             var fileName = entry.FileName ?? $"{entry.ModId}_{entry.FileId}";
-            var filePath = Path.Combine(outputDirectory, collection.GameId, entry.ModId,
-                FileUtils.SanitizeFilename(fileName));
+            var sanitizedFileName = FileUtils.SanitizeFilename(fileName);
 
-            var exists = File.Exists(filePath);
+            // Try metadata-aware path first, then fall back to numeric path
+            string? filePath = null;
+            if (modDirMap.TryGetValue(entry.ModId, out var modDir))
+                filePath = Path.Combine(modDir, sanitizedFileName);
+
+            var exists = filePath != null && File.Exists(filePath);
+
+            // Fallback: original numeric path
+            if (!exists)
+            {
+                filePath = Path.Combine(outputDirectory, collection.GameId, entry.ModId, sanitizedFileName);
+                exists = File.Exists(filePath);
+            }
+
+            // Last resort: search the resolved directory for any file matching the name
+            if (!exists && modDirMap.TryGetValue(entry.ModId, out var resolvedDir) && Directory.Exists(resolvedDir))
+            {
+                var match = Directory.EnumerateFiles(resolvedDir, sanitizedFileName, SearchOption.AllDirectories)
+                    .FirstOrDefault();
+                if (match != null)
+                {
+                    filePath = match;
+                    exists = true;
+                }
+            }
+
             var md5Match = false;
 
             if (exists && !string.IsNullOrEmpty(entry.Md5))
             {
-                var actualMd5 = await Md5Calculator.CalculateMd5Async(filePath, ct);
+                var actualMd5 = await Md5Calculator.CalculateMd5Async(filePath!, ct);
                 md5Match = actualMd5.Equals(entry.Md5, StringComparison.OrdinalIgnoreCase);
             }
             else if (exists)
@@ -209,6 +240,28 @@ public class ModCollectionService
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Builds a map of modId (string) → directory path, covering both numeric
+    /// directories and renamed/categorized directories via the metadata cache.
+    /// </summary>
+    private Dictionary<string, string> BuildModDirectoryMap(string gameId, string outputDirectory)
+    {
+        var map = new Dictionary<string, string>();
+        var gameDomainPath = Path.Combine(outputDirectory, gameId);
+        if (!Directory.Exists(gameDomainPath)) return map;
+
+        ModMetadata? MetadataLookup(string dirName) =>
+            _metadataCache?.FindModByDirectoryName(gameId, dirName);
+
+        foreach (var (modId, dirPath, _) in FileUtils.GetAllModDirectoriesWithMetadata(
+            gameDomainPath, MetadataLookup))
+        {
+            map[modId.ToString()] = dirPath;
+        }
+
+        return map;
     }
 
     public async Task ExportAsync(ModCollection collection, string outputPath, CancellationToken ct = default)

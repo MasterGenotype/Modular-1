@@ -3,8 +3,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
+using Modular.Core.Database;
 using Modular.Core.GameDetection;
 using Modular.Core.Installers;
+using Modular.Core.Utilities;
 using Modular.Gui.Services;
 using Modular.Sdk.Collections;
 using Modular.Sdk.Installers;
@@ -17,6 +19,7 @@ public partial class InstallViewModel : ViewModelBase
     private readonly SteamGameScanner? _scanner;
     private readonly IDialogService? _dialogService;
     private readonly AppSettings? _settings;
+    private readonly ModMetadataCache? _metadataCache;
 
     [ObservableProperty]
     private ObservableCollection<string> _archivePaths = new();
@@ -76,12 +79,14 @@ public partial class InstallViewModel : ViewModelBase
         ModInstallationService installService,
         SteamGameScanner scanner,
         IDialogService dialogService,
-        AppSettings settings)
+        AppSettings settings,
+        ModMetadataCache metadataCache)
     {
         _installService = installService;
         _scanner = scanner;
         _dialogService = dialogService;
         _settings = settings;
+        _metadataCache = metadataCache;
     }
 
     partial void OnSelectedGameChanged(GameDisplayModel? value)
@@ -215,18 +220,44 @@ public partial class InstallViewModel : ViewModelBase
         StatusMessage = $"Loaded {added} archive(s) from collection '{selected.Name}'";
     }
 
-    private static List<string> FindCollectionArchives(ModCollection collection, string? modsDir)
+    private List<string> FindCollectionArchives(ModCollection collection, string? modsDir)
     {
         var archives = new List<string>();
         if (string.IsNullOrEmpty(modsDir) || !Directory.Exists(modsDir)) return archives;
 
+        var gameDomainPath = Path.Combine(modsDir, collection.GameId);
+        if (!Directory.Exists(gameDomainPath)) return archives;
+
+        // Build a modId → directory path map that includes both numeric
+        // and renamed/categorized directories via the metadata cache
+        var modDirMap = new Dictionary<string, string>();
+        ModMetadata? MetadataLookup(string dirName) =>
+            _metadataCache?.FindModByDirectoryName(collection.GameId, dirName);
+
+        foreach (var (modId, dirPath, _) in FileUtils.GetAllModDirectoriesWithMetadata(
+            gameDomainPath, MetadataLookup))
+        {
+            modDirMap[modId.ToString()] = dirPath;
+        }
+
         foreach (var entry in collection.Entries)
         {
-            var modDir = Path.Combine(modsDir, collection.GameId, entry.ModId);
-            if (!Directory.Exists(modDir)) continue;
+            string? modDir = null;
 
-            // Include all files — downloaded collection files often lack archive
-            // extensions because entry.FileName is a display name, not a filename
+            // Try the metadata-aware map first (covers renamed & categorized paths)
+            if (modDirMap.TryGetValue(entry.ModId, out var mapped))
+                modDir = mapped;
+
+            // Fallback: original numeric path
+            if (modDir == null || !Directory.Exists(modDir))
+            {
+                var numericDir = Path.Combine(gameDomainPath, entry.ModId);
+                if (Directory.Exists(numericDir))
+                    modDir = numericDir;
+            }
+
+            if (modDir == null || !Directory.Exists(modDir)) continue;
+
             foreach (var file in Directory.EnumerateFiles(modDir, "*", SearchOption.AllDirectories))
             {
                 archives.Add(file);
