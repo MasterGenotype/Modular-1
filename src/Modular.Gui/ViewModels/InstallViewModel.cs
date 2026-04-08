@@ -103,7 +103,19 @@ public partial class InstallViewModel : ViewModelBase
     private static readonly HashSet<string> ArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz2",
-        ".xz", ".txz", ".lz", ".lzma", ".pak"
+        ".xz", ".txz", ".lz", ".lzma", ".pak", ".zst", ".cab", ".dmg",
+        ".iso", ".jar", ".war", ".apk", ".deb", ".rpm"
+    };
+
+    /// <summary>
+    /// Extensions that are clearly not installable mod archives.
+    /// Files with these extensions are excluded when scanning folders.
+    /// </summary>
+    private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".html", ".htm", ".pdf", ".doc", ".docx",
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico",
+        ".log", ".csv", ".db", ".sqlite"
     };
 
     [RelayCommand]
@@ -136,7 +148,12 @@ public partial class InstallViewModel : ViewModelBase
         foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
         {
             var ext = Path.GetExtension(file);
-            if (ArchiveExtensions.Contains(ext) && !ArchivePaths.Contains(file))
+            // Include files with known archive extensions, extensionless files
+            // (collection downloads may use {modId}_{fileId} fallback names),
+            // and any other file that isn't a known non-mod format
+            var isArchive = ArchiveExtensions.Contains(ext);
+            var isExcluded = ext.Length > 0 && ExcludedExtensions.Contains(ext);
+            if (!isExcluded && (isArchive || ext.Length == 0) && !ArchivePaths.Contains(file))
             {
                 ArchivePaths.Add(file);
                 found++;
@@ -240,6 +257,28 @@ public partial class InstallViewModel : ViewModelBase
             modDirMap[modId.ToString()] = dirPath;
         }
 
+        // Also build a name → directory map for direct name matching fallback.
+        // After renaming, directory names are SanitizeDirectoryName(modName),
+        // so we can match collection entry names directly.
+        var nameDirMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in Directory.GetDirectories(gameDomainPath))
+        {
+            var dirName = Path.GetFileName(dir);
+            if (!int.TryParse(dirName, out _))
+            {
+                // Top-level renamed mod directory
+                nameDirMap[dirName] = dir;
+
+                // Also index subdirectories (mods inside category folders)
+                foreach (var subDir in Directory.GetDirectories(dir))
+                {
+                    var subName = Path.GetFileName(subDir);
+                    if (!int.TryParse(subName, out _))
+                        nameDirMap[subName] = subDir;
+                }
+            }
+        }
+
         foreach (var entry in collection.Entries)
         {
             string? modDir = null;
@@ -254,6 +293,14 @@ public partial class InstallViewModel : ViewModelBase
                 var numericDir = Path.Combine(gameDomainPath, entry.ModId);
                 if (Directory.Exists(numericDir))
                     modDir = numericDir;
+            }
+
+            // Fallback: match by sanitized entry name against directory names
+            if (modDir == null || !Directory.Exists(modDir))
+            {
+                var sanitizedName = FileUtils.SanitizeDirectoryName(entry.Name);
+                if (nameDirMap.TryGetValue(sanitizedName, out var nameMatched))
+                    modDir = nameMatched;
             }
 
             if (modDir == null || !Directory.Exists(modDir)) continue;

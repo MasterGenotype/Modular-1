@@ -188,6 +188,7 @@ public class ModCollectionService
         CancellationToken ct = default)
     {
         var results = new List<(ModCollectionEntry entry, bool exists, bool md5Match)>();
+        var gameDomainPath = Path.Combine(outputDirectory, collection.GameId);
 
         // Build a modId → directory path map that includes renamed/categorized directories
         var modDirMap = BuildModDirectoryMap(collection.GameId, outputDirectory);
@@ -210,6 +211,29 @@ public class ModCollectionService
             {
                 filePath = Path.Combine(outputDirectory, collection.GameId, entry.ModId, sanitizedFileName);
                 exists = File.Exists(filePath);
+            }
+
+            // Fallback: match by sanitized entry name against directory names
+            if (!exists)
+            {
+                var nameDir = FindDirectoryByName(gameDomainPath, entry.Name);
+                if (nameDir != null)
+                {
+                    filePath = Path.Combine(nameDir, sanitizedFileName);
+                    exists = File.Exists(filePath);
+
+                    // Search inside the matched directory for the file
+                    if (!exists)
+                    {
+                        var match = Directory.EnumerateFiles(nameDir, sanitizedFileName, SearchOption.AllDirectories)
+                            .FirstOrDefault();
+                        if (match != null)
+                        {
+                            filePath = match;
+                            exists = true;
+                        }
+                    }
+                }
             }
 
             // Last resort: search the resolved directory for any file matching the name
@@ -262,6 +286,39 @@ public class ModCollectionService
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// Searches the game domain directory (including category subdirectories)
+    /// for a directory matching the given mod name after sanitization.
+    /// </summary>
+    private static string? FindDirectoryByName(string gameDomainPath, string modName)
+    {
+        if (!Directory.Exists(gameDomainPath)) return null;
+
+        var sanitizedName = FileUtils.SanitizeDirectoryName(modName);
+
+        foreach (var dir in Directory.GetDirectories(gameDomainPath))
+        {
+            var dirName = Path.GetFileName(dir);
+
+            // Direct match at top level
+            if (dirName.Equals(sanitizedName, StringComparison.OrdinalIgnoreCase))
+                return dir;
+
+            // Check inside category subdirectories
+            if (!int.TryParse(dirName, out _))
+            {
+                foreach (var subDir in Directory.GetDirectories(dir))
+                {
+                    var subName = Path.GetFileName(subDir);
+                    if (subName.Equals(sanitizedName, StringComparison.OrdinalIgnoreCase))
+                        return subDir;
+                }
+            }
+        }
+
+        return null;
     }
 
     public async Task ExportAsync(ModCollection collection, string outputPath, CancellationToken ct = default)
