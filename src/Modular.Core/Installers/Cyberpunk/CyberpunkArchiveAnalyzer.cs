@@ -98,7 +98,35 @@ public static class CyberpunkArchiveAnalyzer
                 .ToList();
         }
 
-        // ── Signal accumulators ──────────────────────────────────────────
+        // ── Phase 1: pre-scan for Cyberpunk-specific anchors ─────────────
+        //
+        // Extension-only signals (.ini, .reds, .archive, .asi, .exe, .xml,
+        // .archive.xl) are ambiguous — many games use the same extensions.
+        // We only allow those broad matches when the archive already contains
+        // at least one structurally unambiguous Cyberpunk 2077 path (an
+        // "anchor").  Anchors are directory prefixes that are unique to
+        // Cyberpunk's modding layout:
+        //   r6/*, red4ext/*, archive/pc/mod/*, bin/x64/plugins/cyber_engine_tweaks/*,
+        //   engine/config/*, engine/tools/*, mods/*/info.json, known framework DLLs.
+
+        var allLower = normalized.Select(n => n.Normalized.ToLowerInvariant()).ToList();
+        bool hasCyberpunkAnchor = allLower.Any(p =>
+            StartsWithAny(p, Red4ExtPluginPrefixes) ||
+            StartsWithAny(p, CetModPrefixes) ||
+            StartsWithAny(p, RedscriptPrefixes) ||
+            StartsWithAny(p, LegacyArchivePrefixes) ||
+            StartsWithAny(p, TweakPrefixes) ||
+            StartsWithAny(p, InputMappingPrefixes) ||
+            StartsWithAny(p, IniConfigPrefixes) ||
+            p.EndsWith(".archive.xl") ||
+            FrameworkMarkers.Any(m =>
+                p == m.path.ToLowerInvariant() ||
+                p.EndsWith("/" + m.path.ToLowerInvariant())) ||
+            // REDmod: mods/{name}/info.json
+            (StartsWithAny(p, RedModPrefixes) &&
+             HasRedModStructure(p, normalized.Select(n => n.Normalized).ToList())));
+
+        // ── Phase 2: classify each entry ─────────────────────────────────
 
         var detectedTypes = CyberpunkInstallType.Unknown;
         var fileRoutes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -152,16 +180,18 @@ public static class CyberpunkArchiveAnalyzer
             }
 
             // ── 4. redscript mod ─────────────────────────────────────
-            if (StartsWithAny(lowerPath, RedscriptPrefixes) &&
-                (lowerPath.EndsWith(".reds") || lowerPath.EndsWith(".reds.bak")))
+            //    Path-anchored match: r6/scripts/**/*.reds — always accepted.
+            if (StartsWithAny(lowerPath, RedscriptPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.RedscriptMod;
                 fileRoutes[entry.FullName] = EnsurePrefix("r6/scripts/", path, RedscriptPrefixes);
-                signalConfidences.Add(0.95);
+                signalConfidences.Add(lowerPath.EndsWith(".reds") ? 0.95 : 0.80);
                 continue;
             }
-            // Also match .reds files without the prefix (some mods ship flat)
-            if (lowerPath.EndsWith(".reds") && !StartsWithAny(lowerPath, RedscriptPrefixes))
+            //    Extension-only match: bare .reds file — only with anchor.
+            if (hasCyberpunkAnchor &&
+                lowerPath.EndsWith(".reds") &&
+                !StartsWithAny(lowerPath, RedscriptPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.RedscriptMod;
                 fileRoutes[entry.FullName] = "r6/scripts/" + path;
@@ -170,27 +200,30 @@ public static class CyberpunkArchiveAnalyzer
             }
 
             // ── 5. Legacy archive ────────────────────────────────────
-            if (StartsWithAny(lowerPath, LegacyArchivePrefixes) ||
-                (lowerPath.EndsWith(".archive") && !StartsWithAny(lowerPath, RedModPrefixes)))
+            //    Path-anchored: archive/pc/mod/** — always accepted.
+            if (StartsWithAny(lowerPath, LegacyArchivePrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                if (StartsWithAny(lowerPath, LegacyArchivePrefixes))
-                    fileRoutes[entry.FullName] = EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes);
-                else
-                    fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes);
                 signalConfidences.Add(0.90);
-
-                // Handle companion .archive.xl files
                 continue;
             }
+            //    .archive.xl is Cyberpunk-specific (ArchiveXL format) — always accepted.
             if (lowerPath.EndsWith(".archive.xl"))
             {
                 detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                if (StartsWithAny(lowerPath, LegacyArchivePrefixes))
-                    fileRoutes[entry.FullName] = EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes);
-                else
-                    fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
                 signalConfidences.Add(0.90);
+                continue;
+            }
+            //    Extension-only .archive — only with anchor.
+            if (hasCyberpunkAnchor &&
+                lowerPath.EndsWith(".archive") &&
+                !StartsWithAny(lowerPath, RedModPrefixes))
+            {
+                detectedTypes |= CyberpunkInstallType.LegacyArchive;
+                fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
+                signalConfidences.Add(0.85);
                 continue;
             }
 
@@ -205,71 +238,80 @@ public static class CyberpunkArchiveAnalyzer
             }
 
             // ── 7. Tweak mod ─────────────────────────────────────────
-            if (StartsWithAny(lowerPath, TweakPrefixes) ||
-                lowerPath.EndsWith(".yaml") && path.Contains("tweak", StringComparison.OrdinalIgnoreCase))
+            //    Path-anchored: r6/tweaks/** — always accepted.
+            if (StartsWithAny(lowerPath, TweakPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.TweakMod;
-                if (StartsWithAny(lowerPath, TweakPrefixes))
-                    fileRoutes[entry.FullName] = EnsurePrefix("r6/tweaks/", path, TweakPrefixes);
-                else
-                    fileRoutes[entry.FullName] = "r6/tweaks/" + path;
+                fileRoutes[entry.FullName] = EnsurePrefix("r6/tweaks/", path, TweakPrefixes);
                 signalConfidences.Add(0.85);
                 continue;
             }
 
             // ── 8. ini/config tweak ──────────────────────────────────
-            if (StartsWithAny(lowerPath, IniConfigPrefixes) ||
-                lowerPath.EndsWith(".ini"))
+            //    Path-anchored: engine/config/** — always accepted.
+            if (StartsWithAny(lowerPath, IniConfigPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.IniTweak;
-                if (StartsWithAny(lowerPath, IniConfigPrefixes))
-                    fileRoutes[entry.FullName] = path;
-                else
-                    fileRoutes[entry.FullName] = "engine/config/platform/pc/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = path;
                 signalConfidences.Add(0.85);
                 continue;
             }
-
-            // ── 9. Input mapping XML ─────────────────────────────────
-            if (StartsWithAny(lowerPath, InputMappingPrefixes) ||
-                (lowerPath.EndsWith(".xml") && lowerPath.Contains("input")))
+            //    Extension-only .ini — only with anchor.
+            if (hasCyberpunkAnchor && lowerPath.EndsWith(".ini"))
             {
-                detectedTypes |= CyberpunkInstallType.InputMapping;
-                if (StartsWithAny(lowerPath, InputMappingPrefixes))
-                    fileRoutes[entry.FullName] = EnsurePrefix("r6/input/", path, InputMappingPrefixes);
-                else
-                    fileRoutes[entry.FullName] = "r6/input/" + Path.GetFileName(path);
-                signalConfidences.Add(0.85);
-                continue;
-            }
-
-            // ── 10. ASI plugin ───────────────────────────────────────
-            if (lowerPath.EndsWith(".asi"))
-            {
-                detectedTypes |= CyberpunkInstallType.AsiPlugin;
-                if (StartsWithAny(lowerPath, AsiPluginPrefixes))
-                    fileRoutes[entry.FullName] = EnsurePrefix("bin/x64/plugins/", path, AsiPluginPrefixes);
-                else
-                    fileRoutes[entry.FullName] = "bin/x64/plugins/" + Path.GetFileName(path);
-                signalConfidences.Add(0.90);
-                continue;
-            }
-
-            // ── 11. Standalone exe ───────────────────────────────────
-            if (lowerPath.EndsWith(".exe") && !StartsWithAny(lowerPath, new[] { "bin/", "engine/" }))
-            {
-                detectedTypes |= CyberpunkInstallType.StandaloneExe;
-                fileRoutes[entry.FullName] = path; // deploy as-is
+                detectedTypes |= CyberpunkInstallType.IniTweak;
+                fileRoutes[entry.FullName] = "engine/config/platform/pc/" + Path.GetFileName(path);
                 signalConfidences.Add(0.70);
                 continue;
             }
 
-            // ── 12. redscript files in r6/scripts/ without .reds extension ──
-            if (StartsWithAny(lowerPath, RedscriptPrefixes))
+            // ── 9. Input mapping XML ─────────────────────────────────
+            //    Path-anchored: r6/input/** — always accepted.
+            if (StartsWithAny(lowerPath, InputMappingPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.RedscriptMod;
-                fileRoutes[entry.FullName] = EnsurePrefix("r6/scripts/", path, RedscriptPrefixes);
-                signalConfidences.Add(0.80);
+                detectedTypes |= CyberpunkInstallType.InputMapping;
+                fileRoutes[entry.FullName] = EnsurePrefix("r6/input/", path, InputMappingPrefixes);
+                signalConfidences.Add(0.85);
+                continue;
+            }
+            //    Extension-only .xml with "input" in name — only with anchor.
+            if (hasCyberpunkAnchor &&
+                lowerPath.EndsWith(".xml") && lowerPath.Contains("input"))
+            {
+                detectedTypes |= CyberpunkInstallType.InputMapping;
+                fileRoutes[entry.FullName] = "r6/input/" + Path.GetFileName(path);
+                signalConfidences.Add(0.70);
+                continue;
+            }
+
+            // ── 10. ASI plugin ───────────────────────────────────────
+            //    Path-anchored: bin/x64/plugins/*.asi — always accepted.
+            if (lowerPath.EndsWith(".asi") && StartsWithAny(lowerPath, AsiPluginPrefixes))
+            {
+                detectedTypes |= CyberpunkInstallType.AsiPlugin;
+                fileRoutes[entry.FullName] = EnsurePrefix("bin/x64/plugins/", path, AsiPluginPrefixes);
+                signalConfidences.Add(0.90);
+                continue;
+            }
+            //    Extension-only .asi — only with anchor.
+            if (hasCyberpunkAnchor && lowerPath.EndsWith(".asi"))
+            {
+                detectedTypes |= CyberpunkInstallType.AsiPlugin;
+                fileRoutes[entry.FullName] = "bin/x64/plugins/" + Path.GetFileName(path);
+                signalConfidences.Add(0.75);
+                continue;
+            }
+
+            // ── 11. Standalone exe ───────────────────────────────────
+            //    Only claim loose .exe files when the archive already has
+            //    a Cyberpunk anchor (prevents claiming random tool zips).
+            if (hasCyberpunkAnchor &&
+                lowerPath.EndsWith(".exe") &&
+                !StartsWithAny(lowerPath, new[] { "bin/", "engine/" }))
+            {
+                detectedTypes |= CyberpunkInstallType.StandaloneExe;
+                fileRoutes[entry.FullName] = path; // deploy as-is
+                signalConfidences.Add(0.70);
                 continue;
             }
 
