@@ -223,11 +223,24 @@ public class RenameService : IRenameService
         // Fetch game categories first
         await GetOrFetchGameCategoriesAsync(gameDomain, ct);
 
-        // Find all mod ID directories
+        // Find numeric mod ID directories
         var modIds = GetModIds(gameDomainPath).ToList();
+
+        // Also discover already-renamed directories via the persistent cache.
+        // Without this, mods renamed in a previous session are invisible.
+        ModMetadata? MetadataLookup(string dirName) => _cache.FindModByDirectoryName(gameDomain, dirName);
+        var allEntries = FileUtils.GetAllModDirectoriesWithMetadata(gameDomainPath, MetadataLookup);
+        foreach (var (modId, _, _) in allEntries)
+        {
+            if (!modIds.Contains(modId))
+                modIds.Add(modId);
+        }
+
         _logger?.LogInformation("Found {Count} mod directories in {Domain}", modIds.Count, gameDomain);
 
-        return await FetchModMetadataBatchAsync(gameDomain, modIds, ct);
+        var fetched = await FetchModMetadataBatchAsync(gameDomain, modIds, ct);
+        await _cache.SaveAsync();
+        return fetched;
     }
 
     /// <summary>
@@ -348,6 +361,8 @@ public class RenameService : IRenameService
             }
         }
 
+        // Persist cache so renamed mods are discoverable in future sessions
+        await _cache.SaveAsync();
         return renamedCount;
     }
 
