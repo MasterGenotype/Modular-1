@@ -110,10 +110,13 @@ public class FF7RModInstaller : IModInstaller
 
         var layout = FF7RArchiveAnalyzer.Analyze(reader.Entries);
 
-        // Determine primary target directory based on dominant type
+        // Always use game root as TargetDirectory. All file routes from the
+        // analyzer are fully qualified relative to game root (e.g.
+        // "End/Content/Paks/~mods/mod.pak", "End/Binaries/Win64/hook.dll").
+        // This avoids the bug where single-type PakMod archives would set
+        // TargetDirectory to ~mods while multi-type archives would use game
+        // root, causing pak routes to resolve differently.
         var targetDir = context.GameDirectory;
-        if (layout.IsSingleType && layout.Types == FF7RInstallType.PakMod)
-            targetDir = Path.Combine(context.GameDirectory, PaksModsSubPath);
 
         var plan = new InstallPlan
         {

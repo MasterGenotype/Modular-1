@@ -116,25 +116,32 @@ public static class FF7RArchiveAnalyzer
         // ── Phase 1: Anchor detection ───────────────────────────────────
         var allLower = normalized.Select(n => n.Normalized.ToLowerInvariant()).ToList();
 
+        // NOTE: ~mods/ is intentionally NOT an anchor — it is a generic UE4
+        // convention used by many titles. Without a stronger FF7R signal, an
+        // archive like Content/Paks/~mods/foo.pak must fall through to the
+        // generic UnrealPakInstaller (priority 90) rather than being claimed
+        // here at priority 92.
         bool hasFF7RAnchor =
-            // Structural anchors — paths unique to FF7R
+            // Structural anchors — paths unique to FF7R Intergrade
+            // (End/Content/Paks/ and End/Binaries/Win64/ use the "End/" prefix
+            // that is specific to FF7R's UE4 layout)
             allLower.Any(p => FF7RAnchorPaths.Any(a =>
                 p.Contains(a, StringComparison.Ordinal))) ||
-            // ~mods folder (FF7R convention, also used by other UE4 games)
-            allLower.Any(p => p.Contains("~mods/") || p.Contains("~mods\\")) ||
             // FF7R-specific filename fragments in any entry
             allLower.Any(p => FF7RFilenameHints.Any(h =>
                 p.Contains(h, StringComparison.Ordinal))) ||
-            // 3DMigoto markers (FF7R has one of the largest 3DMigoto modding scenes)
-            allLower.Any(p => MigotoFrameworkFiles.Any(m =>
-                p.Contains(m, StringComparison.Ordinal))) ||
-            // ReShade markers alongside binaries path
+            // 3DMigoto markers alongside an End/ or Binaries/ path
+            (allLower.Any(p => MigotoFrameworkFiles.Any(m =>
+                p.Contains(m, StringComparison.Ordinal))) &&
+             allLower.Any(p => p.Contains("end/") || p.Contains("binaries/"))) ||
+            // ReShade markers alongside an End/Binaries path
             (allLower.Any(p => ReShadeMarkers.Any(r =>
                 p.Contains(r, StringComparison.Ordinal))) &&
-             allLower.Any(p => p.Contains("binaries"))) ||
-            // DXVK markers
-            allLower.Any(p => DxvkMarkers.Any(d =>
-                p.Contains(d, StringComparison.Ordinal)));
+             allLower.Any(p => p.Contains("end/binaries/"))) ||
+            // DXVK markers alongside an End/ path
+            (allLower.Any(p => DxvkMarkers.Any(d =>
+                p.Contains(d, StringComparison.Ordinal))) &&
+             allLower.Any(p => p.Contains("end/")));
 
         // ── Phase 2: Classify each entry ─────────────────────────────────
 
@@ -151,7 +158,10 @@ public static class FF7RArchiveAnalyzer
             if (ContainsAny(lower, PaksModsPrefixes))
             {
                 detectedTypes |= FF7RInstallType.PakMod;
-                fileRoutes[entry.FullName] = StripToAfter(path, "~mods/");
+                // Always use fully-qualified path relative to game root so
+                // multi-type archives route correctly regardless of TargetDirectory.
+                fileRoutes[entry.FullName] = "End/Content/Paks/~mods/" +
+                    StripToAfter(path, "~mods/");
                 signalConfidences.Add(0.98);
                 continue;
             }
@@ -251,8 +261,9 @@ public static class FF7RArchiveAnalyzer
             if (hasFF7RAnchor && lower.EndsWith(".pak"))
             {
                 detectedTypes |= FF7RInstallType.PakMod;
-                // Route to ~mods — the standard FF7R pak location
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                // Fully-qualified path so multi-type archives work correctly.
+                fileRoutes[entry.FullName] = "End/Content/Paks/~mods/" +
+                    Path.GetFileName(path);
                 signalConfidences.Add(0.88);
                 continue;
             }
