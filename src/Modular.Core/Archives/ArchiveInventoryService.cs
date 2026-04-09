@@ -46,22 +46,6 @@ public class ArchiveInventoryService
         return await ScanAndCacheAsync(connection, archivePath, ct);
     }
 
-    /// <summary>
-    /// Forces a rescan of the archive inventory.
-    /// </summary>
-    public async Task<List<ArchiveEntryRecord>> RescanAsync(string archivePath, CancellationToken ct = default)
-    {
-        var connection = await _database.GetConnectionAsync();
-
-        // Delete existing cache
-        await using var deleteCmd = connection.CreateCommand();
-        deleteCmd.CommandText = "DELETE FROM archive WHERE path = @path";
-        deleteCmd.Parameters.AddWithValue("@path", archivePath);
-        await deleteCmd.ExecuteNonQueryAsync(ct);
-
-        return await ScanAndCacheAsync(connection, archivePath, ct);
-    }
-
     private async Task<List<ArchiveEntryRecord>?> GetCachedInventoryAsync(
         SqliteConnection connection, string archivePath, CancellationToken ct)
     {

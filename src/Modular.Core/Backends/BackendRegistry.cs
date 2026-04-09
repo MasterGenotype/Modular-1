@@ -116,18 +116,6 @@ public class BackendRegistry
     }
 
     /// <summary>
-    /// Get backends that support any of the specified capabilities.
-    /// </summary>
-    /// <param name="capabilities">The capabilities to filter by (any must be present).</param>
-    /// <returns>Read-only list of backends with at least one capability.</returns>
-    public IReadOnlyList<IModBackend> GetWithAnyCapability(BackendCapabilities capabilities)
-    {
-        return _backends.Values
-            .Where(b => (b.Capabilities & capabilities) != BackendCapabilities.None)
-            .ToList();
-    }
-
-    /// <summary>
     /// Get configuration errors for all backends.
     /// </summary>
     /// <returns>
@@ -147,19 +135,4 @@ public class BackendRegistry
     /// </summary>
     public int Count => _backends.Count;
 
-    /// <summary>
-    /// Registers all backends from a plugin composer.
-    /// This integrates with the plugin system to dynamically load backend implementations.
-    /// </summary>
-    /// <param name="composer">Plugin composer with loaded plugins.</param>
-    /// <returns>Number of backends registered from plugins.</returns>
-    public int RegisterFromPlugins(Plugins.PluginComposer composer)
-    {
-        var backends = composer.GetBackendExports().ToList();
-        foreach (var backend in backends)
-        {
-            Register(backend);
-        }
-        return backends.Count;
-    }
 }

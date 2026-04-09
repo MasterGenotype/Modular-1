@@ -8,7 +8,6 @@ namespace Modular.Core.Metadata;
 /// This interface is distinct from <see cref="Modular.Sdk.Metadata.IMetadataEnricher"/>
 /// which provides a generic plugin interface. This Core interface:
 /// - Has typed methods returning <see cref="CanonicalMod"/>
-/// - Is implemented by built-in backends (NexusModsMetadataEnricher, GameBananaMetadataEnricher)
 /// - Supports batch enrichment with rate limiting
 /// </remarks>
 public interface IMetadataEnricher

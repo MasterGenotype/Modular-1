@@ -26,21 +26,6 @@ public class ModularException : Exception
 }
 
 /// <summary>
-/// Exception for network-level errors (connection failures, timeouts, etc.).
-/// </summary>
-public class NetworkException : ModularException
-{
-    /// <summary>
-    /// HTTP status code if available, or custom error code.
-    /// </summary>
-    public int? ErrorCode { get; set; }
-
-    public NetworkException() { }
-    public NetworkException(string message) : base(message) { }
-    public NetworkException(string message, Exception innerException) : base(message, innerException) { }
-}
-
-/// <summary>
 /// Exception for API-level errors (non-2xx responses).
 /// </summary>
 public class ApiException : ModularException
@@ -59,35 +44,6 @@ public class ApiException : ModularException
     public ApiException(string message) : base(message) { }
     public ApiException(string message, int statusCode) : base(message) { StatusCode = statusCode; }
     public ApiException(string message, Exception innerException) : base(message, innerException) { }
-}
-
-/// <summary>
-/// Exception when rate limits are exceeded.
-/// </summary>
-public class RateLimitException : ApiException
-{
-    /// <summary>
-    /// Seconds to wait before retrying, if provided by the server.
-    /// </summary>
-    public int? RetryAfterSeconds { get; set; }
-
-    public RateLimitException() { StatusCode = 429; }
-    public RateLimitException(string message) : base(message) { StatusCode = 429; }
-    public RateLimitException(string message, int retryAfterSeconds) : base(message)
-    {
-        StatusCode = 429;
-        RetryAfterSeconds = retryAfterSeconds;
-    }
-}
-
-/// <summary>
-/// Exception for authentication/authorization errors.
-/// </summary>
-public class AuthException : ApiException
-{
-    public AuthException() { StatusCode = 401; }
-    public AuthException(string message) : base(message) { StatusCode = 401; }
-    public AuthException(string message, int statusCode) : base(message, statusCode) { }
 }
 
 /// <summary>

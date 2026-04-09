@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Plugins;
 

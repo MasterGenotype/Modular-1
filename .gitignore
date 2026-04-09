@@ -29,6 +29,7 @@ publish/
 pkg/modular/
 pkg/pkg/
 pkg/src/
+*.pkg.tar.zst
 
 # OS
 .DS_Store

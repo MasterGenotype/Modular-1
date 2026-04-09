@@ -7,7 +7,7 @@ namespace Modular.Core.Database;
 /// JSON-based database for tracking download history.
 /// Thread-safe for concurrent access.
 /// </summary>
-public class DownloadDatabase : IDownloadRepository
+public class DownloadDatabase
 {
     private readonly string _dbPath;
     private readonly List<DownloadRecord> _records = [];

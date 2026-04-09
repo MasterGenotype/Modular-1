@@ -117,31 +117,4 @@ public static class PathSanitizer
         return segments.Any(s => s == "..");
     }
 
-    /// <summary>
-    /// Validates that a destination path for extraction does not already exist as a symlink
-    /// pointing outside the target directory, which could be used as an attack vector.
-    /// </summary>
-    /// <param name="destPath">The resolved destination path.</param>
-    /// <param name="targetDirectory">The root target directory.</param>
-    /// <returns>True if safe; false if the path is a symlink escaping the target.</returns>
-    public static bool IsSymlinkSafe(string destPath, string targetDirectory)
-    {
-        var fileInfo = new FileInfo(destPath);
-        if (fileInfo.Exists && fileInfo.LinkTarget != null)
-        {
-            var linkTarget = Path.GetFullPath(fileInfo.LinkTarget, Path.GetDirectoryName(destPath)!);
-            var fullTarget = Path.GetFullPath(targetDirectory);
-            return linkTarget.StartsWith(fullTarget + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-        }
-
-        var dirInfo = new DirectoryInfo(destPath);
-        if (dirInfo.Exists && dirInfo.LinkTarget != null)
-        {
-            var linkTarget = Path.GetFullPath(dirInfo.LinkTarget, dirInfo.Parent!.FullName);
-            var fullTarget = Path.GetFullPath(targetDirectory);
-            return linkTarget.StartsWith(fullTarget + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-        }
-
-        return true; // Not a symlink, safe
-    }
 }

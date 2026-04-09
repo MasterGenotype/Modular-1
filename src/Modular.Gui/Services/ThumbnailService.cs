@@ -99,18 +99,6 @@ public class ThumbnailService : IDisposable
     }
 
     /// <summary>
-    /// Preloads thumbnails for a collection of URLs.
-    /// </summary>
-    public async Task PreloadAsync(IEnumerable<string?> urls, CancellationToken ct = default)
-    {
-        var tasks = urls
-            .Where(u => !string.IsNullOrEmpty(u))
-            .Select(u => GetThumbnailAsync(u, ct));
-
-        await Task.WhenAll(tasks);
-    }
-
-    /// <summary>
     /// Clears the memory cache.
     /// </summary>
     public void ClearMemoryCache()
@@ -120,44 +108,6 @@ public class ThumbnailService : IDisposable
             bitmap?.Dispose();
         }
         _memoryCache.Clear();
-    }
-
-    /// <summary>
-    /// Clears the disk cache.
-    /// </summary>
-    public void ClearDiskCache()
-    {
-        try
-        {
-            if (Directory.Exists(_cacheDirectory))
-            {
-                foreach (var file in Directory.GetFiles(_cacheDirectory))
-                {
-                    try { File.Delete(file); } catch { }
-                }
-            }
-        }
-        catch { }
-    }
-
-    /// <summary>
-    /// Gets the cache size in bytes.
-    /// </summary>
-    public long GetCacheSizeBytes()
-    {
-        try
-        {
-            if (!Directory.Exists(_cacheDirectory))
-                return 0;
-
-            return Directory.GetFiles(_cacheDirectory)
-                .Select(f => new FileInfo(f).Length)
-                .Sum();
-        }
-        catch
-        {
-            return 0;
-        }
     }
 
     private static string GetCacheKey(string url)

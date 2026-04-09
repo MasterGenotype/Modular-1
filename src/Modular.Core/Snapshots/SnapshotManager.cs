@@ -230,40 +230,6 @@ public class SnapshotManager
     }
 
     /// <summary>
-    /// Lists all snapshots, optionally filtered by game.
-    /// </summary>
-    public async Task<List<SnapshotRecord>> ListSnapshotsAsync(int? gameAppId = null, CancellationToken ct = default)
-    {
-        var connection = await _database.GetConnectionAsync();
-        await using var cmd = connection.CreateCommand();
-
-        if (gameAppId.HasValue)
-        {
-            cmd.CommandText = """
-                SELECT snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count
-                FROM snapshot WHERE game_appid = @appid ORDER BY created_at_utc DESC
-                """;
-            cmd.Parameters.AddWithValue("@appid", gameAppId.Value);
-        }
-        else
-        {
-            cmd.CommandText = """
-                SELECT snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count
-                FROM snapshot ORDER BY created_at_utc DESC
-                """;
-        }
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var snapshots = new List<SnapshotRecord>();
-        while (await reader.ReadAsync(ct))
-        {
-            snapshots.Add(ReadSnapshotRecord(reader));
-        }
-
-        return snapshots;
-    }
-
-    /// <summary>
     /// Lists snapshots for a game within a date range (for calendar day selection).
     /// </summary>
     public async Task<List<SnapshotRecord>> ListSnapshotsByDateRangeAsync(

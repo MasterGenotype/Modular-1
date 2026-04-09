@@ -25,46 +25,6 @@ public class StagingManager
         Directory.CreateDirectory(_baseStagingPath);
     }
 
-    /// <summary>
-    /// Creates a new staging area for an installation changeset.
-    /// </summary>
-    /// <returns>A StagingSession that tracks the staging directory and provides commit/rollback.</returns>
-    public StagingSession CreateSession()
-    {
-        var changesetId = Guid.NewGuid().ToString("N")[..12];
-        var stagingDir = Path.Combine(_baseStagingPath, changesetId);
-        Directory.CreateDirectory(stagingDir);
-
-        _logger?.LogInformation("Created staging session {ChangesetId} at {Path}", changesetId, stagingDir);
-        return new StagingSession(changesetId, stagingDir, _logger);
-    }
-
-    /// <summary>
-    /// Cleans up any abandoned staging directories older than the specified age.
-    /// </summary>
-    public void CleanupAbandoned(TimeSpan maxAge)
-    {
-        if (!Directory.Exists(_baseStagingPath))
-            return;
-
-        var cutoff = DateTime.UtcNow - maxAge;
-        foreach (var dir in Directory.GetDirectories(_baseStagingPath))
-        {
-            var info = new DirectoryInfo(dir);
-            if (info.CreationTimeUtc < cutoff)
-            {
-                try
-                {
-                    Directory.Delete(dir, recursive: true);
-                    _logger?.LogInformation("Cleaned up abandoned staging directory: {Path}", dir);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Failed to clean up staging directory: {Path}", dir);
-                }
-            }
-        }
-    }
 }
 
 /// <summary>

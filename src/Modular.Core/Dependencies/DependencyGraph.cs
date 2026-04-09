@@ -24,26 +24,6 @@ public class DependencyGraph
     }
 
     /// <summary>
-    /// Removes a node and all associated edges from the graph.
-    /// </summary>
-    public bool RemoveNode(ModNode node)
-    {
-        lock (_lock)
-        {
-            var nodeId = node.GetNodeId();
-            if (!_nodes.Remove(nodeId))
-                return false;
-
-            // Remove all edges connected to this node
-            _edges.RemoveAll(e =>
-                e.From.GetNodeId() == nodeId ||
-                e.To.GetNodeId() == nodeId);
-
-            return true;
-        }
-    }
-
-    /// <summary>
     /// Gets a node by its ID.
     /// </summary>
     public ModNode? GetNode(string nodeId)
@@ -83,39 +63,6 @@ public class DependencyGraph
     }
 
     /// <summary>
-    /// Removes an edge from the graph.
-    /// </summary>
-    public bool RemoveEdge(DependencyEdge edge)
-    {
-        lock (_lock)
-        {
-            return _edges.Remove(edge);
-        }
-    }
-
-    /// <summary>
-    /// Removes all edges matching a predicate.
-    /// </summary>
-    public int RemoveEdges(Func<DependencyEdge, bool> predicate)
-    {
-        lock (_lock)
-        {
-            return _edges.RemoveAll(e => predicate(e));
-        }
-    }
-
-    /// <summary>
-    /// Gets all edges in the graph.
-    /// </summary>
-    public IReadOnlyList<DependencyEdge> GetAllEdges()
-    {
-        lock (_lock)
-        {
-            return _edges.ToList();
-        }
-    }
-
-    /// <summary>
     /// Gets all dependencies of a node (outgoing edges).
     /// </summary>
     public IReadOnlyList<DependencyEdge> GetDependencies(ModNode node)
@@ -125,87 +72,6 @@ public class DependencyGraph
             var nodeId = node.GetNodeId();
             return _edges.Where(e => e.From.GetNodeId() == nodeId).ToList();
         }
-    }
-
-    /// <summary>
-    /// Gets all dependents of a node (incoming edges).
-    /// </summary>
-    public IReadOnlyList<DependencyEdge> GetDependents(ModNode node)
-    {
-        lock (_lock)
-        {
-            var nodeId = node.GetNodeId();
-            return _edges.Where(e => e.To.GetNodeId() == nodeId).ToList();
-        }
-    }
-
-    /// <summary>
-    /// Gets all edges between two nodes.
-    /// </summary>
-    public IReadOnlyList<DependencyEdge> GetEdgesBetween(ModNode from, ModNode to)
-    {
-        lock (_lock)
-        {
-            var fromId = from.GetNodeId();
-            var toId = to.GetNodeId();
-            return _edges.Where(e =>
-                e.From.GetNodeId() == fromId &&
-                e.To.GetNodeId() == toId).ToList();
-        }
-    }
-
-    /// <summary>
-    /// Gets all edges of a specific type.
-    /// </summary>
-    public IReadOnlyList<DependencyEdge> GetEdgesByType(DependencyType type)
-    {
-        lock (_lock)
-        {
-            return _edges.Where(e => e.Type == type).ToList();
-        }
-    }
-
-    /// <summary>
-    /// Checks if a node exists in the graph.
-    /// </summary>
-    public bool ContainsNode(ModNode node)
-    {
-        lock (_lock)
-        {
-            return _nodes.ContainsKey(node.GetNodeId());
-        }
-    }
-
-    /// <summary>
-    /// Checks if there's a path from one node to another (transitive dependency).
-    /// </summary>
-    public bool HasPath(ModNode from, ModNode to)
-    {
-        lock (_lock)
-        {
-            var visited = new HashSet<string>();
-            return HasPathRecursive(from.GetNodeId(), to.GetNodeId(), visited);
-        }
-    }
-
-    private bool HasPathRecursive(string fromId, string toId, HashSet<string> visited)
-    {
-        if (fromId == toId)
-            return true;
-
-        if (visited.Contains(fromId))
-            return false;
-
-        visited.Add(fromId);
-
-        var outgoingEdges = _edges.Where(e => e.From.GetNodeId() == fromId);
-        foreach (var edge in outgoingEdges)
-        {
-            if (HasPathRecursive(edge.To.GetNodeId(), toId, visited))
-                return true;
-        }
-
-        return false;
     }
 
     /// <summary>
@@ -342,35 +208,4 @@ public class DependencyGraph
         }
     }
 
-    /// <summary>
-    /// Gets statistics about the graph.
-    /// </summary>
-    public GraphStatistics GetStatistics()
-    {
-        lock (_lock)
-        {
-            return new GraphStatistics
-            {
-                NodeCount = _nodes.Count,
-                EdgeCount = _edges.Count,
-                RequiredEdgeCount = _edges.Count(e => e.Type == DependencyType.Required),
-                OptionalEdgeCount = _edges.Count(e => e.Type == DependencyType.Optional),
-                IncompatibleEdgeCount = _edges.Count(e => e.Type == DependencyType.Incompatible),
-                HasCycles = DetectCycles().Count > 0
-            };
-        }
-    }
-}
-
-/// <summary>
-/// Statistics about a dependency graph.
-/// </summary>
-public class GraphStatistics
-{
-    public int NodeCount { get; set; }
-    public int EdgeCount { get; set; }
-    public int RequiredEdgeCount { get; set; }
-    public int OptionalEdgeCount { get; set; }
-    public int IncompatibleEdgeCount { get; set; }
-    public bool HasCycles { get; set; }
 }
