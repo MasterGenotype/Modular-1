@@ -302,19 +302,6 @@ public static class CyberpunkArchiveAnalyzer
                 continue;
             }
 
-            // ── 11. Standalone exe ───────────────────────────────────
-            //    Only claim loose .exe files when the archive already has
-            //    a Cyberpunk anchor (prevents claiming random tool zips).
-            if (hasCyberpunkAnchor &&
-                lowerPath.EndsWith(".exe") &&
-                !StartsWithAny(lowerPath, new[] { "bin/", "engine/" }))
-            {
-                detectedTypes |= CyberpunkInstallType.StandaloneExe;
-                fileRoutes[entry.FullName] = path; // deploy as-is
-                signalConfidences.Add(0.70);
-                continue;
-            }
-
             // ── Fallback: keep the path as-is, route to game root ────
             fileRoutes[entry.FullName] = path;
         }

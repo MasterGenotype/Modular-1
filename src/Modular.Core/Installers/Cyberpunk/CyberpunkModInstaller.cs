@@ -310,7 +310,6 @@ public class CyberpunkModInstaller : IModInstaller
                 nameof(CyberpunkInstallType.TweakMod) => "Installing TweakDB mod",
                 nameof(CyberpunkInstallType.IniTweak) => "Installing config tweak",
                 nameof(CyberpunkInstallType.FrameworkRoot) => "Installing framework",
-                nameof(CyberpunkInstallType.StandaloneExe) => "Extracting standalone tool",
                 nameof(CyberpunkInstallType.InputMapping) => "Installing input mappings",
                 nameof(CyberpunkInstallType.AsiPlugin) => "Installing ASI plugin",
                 _ => "Installing Cyberpunk 2077 mod"

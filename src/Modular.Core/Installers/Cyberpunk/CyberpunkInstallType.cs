@@ -60,20 +60,14 @@ public enum CyberpunkInstallType
     FrameworkRoot = 1 << 7,
 
     /// <summary>
-    /// Standalone executable tool — not installed into the game directory at all.
-    /// Examples: Save Editor (Project CyberCAT-SimpleGUI).
-    /// </summary>
-    StandaloneExe = 1 << 8,
-
-    /// <summary>
     /// Input mapping XML files under r6/input/.
     /// Used alongside Input Loader.
     /// </summary>
-    InputMapping = 1 << 9,
+    InputMapping = 1 << 8,
 
     /// <summary>
     /// ASI plugin — .asi file under bin/x64/plugins/.
     /// Examples: cybercmd.
     /// </summary>
-    AsiPlugin = 1 << 10
+    AsiPlugin = 1 << 9
 }
