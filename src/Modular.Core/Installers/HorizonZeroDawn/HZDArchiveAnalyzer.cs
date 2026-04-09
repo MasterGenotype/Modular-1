@@ -234,7 +234,9 @@ public static class HZDArchiveAnalyzer
             }
 
             // ── 9. .reg files (GPU utility registry patches) ─────────
-            if (lower.EndsWith(".reg"))
+            //    Extension-only — require anchor to avoid claiming unrelated
+            //    archives that happen to ship .reg scripts.
+            if (hasHZDAnchor && lower.EndsWith(".reg"))
             {
                 detectedTypes |= HZDInstallType.GpuUtility;
                 fileRoutes[entry.FullName] = Path.GetFileName(path);
