@@ -169,35 +169,6 @@ public class PluginLoader
     }
 
     /// <summary>
-    /// Loads all discovered plugins, respecting dependency order.
-    /// </summary>
-    /// <returns>List of loaded plugins.</returns>
-    public List<LoadedPlugin> LoadAllPlugins()
-    {
-        var manifests = DiscoverPlugins();
-        var loaded = new List<LoadedPlugin>();
-
-        // Sort plugins by dependency order
-        var sorted = TopologicalSort(manifests);
-
-        foreach (var manifest in sorted)
-        {
-            try
-            {
-                var plugin = LoadPlugin(manifest);
-                loaded.Add(plugin);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to load plugin: {PluginId}", manifest.Id);
-            }
-        }
-
-        _logger?.LogInformation("Loaded {Count} plugins", loaded.Count);
-        return loaded;
-    }
-
-    /// <summary>
     /// Unloads a plugin and its assembly load context.
     /// </summary>
     /// <param name="pluginId">Plugin ID to unload.</param>
@@ -227,57 +198,6 @@ public class PluginLoader
     /// </summary>
     public LoadedPlugin? GetPlugin(string pluginId) =>
         _loadedPlugins.TryGetValue(pluginId, out var plugin) ? plugin : null;
-
-    /// <summary>
-    /// Topologically sorts plugins by their dependencies.
-    /// Ensures dependencies are loaded before dependents.
-    /// </summary>
-    private List<PluginManifest> TopologicalSort(List<PluginManifest> manifests)
-    {
-        var sorted = new List<PluginManifest>();
-        var visited = new HashSet<string>();
-        var visiting = new HashSet<string>();
-        var manifestDict = manifests.ToDictionary(m => m.Id);
-
-        void Visit(PluginManifest manifest)
-        {
-            if (visited.Contains(manifest.Id))
-                return;
-
-            if (visiting.Contains(manifest.Id))
-            {
-                throw new InvalidOperationException(
-                    $"Circular dependency detected involving plugin: {manifest.Id}");
-            }
-
-            visiting.Add(manifest.Id);
-
-            // Visit dependencies first
-            foreach (var depId in manifest.Dependencies)
-            {
-                if (manifestDict.TryGetValue(depId, out var dep))
-                {
-                    Visit(dep);
-                }
-                else
-                {
-                    _logger?.LogWarning("Plugin {PluginId} depends on {DepId} which is not available",
-                        manifest.Id, depId);
-                }
-            }
-
-            visiting.Remove(manifest.Id);
-            visited.Add(manifest.Id);
-            sorted.Add(manifest);
-        }
-
-        foreach (var manifest in manifests)
-        {
-            Visit(manifest);
-        }
-
-        return sorted;
-    }
 
     /// <summary>
     /// Discovers installer implementations in an assembly.

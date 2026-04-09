@@ -92,22 +92,6 @@ public partial class DownloadItemModel : ObservableObject
         ? $"{FormatBytes(BytesDownloaded)} / {FormatBytes(TotalBytes)}"
         : FormatBytes(BytesDownloaded);
 
-    /// <summary>
-    /// Estimated time remaining.
-    /// </summary>
-    public TimeSpan? EstimatedTimeRemaining
-    {
-        get
-        {
-            if (SpeedBytesPerSecond <= 0 || TotalBytes <= 0 || BytesDownloaded >= TotalBytes)
-                return null;
-
-            var remainingBytes = TotalBytes - BytesDownloaded;
-            var seconds = remainingBytes / SpeedBytesPerSecond;
-            return TimeSpan.FromSeconds(seconds);
-        }
-    }
-
     public DownloadItemModel(BackendMod mod)
     {
         Mod = mod;

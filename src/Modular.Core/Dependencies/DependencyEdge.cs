@@ -71,27 +71,3 @@ public class DependencyEdge
         return $"{From} -> {To}{constraint} [{Type}]";
     }
 }
-
-/// <summary>
-/// Type of dependency edge in the graph.
-/// </summary>
-public enum EdgeType
-{
-    /// <summary>Dependency is required for mod to function.</summary>
-    Requires,
-
-    /// <summary>Dependency is optional (enhances functionality).</summary>
-    Optional,
-
-    /// <summary>Mods are incompatible and cannot coexist.</summary>
-    Incompatible,
-
-    /// <summary>Dependency is embedded/bundled with the mod.</summary>
-    Embedded,
-
-    /// <summary>Mod recommends another mod but doesn't require it.</summary>
-    Recommends,
-
-    /// <summary>Mod breaks compatibility with another mod's version.</summary>
-    Breaks
-}

@@ -1,19 +1,6 @@
 namespace Modular.Gui.Services;
 
 /// <summary>
-/// Result of a dialog with multiple options.
-/// </summary>
-public enum DialogResult
-{
-    Ok,
-    Cancel,
-    Yes,
-    No,
-    Retry,
-    Abort
-}
-
-/// <summary>
 /// Service for showing dialogs to the user.
 /// </summary>
 public interface IDialogService
@@ -47,12 +34,6 @@ public interface IDialogService
     Task<string?> ShowFolderBrowserAsync(string? title = null, string? initialDirectory = null);
 
     /// <summary>
-    /// Shows an error dialog with a retry option.
-    /// </summary>
-    /// <returns>DialogResult indicating user's choice.</returns>
-    Task<DialogResult> ShowRetryErrorAsync(string title, string message);
-
-    /// <summary>
     /// Shows a file browser dialog.
     /// </summary>
     /// <returns>List of selected file paths, or empty if cancelled.</returns>
@@ -73,39 +54,4 @@ public interface IDialogService
     /// <param name="preSelected">Indices of items that should be pre-selected. Null selects all.</param>
     /// <returns>List of selected indices, or empty if cancelled.</returns>
     Task<List<int>> ShowMultiSelectAsync(string title, string message, List<string> items, List<int>? preSelected = null);
-
-    /// <summary>
-    /// Shows a progress dialog for long-running operations.
-    /// </summary>
-    /// <param name="title">Dialog title.</param>
-    /// <param name="message">Initial message.</param>
-    /// <param name="cancellable">Whether the operation can be cancelled.</param>
-    /// <returns>A progress reporter that can update the dialog.</returns>
-    Task<IProgressDialog> ShowProgressAsync(string title, string message, bool cancellable = true);
-}
-
-/// <summary>
-/// Interface for a progress dialog that can be updated.
-/// </summary>
- public interface IProgressDialog : IDisposable
-{
-    /// <summary>
-    /// Updates the progress value (0-100).
-    /// </summary>
-    void UpdateProgress(double progress);
-
-    /// <summary>
-    /// Updates the message displayed.
-    /// </summary>
-    void UpdateMessage(string message);
-
-    /// <summary>
-    /// Whether the user has requested cancellation.
-    /// </summary>
-    bool IsCancellationRequested { get; }
-
-    /// <summary>
-    /// Closes the dialog.
-    /// </summary>
-    void Close();
 }

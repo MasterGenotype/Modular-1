@@ -19,9 +19,6 @@ using Modular.Core.Services;
 using Modular.Core.Telemetry;
 using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Modular.Gui;
 

@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
-using Modular.Gui.Models;
 
 namespace Modular.Gui.Services;
 
@@ -12,8 +11,6 @@ public class DownloadHistoryService
     private readonly string _historyPath;
     private readonly ObservableCollection<DownloadHistoryEntry> _history = [];
     private readonly object _lock = new();
-
-    public IReadOnlyCollection<DownloadHistoryEntry> History => _history;
 
     public int TotalDownloads => _history.Count;
     public int SuccessfulDownloads => _history.Count(h => h.IsSuccess);
@@ -67,43 +64,6 @@ public class DownloadHistoryService
             IsSuccess = false,
             ErrorMessage = errorMessage
         });
-    }
-
-    /// <summary>
-    /// Clears all history entries.
-    /// </summary>
-    public void ClearHistory()
-    {
-        lock (_lock)
-        {
-            _history.Clear();
-        }
-    }
-
-    /// <summary>
-    /// Gets history entries filtered by date range.
-    /// </summary>
-    public IEnumerable<DownloadHistoryEntry> GetHistoryByDateRange(DateTime start, DateTime end)
-    {
-        lock (_lock)
-        {
-            return _history.Where(h => h.DownloadTime >= start && h.DownloadTime <= end).ToList();
-        }
-    }
-
-    /// <summary>
-    /// Gets today's download statistics.
-    /// </summary>
-    public (int Total, int Success, int Failed, long Bytes) GetTodayStats()
-    {
-        var today = DateTime.Today;
-        var todayEntries = _history.Where(h => h.DownloadTime.Date == today).ToList();
-        return (
-            todayEntries.Count,
-            todayEntries.Count(h => h.IsSuccess),
-            todayEntries.Count(h => !h.IsSuccess),
-            todayEntries.Where(h => h.IsSuccess).Sum(h => h.FileSize)
-        );
     }
 
     /// <summary>

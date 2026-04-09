@@ -44,12 +44,6 @@ public class ModCollectionService
         return _repository.ListAsync(ct);
     }
 
-    public async Task<ModCollection?> GetByNameAsync(string name, CancellationToken ct = default)
-    {
-        var (collection, _) = await _repository.FindByNameAsync(name, ct);
-        return collection;
-    }
-
     public async Task AddModAsync(ModCollection collection, BackendMod mod, string? fileId = null, bool isOptional = false, CancellationToken ct = default)
     {
         if (collection.Entries.Any(e => e.ModId == mod.ModId))

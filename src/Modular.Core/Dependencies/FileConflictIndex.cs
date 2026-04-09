@@ -40,22 +40,6 @@ public class FileConflictIndex
     }
 
     /// <summary>
-    /// Removes all files provided by a mod.
-    /// </summary>
-    public void UnregisterMod(string modId)
-    {
-        lock (_lock)
-        {
-            foreach (var path in _fileProviders.Keys.ToList())
-            {
-                _fileProviders[path].RemoveAll(p => p.ModId == modId);
-                if (_fileProviders[path].Count == 0)
-                    _fileProviders.Remove(path);
-            }
-        }
-    }
-
-    /// <summary>
     /// Detects all file conflicts in the index.
     /// </summary>
     public List<FileConflict> DetectConflicts()
@@ -80,46 +64,6 @@ public class FileConflictIndex
             }
 
             return conflicts;
-        }
-    }
-
-    /// <summary>
-    /// Checks if a specific file has conflicts.
-    /// </summary>
-    public bool HasConflict(string gamePath)
-    {
-        lock (_lock)
-        {
-            var normalizedPath = NormalizePath(gamePath);
-            return _fileProviders.TryGetValue(normalizedPath, out var providers) && providers.Count > 1;
-        }
-    }
-
-    /// <summary>
-    /// Gets all mods that provide a specific file.
-    /// </summary>
-    public List<string> GetProvidersForFile(string gamePath)
-    {
-        lock (_lock)
-        {
-            var normalizedPath = NormalizePath(gamePath);
-            if (_fileProviders.TryGetValue(normalizedPath, out var providers))
-                return providers.Select(p => p.ModId).ToList();
-            return new List<string>();
-        }
-    }
-
-    /// <summary>
-    /// Gets all files provided by a mod.
-    /// </summary>
-    public List<string> GetFilesForMod(string modId)
-    {
-        lock (_lock)
-        {
-            return _fileProviders
-                .Where(kvp => kvp.Value.Any(p => p.ModId == modId))
-                .Select(kvp => kvp.Key)
-                .ToList();
         }
     }
 

@@ -1,7 +1,6 @@
 using Modular.Core.Utilities;
 using Modular.Sdk.Archives;
 using SharpCompress.Archives;
-using SharpCompress.Common;
 
 namespace Modular.Core.Archives;
 
