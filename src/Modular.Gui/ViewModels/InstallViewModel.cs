@@ -386,10 +386,37 @@ public partial class InstallViewModel : ViewModelBase
             return;
         }
 
+        // If multiple archives are queued, offer a selection dialog
+        var pathsToInstall = ArchivePaths.ToList();
+        if (pathsToInstall.Count > 1 && _dialogService != null)
+        {
+            var displayItems = pathsToInstall.Select(p =>
+            {
+                var name = Path.GetFileName(p);
+                var dir = Path.GetFileName(Path.GetDirectoryName(p) ?? "");
+                var size = File.Exists(p) ? new FileInfo(p).Length : 0;
+                var sizeText = FormatFileSize(size);
+                return $"{name}  ({sizeText})  [{dir}]";
+            }).ToList();
+
+            var selectedIndices = await _dialogService.ShowMultiSelectAsync(
+                "Select Files to Install",
+                $"{pathsToInstall.Count} file(s) queued. Choose which files to install:",
+                displayItems);
+
+            if (selectedIndices.Count == 0)
+            {
+                StatusMessage = "Installation cancelled";
+                return;
+            }
+
+            pathsToInstall = selectedIndices.Select(idx => pathsToInstall[idx]).ToList();
+        }
+
         IsInstalling = true;
         InstallProgress = 0;
         InstallResults.Clear();
-        TotalArchives = ArchivePaths.Count;
+        TotalArchives = pathsToInstall.Count;
         CurrentArchiveIndex = 0;
 
         var succeeded = 0;
@@ -397,7 +424,7 @@ public partial class InstallViewModel : ViewModelBase
 
         try
         {
-            for (var i = 0; i < ArchivePaths.Count; i++)
+            for (var i = 0; i < pathsToInstall.Count; i++)
             {
                 var archivePath = pathsToInstall[i];
                 var fileName = Path.GetFileName(archivePath);
