@@ -252,6 +252,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     [RelayCommand]
     private async Task ExecuteSearchAsync()
     {
+        CurrentPage = 1;
         await SearchNexusModsAsync();
     }
 
