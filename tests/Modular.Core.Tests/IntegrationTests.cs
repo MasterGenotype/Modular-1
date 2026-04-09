@@ -38,8 +38,9 @@ public class PathSanitizerTests
     [Fact]
     public void AcceptsValidRelativePaths()
     {
-        var result = PathSanitizer.SanitizeEntryPath("mods/texture.dds", "/tmp/target");
-        result.Should().StartWith("/tmp/target");
+        var targetDir = Path.Combine(Path.GetTempPath(), "sanitizer_test_target");
+        var result = PathSanitizer.SanitizeEntryPath("mods/texture.dds", targetDir);
+        result.Should().StartWith(Path.GetFullPath(targetDir));
         result.Should().EndWith("texture.dds");
     }
 
@@ -47,7 +48,9 @@ public class PathSanitizerTests
     public void NormalizesSeparators()
     {
         var result = PathSanitizer.NormalizeSeparators("folder\\subfolder/file.txt");
-        result.Should().NotContain("\\");
+        // After normalization, all separators should be the platform separator
+        var expected = $"folder{Path.DirectorySeparatorChar}subfolder{Path.DirectorySeparatorChar}file.txt";
+        result.Should().Be(expected);
     }
 
     [Fact]
