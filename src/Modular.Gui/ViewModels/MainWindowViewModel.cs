@@ -317,7 +317,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
-                NavigateTo("Downloads");
+                StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
             {
@@ -365,7 +365,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
-                NavigateTo("Downloads");
+                StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
             {
@@ -424,7 +424,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
             await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
-            NavigateTo("Downloads");
+            StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
         }
         else
         {

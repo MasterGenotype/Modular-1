@@ -20,6 +20,9 @@ public partial class NexusSearchViewModel : ViewModelBase
     private readonly ThumbnailService? _thumbnailService;
     private System.Threading.Timer? _debounceTimer;
 
+    // Persistent queue: selected mods survive page changes
+    private readonly Dictionary<string, ModDisplayModel> _selectedQueue = new();
+
     [ObservableProperty]
     private string _searchText = string.Empty;
 
@@ -329,10 +332,27 @@ public partial class NexusSearchViewModel : ViewModelBase
                     .ToList()
                 : result.Mods;
 
+            // Persist current selections before clearing results
+            foreach (var m in SearchResults.Where(m => m.IsSelected))
+            {
+                var key = $"{m.Mod.BackendId}:{m.ModId}";
+                _selectedQueue[key] = m;
+            }
+            // Remove deselected mods from the queue (user explicitly unchecked them)
+            foreach (var m in SearchResults.Where(m => !m.IsSelected))
+            {
+                var key = $"{m.Mod.BackendId}:{m.ModId}";
+                _selectedQueue.Remove(key);
+            }
+
             SearchResults.Clear();
             foreach (var mod in ranked)
             {
                 var display = new ModDisplayModel(mod);
+                // Restore selection state from persistent queue
+                var queueKey = $"{mod.BackendId}:{mod.ModId}";
+                if (_selectedQueue.ContainsKey(queueKey))
+                    display.IsSelected = true;
                 display.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ModDisplayModel.IsSelected)) UpdateSelectedCount(); };
                 SearchResults.Add(display);
             }
@@ -381,17 +401,29 @@ public partial class NexusSearchViewModel : ViewModelBase
     {
         foreach (var mod in SearchResults)
             mod.IsSelected = false;
+        _selectedQueue.Clear();
         UpdateSelectedCount();
     }
 
     public void UpdateSelectedCount()
     {
-        SelectedCount = SearchResults.Count(m => m.IsSelected);
+        // Sync current page selections into the persistent queue
+        foreach (var m in SearchResults)
+        {
+            var key = $"{m.Mod.BackendId}:{m.ModId}";
+            if (m.IsSelected)
+                _selectedQueue[key] = m;
+            else
+                _selectedQueue.Remove(key);
+        }
+        SelectedCount = _selectedQueue.Count;
     }
 
     public IEnumerable<ModDisplayModel> GetSelectedMods()
     {
-        return SearchResults.Where(m => m.IsSelected);
+        // Sync current page state first
+        UpdateSelectedCount();
+        return _selectedQueue.Values;
     }
 
     [RelayCommand]
