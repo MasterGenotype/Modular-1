@@ -317,6 +317,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
+                modList.SelectNoneCommand.Execute(null);
                 StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
@@ -365,6 +366,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
+                searchVm.ClearSelection();
                 StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
@@ -374,22 +376,24 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         else if (activeVm is GameBananaViewModel gbList)
         {
-            await DownloadGameBananaModsAsync(gbList.GetSelectedMods().ToList());
+            if (await DownloadGameBananaModsAsync(gbList.GetSelectedMods().ToList()))
+                gbList.SelectNoneCommand.Execute(null);
         }
         else if (activeVm is GameBananaSearchViewModel gbSearch)
         {
-            await DownloadGameBananaModsAsync(gbSearch.GetSelectedMods().ToList());
+            if (await DownloadGameBananaModsAsync(gbSearch.GetSelectedMods().ToList()))
+                gbSearch.SelectNoneCommand.Execute(null);
         }
     }
 
-    private async Task DownloadGameBananaModsAsync(List<Models.ModDisplayModel> selected)
+    private async Task<bool> DownloadGameBananaModsAsync(List<Models.ModDisplayModel> selected)
     {
-        if (DownloadQueueViewModel == null) return;
+        if (DownloadQueueViewModel == null) return false;
 
         if (selected.Count == 0)
         {
             StatusText = "No mods selected";
-            return;
+            return false;
         }
 
         StatusText = $"Fetching files for {selected.Count} mod(s)...";
@@ -398,7 +402,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (backend == null)
         {
             StatusText = "Backend not available";
-            return;
+            return false;
         }
 
         var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
@@ -425,10 +429,12 @@ public partial class MainWindowViewModel : ViewModelBase
             StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
             await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
             StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
+            return true;
         }
         else
         {
             StatusText = "No downloadable files found";
+            return false;
         }
     }
 

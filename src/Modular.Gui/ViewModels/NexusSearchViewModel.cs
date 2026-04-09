@@ -426,6 +426,18 @@ public partial class NexusSearchViewModel : ViewModelBase
         return _selectedQueue.Values;
     }
 
+    /// <summary>
+    /// Clears the persistent selection queue and deselects all visible results.
+    /// Called after mods have been successfully queued for download.
+    /// </summary>
+    public void ClearSelection()
+    {
+        _selectedQueue.Clear();
+        foreach (var mod in SearchResults)
+            mod.IsSelected = false;
+        SelectedCount = 0;
+    }
+
     [RelayCommand]
     private void OpenModPage()
     {
