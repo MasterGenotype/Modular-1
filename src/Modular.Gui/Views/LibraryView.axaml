@@ -32,7 +32,7 @@
         </Grid>
 
         <!-- Main Content - Three Column Layout -->
-        <Grid Grid.Row="1" ColumnDefinitions="200,*,250">
+        <Grid Grid.Row="1" ColumnDefinitions="200,*,400">
             <!-- Game Domains List -->
             <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                     CornerRadius="8" Padding="10" Margin="0,0,10,0">
