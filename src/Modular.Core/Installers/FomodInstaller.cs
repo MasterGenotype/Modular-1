@@ -171,8 +171,7 @@ public class FomodInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var targetDir = Path.GetDirectoryName(plan.SourcePath) ?? string.Empty;
-                var destPath = PathSanitizer.SanitizeEntryPath(entry.Name, targetDir);
+                var destPath = PathSanitizer.SanitizeEntryPath(entry.Name, plan.TargetDirectory);
 
                 var destDir = Path.GetDirectoryName(destPath);
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))

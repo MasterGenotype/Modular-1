@@ -136,8 +136,7 @@ public class LooseFileInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var targetDir = Path.GetDirectoryName(plan.SourcePath) ?? string.Empty;
-                var destPath = PathSanitizer.SanitizeEntryPath(operation.DestinationPath, targetDir);
+                var destPath = PathSanitizer.SanitizeEntryPath(operation.DestinationPath, plan.TargetDirectory);
 
                 // Create directory
                 var destDir = Path.GetDirectoryName(destPath);
