@@ -13,8 +13,7 @@ namespace Modular.Core.Installers.HorizonZeroDawn;
 ///
 /// HZD uses the Decima engine. The dominant mod type is Patch_*.bin files
 /// placed in <c>Packed_DX12/</c>. The installer also handles DLL hooks,
-/// ReShade presets, Cheat Engine tables, GPU utility mods, save files,
-/// and config files.
+/// GPU utility mods, binary replacements, and config files.
 ///
 /// Priority 91 — above generic loose-file (1) and BepInEx (80), below
 /// FOMOD (100) and FF7R (92). On par with Cyberpunk (90) and UnrealPak (90)
@@ -280,7 +279,6 @@ public class HZDModInstaller : IModInstaller
             {
                 nameof(HZDInstallType.DecimaPatch) => "Installing Decima patch",
                 nameof(HZDInstallType.DllHook) => "Installing DLL hook",
-                nameof(HZDInstallType.ReShadePreset) => "Installing ReShade preset",
                 nameof(HZDInstallType.GpuUtility) => "Installing GPU utility mod",
                 nameof(HZDInstallType.BinaryReplacement) => "Installing binary replacement",
                 nameof(HZDInstallType.ConfigFile) => "Installing config files",

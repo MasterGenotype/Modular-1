@@ -31,28 +31,21 @@ public enum HZDInstallType
     DllHook = 1 << 1,
 
     /// <summary>
-    /// ReShade preset — ReShade DLLs, shaders, and .ini preset files
-    /// placed in the game root (next to HorizonZeroDawn.exe).
-    /// Examples: Natural Clover ReShade, Photorealistic Reshade, True HDR.
-    /// </summary>
-    ReShadePreset = 1 << 2,
-
-    /// <summary>
     /// DLL replacement + Windows registry patch for GPU utility mods
     /// (FSR2, DLSS unlocking). Files go to game root alongside .reg files.
     /// Examples: DLSS Unlocker, FSR2HZD.
     /// </summary>
-    GpuUtility = 1 << 3,
+    GpuUtility = 1 << 2,
 
     /// <summary>
     /// EXE or core file replacement in the game root.
     /// Example: Run game on Phenom/Core2 (replaces game binaries).
     /// </summary>
-    BinaryReplacement = 1 << 4,
+    BinaryReplacement = 1 << 3,
 
     /// <summary>
     /// TOML/INI configuration file accompanying a DLL hook.
     /// Example: mod_config.toml for Gameplay Tweaks.
     /// </summary>
-    ConfigFile = 1 << 5
+    ConfigFile = 1 << 4
 }

@@ -50,15 +50,6 @@ public static class HZDArchiveAnalyzer
         "oo2core_3_win64", // Oodle decompressor from HZD
     };
 
-    // ── ReShade markers ─────────────────────────────────────────────────
-
-    private static readonly string[] ReShadeMarkers =
-    {
-        "reshade.ini",
-        "reshade-shaders/",
-        "reshade-shaders\\",
-    };
-
     // ── GPU utility markers ─────────────────────────────────────────────
 
     private static readonly string[] GpuUtilityMarkers =
@@ -170,24 +161,7 @@ public static class HZDArchiveAnalyzer
                 continue;
             }
 
-            // ── 5. ReShade markers ───────────────────────────────────
-            if (ReShadeMarkers.Any(r => lower.Contains(r)))
-            {
-                detectedTypes |= HZDInstallType.ReShadePreset;
-                fileRoutes[entry.FullName] = RouteToGameRoot(path, lower);
-                signalConfidences.Add(0.90);
-                continue;
-            }
-            // ReShade shader directories
-            if (lower.Contains("reshade-shaders"))
-            {
-                detectedTypes |= HZDInstallType.ReShadePreset;
-                fileRoutes[entry.FullName] = RouteToGameRoot(path, lower);
-                signalConfidences.Add(0.88);
-                continue;
-            }
-
-            // ── 6. DLL hook — known proxy DLLs ──────────────────────
+            // ── 5. DLL hook — known proxy DLLs ──────────────────────
             if (hasHZDAnchor && lower.EndsWith(".dll") && IsKnownProxyDll(fileName))
             {
                 // Distinguish GPU utility DLLs from hook DLLs
@@ -204,7 +178,7 @@ public static class HZDArchiveAnalyzer
                 continue;
             }
 
-            // ── 7. ASI loader/plugin ─────────────────────────────────
+            // ── 6. ASI loader/plugin ─────────────────────────────────
             if (hasHZDAnchor && lower.EndsWith(".asi"))
             {
                 detectedTypes |= HZDInstallType.GpuUtility;
@@ -213,27 +187,17 @@ public static class HZDArchiveAnalyzer
                 continue;
             }
 
-            // ── 8. Config files (.toml, .ini) ────────────────────────
+            // ── 7. Config files (.toml, .ini) ────────────────────────
             if (hasHZDAnchor && (lower.EndsWith(".toml") || lower.EndsWith(".ini")) &&
                 !lower.Contains("desktop.ini"))
             {
-                // ReShade .ini files
-                if (lower.Contains("reshade") || lower.Contains("preset"))
-                {
-                    detectedTypes |= HZDInstallType.ReShadePreset;
-                    fileRoutes[entry.FullName] = Path.GetFileName(path);
-                    signalConfidences.Add(0.85);
-                }
-                else
-                {
-                    detectedTypes |= HZDInstallType.ConfigFile;
-                    fileRoutes[entry.FullName] = Path.GetFileName(path);
-                    signalConfidences.Add(0.80);
-                }
+                detectedTypes |= HZDInstallType.ConfigFile;
+                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                signalConfidences.Add(0.80);
                 continue;
             }
 
-            // ── 9. .reg files (GPU utility registry patches) ─────────
+            // ── 8. .reg files (GPU utility registry patches) ─────────
             //    Extension-only — require anchor to avoid claiming unrelated
             //    archives that happen to ship .reg scripts.
             if (hasHZDAnchor && lower.EndsWith(".reg"))
@@ -244,7 +208,7 @@ public static class HZDArchiveAnalyzer
                 continue;
             }
 
-            // ── 10. EXE replacement ──────────────────────────────────
+            // ── 9. EXE replacement ──────────────────────────────────
             if (hasHZDAnchor && lower.EndsWith(".exe"))
             {
                 detectedTypes |= HZDInstallType.BinaryReplacement;
@@ -311,18 +275,6 @@ public static class HZDArchiveAnalyzer
             "vulkan-1.dll";
     }
 
-    private static string RouteToGameRoot(string path, string lowerPath)
-    {
-        // If the path already starts with a well-known game root structure,
-        // strip to the relevant part. Otherwise keep as-is from game root.
-        var idx = lowerPath.IndexOf("reshade-shaders/", StringComparison.Ordinal);
-        if (idx >= 0)
-            return "reshade-shaders/" + path[(idx + "reshade-shaders/".Length)..];
-
-        return Path.GetFileName(path);
-    }
-
-    private static string StripToAfter(string path, params string[] markers)
     {
         foreach (var marker in markers)
         {
@@ -352,8 +304,7 @@ public static class HZDArchiveAnalyzer
         var wellKnown = new[]
         {
             "Packed_DX12", "packed_dx12",
-            "reshade-shaders", "ShaderFixes",
-            "Saved Game", "fomod"
+            "ShaderFixes", "Saved Game", "fomod"
         };
 
         if (wellKnown.Any(wk =>
