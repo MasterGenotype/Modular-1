@@ -1,6 +1,8 @@
 # Modular
 
-A next-generation, extensible C#/.NET mod manager for automating the downloading, searching, installing, and management of game modifications from multiple mod repositories. Features a plugin architecture, SSO authentication, mod search and discovery with thumbnail previews and an embedded mod page browser, mod collections, Steam game detection, both CLI and GUI interfaces built with Avalonia, a modern fluent HTTP client API, intelligent rate limiting, and real-time progress tracking.
+An extensible C#/.NET mod manager for downloading, searching, installing, and managing game modifications from multiple mod repositories. Supports NexusMods and GameBanana out of the box, with a plugin system for adding more sources.
+
+Provides both CLI and GUI (Avalonia) interfaces, SSO authentication, mod collections, Steam game detection, intelligent rate limiting, and real-time progress tracking.
 
 ## Table of Contents
 
@@ -27,7 +29,7 @@ A next-generation, extensible C#/.NET mod manager for automating the downloading
 
 ## Overview
 
-Modular is a next-generation mod manager that streamlines game mod management through a unified, extensible interface. It downloads mods from multiple sources (NexusMods, GameBanana, and more via plugins), automatically organizes them into structured directories (`Domain/Category/Mod_Id`), and renames folders from numeric IDs to human-readable names.
+Modular is an extensible mod manager that streamlines game mod management through a unified interface. It downloads mods from multiple sources (NexusMods, GameBanana, and more via plugins), automatically organizes them into structured directories (`Domain/Category/Mod_Id`), and renames folders from numeric IDs to human-readable names.
 
 The project implements a clean **plugin-based architecture** with a stable SDK for extensions, separating concerns between the CLI interface, GUI, core business logic, plugin system, and a modern fluent HTTP client library. This enables community-developed backends, installers, metadata enrichers, and UI extensions without modifying the core codebase.
 
@@ -1230,79 +1232,19 @@ dotnet test --verbosity normal
 
 ## Documentation
 
-Additional documentation is available in the `/docs/` directory:
+Additional documentation is available in the [`docs/`](docs/) directory. See the [`docs/README.md`](docs/README.md) for a full index.
 
-### Architecture & Design
-
-| Document | Description |
-|----------|-------------|
-| [`Modular_1_Blueprint.md`](docs/Modular_1_Blueprint.md) | Next-generation architecture blueprint and evolution roadmap |
-| [`ARCHITECTURE_ANALYSIS.md`](docs/ARCHITECTURE_ANALYSIS.md) | Architecture analysis and patterns |
-| [`IMPLEMENTATION_GUIDE.md`](docs/IMPLEMENTATION_GUIDE.md) | Guide to completing placeholder and partial implementations |
-| [`IMPLEMENTATION_GUIDE_2.md`](docs/IMPLEMENTATION_GUIDE_2.md) | Extended implementation guide |
-| [`CODEBASE_REVIEW_RECOMMENDATIONS.md`](docs/CODEBASE_REVIEW_RECOMMENDATIONS.md) | Comprehensive codebase review and recommendations |
-| [`CODEBASE_ERRORS_ANALYSIS.md`](docs/CODEBASE_ERRORS_ANALYSIS.md) | Codebase error analysis |
-| [`CONCEPTUAL_REPLACEMENTS_ANALYSIS.md`](docs/CONCEPTUAL_REPLACEMENTS_ANALYSIS.md) | Conceptual replacements analysis |
-| [`INTEGRATION_ANALYSIS.md`](docs/INTEGRATION_ANALYSIS.md) | Integration analysis |
-| [`EVOLUTION_SUMMARY.md`](docs/EVOLUTION_SUMMARY.md) | Project evolution history and milestones |
-| [`dependency_sorted_file_operations.md`](docs/dependency_sorted_file_operations.md) | Dependency-sorted file operations |
-
-### Plugin Development
+### Key Documents
 
 | Document | Description |
 |----------|-------------|
-| [`PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) | Complete guide to creating Modular plugins |
-| [`API-BACKENDS-GUIDE.md`](docs/API-BACKENDS-GUIDE.md) | Implementing backend plugins for new mod repositories |
-| [`GAMEBANANA-API-GUIDE.md`](docs/GAMEBANANA-API-GUIDE.md) | GameBanana API integration guide |
-
-### Authentication & APIs
-
-| Document | Description |
-|----------|-------------|
-| [`NEXUSMODS_SSO_INTEGRATION.md`](docs/NEXUSMODS_SSO_INTEGRATION.md) | NexusMods SSO/WebSocket authentication implementation |
-| [`RATE_LIMITING_FIXES_SUMMARY.md`](docs/RATE_LIMITING_FIXES_SUMMARY.md) | Rate limiting implementation details |
-| [`TRACKING_VALIDATION.md`](docs/TRACKING_VALIDATION.md) | Web scraping validation methodology |
-| [`NEXUSMODS_TRACKING_ANALYSIS.md`](docs/NEXUSMODS_TRACKING_ANALYSIS.md) | API tracking analysis and discrepancies |
-| [`NEXUSMODS_DISCREPANCIES.md`](docs/NEXUSMODS_DISCREPANCIES.md) | NexusMods API discrepancy details |
-
-### Features & Workflows
-
-| Document | Description |
-|----------|-------------|
-| [`CATEGORY_ORGANIZATION.md`](docs/CATEGORY_ORGANIZATION.md) | Category-based organization system |
-| [`REORGANIZE_GUIDE.md`](docs/REORGANIZE_GUIDE.md) | Mod reorganization workflows |
-| [`REORGANIZATION_IMPROVEMENTS.md`](docs/REORGANIZATION_IMPROVEMENTS.md) | Reorganization improvements |
-| [`PRIORITIZED_DOWNLOADS.md`](docs/PRIORITIZED_DOWNLOADS.md) | Priority-based download queue |
-| [`IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) | Feature improvements and API enhancements |
-| [`TASKS.md`](docs/TASKS.md) | Current task list |
-
-### Steam & Game Detection
-
-| Document | Description |
-|----------|-------------|
-| [`Steam-Client-Game-Operations.md`](docs/Steam-Client-Game-Operations.md) | Steam client game operations |
-| [`steam-mod-installer-plan.md`](docs/steam-mod-installer-plan.md) | Steam mod installer implementation plan |
-
-### GUI Development
-
-| Document | Description |
-|----------|-------------|
-| [`GUI_RECOMMENDATIONS.md`](docs/GUI_RECOMMENDATIONS.md) | GUI implementation recommendations and patterns |
-| [`GUI Feature Parity Audit & Implementation Plan.md`](docs/GUI%20Feature%20Parity%20Audit%20&%20Implementation%20Plan.md) | GUI feature parity audit and plan |
-
-### HTTP Client Library
-
-| Document | Description |
-|----------|-------------|
-| [`fluent/README.md`](docs/fluent/README.md) | Fluent HTTP client user guide |
-| [`fluent/INTERFACES.md`](docs/fluent/INTERFACES.md) | Fluent API interface documentation |
-| [`MODULAR_INTEGRATION_COMPARISON.md`](docs/MODULAR_INTEGRATION_COMPARISON.md) | Fluent vs traditional HTTP client comparison |
-
-### Testing
-
-| Document | Description |
-|----------|-------------|
-| [`TEST_RESULTS.md`](docs/TEST_RESULTS.md) | Test results and coverage |
+| [`BUILD.md`](BUILD.md) | Build, install, and uninstall instructions |
+| [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) | Guide to creating Modular plugins |
+| [`docs/API-BACKENDS-GUIDE.md`](docs/API-BACKENDS-GUIDE.md) | Implementing backend plugins for new mod sources |
+| [`docs/GAMEBANANA-API-GUIDE.md`](docs/GAMEBANANA-API-GUIDE.md) | GameBanana API integration reference |
+| [`docs/NEXUSMODS_SSO_INTEGRATION.md`](docs/NEXUSMODS_SSO_INTEGRATION.md) | NexusMods SSO/WebSocket authentication |
+| [`docs/fluent/README.md`](docs/fluent/README.md) | Fluent HTTP client user guide |
+| [`docs/EVOLUTION_SUMMARY.md`](docs/EVOLUTION_SUMMARY.md) | Project evolution history and milestones |
 
 ## Contributing
 

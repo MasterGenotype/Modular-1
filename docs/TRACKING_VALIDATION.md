@@ -1,3 +1,5 @@
+> **Note:** This document was originally written for the C++ codebase. File paths and function references (e.g., `NexusMods.cpp`) refer to the legacy implementation. The concepts described still apply to the current C# codebase in `src/Modular.Core/`.
+
 # NexusMods Tracking Validation Mechanisms
 
 ## Overview
@@ -232,7 +234,7 @@ std::string user_info = get_user_info(config);
 ## Audit Trail
 
 Every download attempt is logged in:
-- `~/Games/Mods-Lists/{domain}/downloads.db.json` - Full download history
+- `~/Mods/{domain}/downloads.db.json` - Full download history
 - Contains: mod_id, file_id, URL, timestamp, status
 
 You can audit this file to verify only your tracked mods were downloaded.

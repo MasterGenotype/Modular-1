@@ -134,7 +134,7 @@ curl -H "apikey: $(jq -r .nexus_api_key ~/.config/Modular/config.json)" \
 ## Audit Trail
 
 All downloads are logged in:
-- `~/Games/Mods-Lists/{domain}/downloads.db.json`
+- `~/Mods/{domain}/downloads.db.json`
 
 Each record contains:
 - mod_id (verified against tracking list)

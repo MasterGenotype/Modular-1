@@ -34,7 +34,7 @@ This overrides the config file setting for that execution only.
 
 ## How It Works
 
-1. **Download Phase**: Mods are downloaded to `~/Games/Mods-Lists/{game_domain}/{mod_id}/`
+1. **Download Phase**: Mods are downloaded to `~/Mods/{game_domain}/{mod_id}/`
 2. **Auto-Rename Phase** (if `auto_rename = true`):
    - Fetches mod info from NexusMods API (includes category_id and category name)
    - Renames directory from numeric ID to human-readable name
@@ -45,7 +45,7 @@ This overrides the config file setting for that execution only.
 
 3. **Result Structure**:
    ```
-   ~/Games/Mods-Lists/stardewvalley/
+   ~/Mods/stardewvalley/
    ├── Gameplay Mechanics/
    │   ├── Automate/
    │   ├── CJB Cheats Menu/

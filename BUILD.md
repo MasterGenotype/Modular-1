@@ -98,12 +98,12 @@ ln -sf ~/.local/share/modular-gui/Modular.Gui ~/.local/bin/modular-gui
 Create a desktop entry for application launchers:
 
 ```bash
-cat > ~/.local/share/applications/modular.desktop <<'EOF'
+cat > ~/.local/share/applications/modular.desktop <<EOF
 [Desktop Entry]
 Type=Application
 Name=Modular Mod Manager
 Comment=Next-generation mod manager with plugin support
-Exec=/home/$USER/.local/bin/modular-gui
+Exec=$HOME/.local/bin/modular-gui
 Icon=applications-games
 Terminal=false
 Categories=Game;Utility;
