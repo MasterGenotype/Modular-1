@@ -281,8 +281,6 @@ public class HZDModInstaller : IModInstaller
                 nameof(HZDInstallType.DecimaPatch) => "Installing Decima patch",
                 nameof(HZDInstallType.DllHook) => "Installing DLL hook",
                 nameof(HZDInstallType.ReShadePreset) => "Installing ReShade preset",
-                nameof(HZDInstallType.CheatTable) => "Extracting Cheat Engine table",
-                nameof(HZDInstallType.SaveFile) => "Installing save file",
                 nameof(HZDInstallType.GpuUtility) => "Installing GPU utility mod",
                 nameof(HZDInstallType.BinaryReplacement) => "Installing binary replacement",
                 nameof(HZDInstallType.ConfigFile) => "Installing config files",

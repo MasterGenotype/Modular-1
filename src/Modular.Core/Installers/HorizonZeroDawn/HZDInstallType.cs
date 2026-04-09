@@ -38,33 +38,21 @@ public enum HZDInstallType
     ReShadePreset = 1 << 2,
 
     /// <summary>
-    /// Cheat Engine table (.CT file). Not installed into the game directory
-    /// at all — loaded externally by Cheat Engine.
-    /// </summary>
-    CheatTable = 1 << 3,
-
-    /// <summary>
-    /// Save file placed into Documents\Horizon Zero Dawn\Saved Game\.
-    /// Example: New Game Plus Save.
-    /// </summary>
-    SaveFile = 1 << 4,
-
-    /// <summary>
     /// DLL replacement + Windows registry patch for GPU utility mods
     /// (FSR2, DLSS unlocking). Files go to game root alongside .reg files.
     /// Examples: DLSS Unlocker, FSR2HZD.
     /// </summary>
-    GpuUtility = 1 << 5,
+    GpuUtility = 1 << 3,
 
     /// <summary>
     /// EXE or core file replacement in the game root.
     /// Example: Run game on Phenom/Core2 (replaces game binaries).
     /// </summary>
-    BinaryReplacement = 1 << 6,
+    BinaryReplacement = 1 << 4,
 
     /// <summary>
     /// TOML/INI configuration file accompanying a DLL hook.
     /// Example: mod_config.toml for Gameplay Tweaks.
     /// </summary>
-    ConfigFile = 1 << 7
+    ConfigFile = 1 << 5
 }

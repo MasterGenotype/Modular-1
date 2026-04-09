@@ -242,27 +242,7 @@ public static class HZDArchiveAnalyzer
                 continue;
             }
 
-            // ── 10. Cheat Engine table ───────────────────────────────
-            if (lower.EndsWith(".ct"))
-            {
-                detectedTypes |= HZDInstallType.CheatTable;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
-                signalConfidences.Add(0.95);
-                continue;
-            }
-
-            // ── 11. Save files ───────────────────────────────────────
-            if (hasHZDAnchor &&
-                (lower.Contains("saved game") || lower.Contains("savedgame") ||
-                 lower.EndsWith(".sav") || lower.EndsWith(".dat")))
-            {
-                detectedTypes |= HZDInstallType.SaveFile;
-                fileRoutes[entry.FullName] = path;
-                signalConfidences.Add(0.85);
-                continue;
-            }
-
-            // ── 12. EXE replacement ──────────────────────────────────
+            // ── 10. EXE replacement ──────────────────────────────────
             if (hasHZDAnchor && lower.EndsWith(".exe"))
             {
                 detectedTypes |= HZDInstallType.BinaryReplacement;
