@@ -291,11 +291,11 @@ public partial class ModListViewModel : ViewModelBase
                 var latestDownloaded = records.OrderByDescending(r => r.DownloadTime).First();
                 mod.DownloadedDate = latestDownloaded.DownloadTime;
 
-                // Get latest files from backend
+                // Get latest files from backend (main + optional to match download scope)
                 var files = await _backend.GetModFilesAsync(
                     mod.ModId,
                     SelectedDomain,
-                    new FileFilter { Categories = ["main"] });
+                    FileFilter.MainAndOptional);
 
                 if (files.Count == 0)
                     continue;

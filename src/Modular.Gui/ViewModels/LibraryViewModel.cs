@@ -165,14 +165,29 @@ public partial class LibraryViewModel : ViewModelBase
         {
             foreach (var dir in Directory.GetDirectories(domain.Path))
             {
-                var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
-                ModFolders.Add(new ModFolderItem
+                var dirName = Path.GetFileName(dir);
+
+                // Check if this is a category folder (contains subdirectories that are mods)
+                // Category folders are created by OrganizeByCategory and look like "Category_N" or
+                // have been renamed to category names. A directory is treated as a category if it
+                // contains subdirectories but no archive files at its top level.
+                var subDirs = Directory.GetDirectories(dir);
+                var hasTopLevelArchives = Directory.GetFiles(dir)
+                    .Any(f => IsModFile(Path.GetExtension(f)));
+
+                if (subDirs.Length > 0 && !hasTopLevelArchives && !int.TryParse(dirName, out _))
                 {
-                    Name = Path.GetFileName(dir),
-                    Path = dir,
-                    FileCount = files.Length,
-                    TotalSize = files.Sum(f => new FileInfo(f).Length)
-                });
+                    // This is a category folder — enumerate the mod subdirectories inside it
+                    foreach (var modDir in subDirs)
+                    {
+                        AddModFolder(modDir);
+                    }
+                }
+                else
+                {
+                    // This is a direct mod folder (numeric ID or flat layout)
+                    AddModFolder(dir);
+                }
             }
 
             StatusMessage = $"{ModFolders.Count} mods in {domain.Name}";
@@ -181,6 +196,27 @@ public partial class LibraryViewModel : ViewModelBase
         {
             StatusMessage = $"Error: {ex.Message}";
         }
+    }
+
+    private void AddModFolder(string dir)
+    {
+        var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
+        ModFolders.Add(new ModFolderItem
+        {
+            Name = Path.GetFileName(dir),
+            Path = dir,
+            FileCount = files.Length,
+            TotalSize = files.Sum(f => new FileInfo(f).Length)
+        });
+    }
+
+    private static bool IsModFile(string extension)
+    {
+        return extension.Length > 0 && extension.ToLowerInvariant() switch
+        {
+            ".zip" or ".7z" or ".rar" or ".tar" or ".gz" or ".pak" or ".xz" or ".bz2" => true,
+            _ => false
+        };
     }
 
     private void LoadModFiles(ModFolderItem mod)

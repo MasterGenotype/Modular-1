@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Backends;
+using Modular.Core.Database;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Backends.GameBanana;
@@ -27,6 +28,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     private readonly IRenameService? _renameService;
     private readonly AppSettings? _settings;
     private readonly DownloadHistoryService? _historyService;
+    private readonly DownloadDatabase? _downloadDatabase;
     private readonly HttpClient _httpClient;
     private readonly ConcurrentQueue<DownloadItemModel> _pendingQueue = new();
     private readonly SemaphoreSlim _downloadSemaphore = new(1, 1); // Single concurrent download
@@ -92,13 +94,15 @@ public partial class DownloadQueueViewModel : ViewModelBase
         GameBananaBackend gameBananaBackend,
         IRenameService renameService,
         AppSettings settings,
-        DownloadHistoryService historyService)
+        DownloadHistoryService historyService,
+        DownloadDatabase downloadDatabase)
     {
         _nexusBackend = nexusBackend;
         _gameBananaBackend = gameBananaBackend;
         _renameService = renameService;
         _settings = settings;
         _historyService = historyService;
+        _downloadDatabase = downloadDatabase;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Modular/1.0");
         UpdateHistoryStats();
@@ -378,6 +382,28 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 duration);
             _ = _historyService?.SaveAsync();
             UpdateHistoryStats();
+
+            // Write download record to database (used by Library panel and Check Updates)
+            if (_downloadDatabase != null && item.File != null &&
+                int.TryParse(item.Mod.ModId, out var recModId) &&
+                int.TryParse(item.File.FileId, out var recFileId))
+            {
+                var record = new DownloadRecord
+                {
+                    GameDomain = item.GameDomain ?? "",
+                    ModId = recModId,
+                    FileId = recFileId,
+                    Filename = item.File.FileName,
+                    Filepath = outputPath,
+                    Url = url ?? "",
+                    Md5Expected = item.File.Md5 ?? "",
+                    FileSize = finalSize,
+                    DownloadTime = DateTime.UtcNow,
+                    Status = DownloadStatus.Success
+                };
+                _downloadDatabase.AddRecord(record);
+                _ = _downloadDatabase.SaveAsync();
+            }
             
             // Track domain for reorganization (NexusMods only - GameBanana already uses mod names)
             if (item.Mod.BackendId == "nexusmods" && !string.IsNullOrEmpty(item.GameDomain))
