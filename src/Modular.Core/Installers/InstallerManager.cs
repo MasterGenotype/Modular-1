@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
 using Modular.Core.Installers.Cyberpunk;
+using Modular.Core.Installers.FF7Remake;
 using Modular.Core.Installers.Steam;
 using Modular.Core.Telemetry;
 using Modular.Sdk.Archives;
@@ -35,6 +36,7 @@ public class InstallerManager
         RegisterInstaller(new SteamModInstaller(factory));
         RegisterInstaller(new UnrealPakInstaller(factory));
         RegisterInstaller(new CyberpunkModInstaller(factory));
+        RegisterInstaller(new FF7RModInstaller(factory));
     }
 
     /// <summary>
