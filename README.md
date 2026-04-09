@@ -393,7 +393,7 @@ Modular features a robust plugin architecture enabling community-developed exten
 ### Extension Points
 
 **Mod Backends (`IModBackend`)** - Add support for new mod repositories
-- Implement `ListUserModsAsync`, `ListFilesAsync`, `DownloadAsync`
+- Implement `GetUserModsAsync`, `GetModFilesAsync`, `DownloadModsAsync`
 - Optionally implement `ISearchableBackend` for full-text search support
 - Declare backend capabilities via `BackendCapabilities` (game domains, categories, search, rate limits, etc.)
 - Examples: NexusMods, GameBanana, Modrinth, CurseForge
@@ -591,10 +591,10 @@ var response = await client
     .GetAsync("/v1/users/validate.json")
     .WithHeader("apikey", apiKey)
     .WithHeader("accept", "application/json")
-    .SendAsync();
+    .AsResponseAsync();
 
 // Access response data
-var json = await response.AsJsonAsync<UserInfo>();
+var user = response.As<UserInfo>();
 ```
 
 ### Features
@@ -613,23 +613,21 @@ var json = await response.AsJsonAsync<UserInfo>();
 // POST with JSON body
 var response = await client
     .PostAsync("/api/endpoint")
-    .WithHeader("Content-Type", "application/json")
     .WithJsonBody(new { key = "value" })
-    .SendAsync();
+    .AsResponseAsync();
 
 // GET with query parameters
 var response = await client
     .GetAsync("/api/search")
-    .WithQueryParam("q", "skyrim")
-    .WithQueryParam("page", "1")
-    .SendAsync();
+    .WithArgument("q", "skyrim")
+    .WithArgument("page", "1")
+    .AsResponseAsync();
 
 // Download with progress
 await client
     .GetAsync("/files/download/123")
-    .WithProgress((downloaded, total) =>
-        Console.WriteLine($"{downloaded}/{total}"))
-    .DownloadAsync("/path/to/file");
+    .DownloadToAsync("/path/to/file", new Progress<(long downloaded, long total)>(
+        p => Console.WriteLine($"{p.downloaded}/{p.total}")));
 ```
 
 ### Client Configuration
