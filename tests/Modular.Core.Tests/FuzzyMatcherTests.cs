@@ -36,7 +36,8 @@ public class FuzzyMatcherTests
     [Fact]
     public void Score_SubstringMatch_Returns70()
     {
-        FuzzyMatcher.Score("armor", "Better Armor Pack").Should().Be(70);
+        // "arm" appears inside "Farming" but does not start any word
+        FuzzyMatcher.Score("arm", "Farming Tools").Should().Be(70);
     }
 
     [Fact]

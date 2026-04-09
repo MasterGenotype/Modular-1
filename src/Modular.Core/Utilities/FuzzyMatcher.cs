@@ -48,9 +48,11 @@ public static class FuzzyMatcher
             return items;
 
         return items
-            .Select(item => (item, score: Score(query, getText(item))))
+            .Select(item => (item, score: Score(query, getText(item)), text: getText(item)))
             .Where(x => x.score > 0)
             .OrderByDescending(x => x.score)
+            .ThenBy(x => x.text.Length)
+            .ThenBy(x => x.text, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.item);
     }
 
