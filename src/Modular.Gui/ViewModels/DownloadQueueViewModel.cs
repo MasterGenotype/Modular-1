@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Backends;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
@@ -10,6 +11,7 @@ using Modular.Core.Backends.GameBanana;
 using Modular.Core.Configuration;
 using Modular.Core.Services;
 using Modular.Core.Utilities;
+using Modular.Gui.Messages;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
 
@@ -197,6 +199,9 @@ public partial class DownloadQueueViewModel : ViewModelBase
             
             // Auto-reorganize downloaded mods for NexusMods
             await ReorganizeDownloadedModsAsync();
+
+            // Notify listeners that the download batch is complete
+            WeakReferenceMessenger.Default.Send(new DownloadBatchCompletedMessage());
         }
     }
     

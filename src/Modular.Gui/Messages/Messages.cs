@@ -109,3 +109,11 @@ public class NavigationInfo
     public string TargetView { get; init; } = string.Empty;
     public object? Parameter { get; init; }
 }
+
+/// <summary>
+/// Message sent when the download queue has been fully drained (all items processed).
+/// Allows search ViewModels to clear their selection queues after downloads complete.
+/// </summary>
+public class DownloadBatchCompletedMessage
+{
+}

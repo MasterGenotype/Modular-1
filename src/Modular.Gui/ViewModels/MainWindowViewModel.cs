@@ -113,6 +113,18 @@ public partial class MainWindowViewModel : ViewModelBase
             });
         });
 
+        // Clear search selections after all downloads in a batch complete
+        WeakReferenceMessenger.Default.Register<DownloadBatchCompletedMessage>(this, (r, m) =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                NexusModsViewModel?.NexusSearchViewModel?.ClearSelection();
+                NexusModsViewModel?.ModListViewModel?.SelectNoneCommand.Execute(null);
+                GameBananaPanelViewModel?.GameBananaViewModel?.SelectNoneCommand.Execute(null);
+                GameBananaPanelViewModel?.GameBananaSearchViewModel?.SelectNoneCommand.Execute(null);
+            });
+        });
+
         // Set up timer to update rate limit info periodically
         _rateLimitTimer = new System.Timers.Timer(5000); // Update every 5 seconds
         _rateLimitTimer.Elapsed += OnRateLimitTimerElapsed;
@@ -317,7 +329,6 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
-                modList.SelectNoneCommand.Execute(null);
                 StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
@@ -366,7 +377,6 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
                 await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
-                searchVm.ClearSelection();
                 StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
             }
             else
@@ -376,24 +386,22 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         else if (activeVm is GameBananaViewModel gbList)
         {
-            if (await DownloadGameBananaModsAsync(gbList.GetSelectedMods().ToList()))
-                gbList.SelectNoneCommand.Execute(null);
+            await DownloadGameBananaModsAsync(gbList.GetSelectedMods().ToList());
         }
         else if (activeVm is GameBananaSearchViewModel gbSearch)
         {
-            if (await DownloadGameBananaModsAsync(gbSearch.GetSelectedMods().ToList()))
-                gbSearch.SelectNoneCommand.Execute(null);
+            await DownloadGameBananaModsAsync(gbSearch.GetSelectedMods().ToList());
         }
     }
 
-    private async Task<bool> DownloadGameBananaModsAsync(List<Models.ModDisplayModel> selected)
+    private async Task DownloadGameBananaModsAsync(List<Models.ModDisplayModel> selected)
     {
-        if (DownloadQueueViewModel == null) return false;
+        if (DownloadQueueViewModel == null) return;
 
         if (selected.Count == 0)
         {
             StatusText = "No mods selected";
-            return false;
+            return;
         }
 
         StatusText = $"Fetching files for {selected.Count} mod(s)...";
@@ -402,7 +410,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (backend == null)
         {
             StatusText = "Backend not available";
-            return false;
+            return;
         }
 
         var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
@@ -429,12 +437,10 @@ public partial class MainWindowViewModel : ViewModelBase
             StatusText = $"Queueing {itemsToQueue.Count} file(s) for download...";
             await DownloadQueueViewModel.EnqueueManyAsync(itemsToQueue);
             StatusText = $"Queued {itemsToQueue.Count} file(s) for download";
-            return true;
         }
         else
         {
             StatusText = "No downloadable files found";
-            return false;
         }
     }
 
