@@ -12,9 +12,8 @@ namespace Modular.Core.Installers.FF7Remake;
 /// automatically route files to the correct game subdirectories based on
 /// detected <see cref="FF7RInstallType"/>s.
 ///
-/// Supports 8 install types: pak mods (~mods or Paks root), DLL hooks,
-/// 3DMigoto framework + sub-mods, ReShade presets, DXVK wrappers, and
-/// INI config files.
+/// Supports 7 install types: pak mods (~mods or Paks root), DLL hooks,
+/// 3DMigoto framework + sub-mods, DXVK wrappers, and INI config files.
 ///
 /// Priority 92 — above the generic UnrealPakInstaller (90). When the
 /// analyzer detects FF7R-specific structure, this installer wins; archives
@@ -303,7 +302,6 @@ public class FF7RModInstaller : IModInstaller
                 nameof(FF7RInstallType.DllHook) => "Installing FF7R DLL hook",
                 nameof(FF7RInstallType.ThreeDMigoto) => "Installing 3DMigoto framework",
                 nameof(FF7RInstallType.ThreeDMigotoMod) => "Installing 3DMigoto mod",
-                nameof(FF7RInstallType.ReShadePreset) => "Installing ReShade preset",
                 nameof(FF7RInstallType.DxvkWrapper) => "Installing DXVK wrapper",
                 nameof(FF7RInstallType.IniConfig) => "Installing config files",
                 _ => "Installing FF7 Remake mod"

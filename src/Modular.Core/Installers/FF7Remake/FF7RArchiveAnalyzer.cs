@@ -64,16 +64,6 @@ public static class FF7RArchiveAnalyzer
         "shaderfixes\\",
     };
 
-    // ── ReShade markers ─────────────────────────────────────────────────
-
-    private static readonly string[] ReShadeMarkers =
-    {
-        "reshade.ini",
-        "reshade-shaders/",
-        "reshade-shaders\\",
-        "reshade.log",
-    };
-
     // ── DXVK markers ────────────────────────────────────────────────────
 
     private static readonly string[] DxvkMarkers =
@@ -128,10 +118,6 @@ public static class FF7RArchiveAnalyzer
             // 3DMigoto markers (FF7R has one of the largest 3DMigoto modding scenes)
             allLower.Any(p => MigotoFrameworkFiles.Any(m =>
                 p.Contains(m, StringComparison.Ordinal))) ||
-            // ReShade markers alongside binaries path
-            (allLower.Any(p => ReShadeMarkers.Any(r =>
-                p.Contains(r, StringComparison.Ordinal))) &&
-             allLower.Any(p => p.Contains("binaries"))) ||
             // DXVK markers
             allLower.Any(p => DxvkMarkers.Any(d =>
                 p.Contains(d, StringComparison.Ordinal)));
@@ -194,24 +180,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // ── 5. ReShade preset/binaries ───────────────────────────
-            if (ReShadeMarkers.Any(r => lower.Contains(r)))
-            {
-                detectedTypes |= FF7RInstallType.ReShadePreset;
-                var dest = RouteToWin64(path, lower);
-                fileRoutes[entry.FullName] = dest;
-                signalConfidences.Add(0.92);
-                continue;
-            }
-            // ReShade shader textures alongside known markers
-            if ((detectedTypes & FF7RInstallType.ReShadePreset) != 0 &&
-                lower.Contains("reshade-shaders"))
-            {
-                fileRoutes[entry.FullName] = RouteToWin64(path, lower);
-                continue;
-            }
-
-            // ── 6. DXVK wrapper ──────────────────────────────────────
+            // ── 5. DXVK wrapper ──────────────────────────────────────
             if (DxvkMarkers.Any(d => lower.Contains(d)))
             {
                 detectedTypes |= FF7RInstallType.DxvkWrapper;
@@ -222,7 +191,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // ── 7. DLL/ASI hook in Binaries path ─────────────────────
+            // ── 6. DLL/ASI hook in Binaries path ─────────────────────
             if (ContainsAny(lower, BinariesPrefixes) &&
                 (lower.EndsWith(".dll") || lower.EndsWith(".asi")))
             {
@@ -233,7 +202,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // ── 8. INI/config files ──────────────────────────────────
+            // ── 7. INI/config files ──────────────────────────────────
             //    Path-anchored: files already in engine/config or similar
             if (lower.EndsWith(".ini") && ContainsAny(lower, BinariesPrefixes))
             {
@@ -247,7 +216,7 @@ public static class FF7RArchiveAnalyzer
 
             // ── Extension-only signals (require FF7R anchor) ─────────
 
-            // 9. Bare .pak file — most FF7R mods ship as flat .pak
+            // 8. Bare .pak file — most FF7R mods ship as flat .pak
             if (hasFF7RAnchor && lower.EndsWith(".pak"))
             {
                 detectedTypes |= FF7RInstallType.PakMod;
@@ -257,7 +226,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // 10. Bare DLL — proxy DLL for hooking
+            // 9. Bare DLL — proxy DLL for hooking
             if (hasFF7RAnchor && lower.EndsWith(".dll") &&
                 IsKnownProxyDll(lower))
             {
@@ -268,7 +237,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // 11. Bare .asi plugin
+            // 10. Bare .asi plugin
             if (hasFF7RAnchor && lower.EndsWith(".asi"))
             {
                 detectedTypes |= FF7RInstallType.DllHook;
@@ -278,7 +247,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // 12. Bare .ini — standalone config file
+            // 11. Bare .ini — standalone config file
             if (hasFF7RAnchor && lower.EndsWith(".ini") &&
                 !lower.Contains("desktop.ini"))
             {
@@ -293,7 +262,7 @@ public static class FF7RArchiveAnalyzer
                 continue;
             }
 
-            // 13. DXVK d3d11.dll / dxgi.dll (no dxvk.conf companion — lower confidence)
+            // 12. DXVK d3d11.dll / dxgi.dll (no dxvk.conf companion — lower confidence)
             if (hasFF7RAnchor && IsDxvkCandidate(lower, allLower))
             {
                 detectedTypes |= FF7RInstallType.DxvkWrapper;
@@ -444,8 +413,7 @@ public static class FF7RArchiveAnalyzer
         var wellKnown = new[]
         {
             "End", "Content", "Paks", "Binaries", "Win64",
-            "Mods", "ShaderFixes", "fomod", "~mods",
-            "reshade-shaders"
+            "Mods", "ShaderFixes", "fomod", "~mods"
         };
 
         if (wellKnown.Any(wk =>

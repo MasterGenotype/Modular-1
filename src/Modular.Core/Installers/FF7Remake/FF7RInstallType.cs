@@ -6,7 +6,7 @@ namespace Modular.Core.Installers.FF7Remake;
 ///
 /// FF7R is an Unreal Engine 4 title. Most mods are .pak files destined for
 /// <c>End\Content\Paks\~mods\</c>, but the ecosystem also includes DLL hooks,
-/// 3DMigoto shader mods, ReShade presets, DXVK wrappers, and INI tweaks —
+/// 3DMigoto shader mods, DXVK wrappers, and INI tweaks —
 /// each targeting a different subdirectory of the game root.
 /// </summary>
 [Flags]
@@ -46,19 +46,12 @@ public enum FF7RInstallType
     ThreeDMigotoMod = 1 << 3,
 
     /// <summary>
-    /// ReShade preset + binaries placed into End\Binaries\Win64\.
-    /// Identified by ReShade.ini, reshade-shaders/, or known ReShade DLL names.
-    /// Example: Advent ReShade - HDR FX.
-    /// </summary>
-    ReShadePreset = 1 << 4,
-
-    /// <summary>
     /// DXVK DLL wrapper (d3d11.dll + dxgi.dll from DXVK) placed into
     /// End\Binaries\Win64\ for DirectX-to-Vulkan translation.
     /// Identified by DXVK-specific markers (dxvk.conf, DXVK version strings).
     /// Example: Stuttering fix - DXVK method.
     /// </summary>
-    DxvkWrapper = 1 << 5,
+    DxvkWrapper = 1 << 4,
 
     /// <summary>
     /// Engine.ini / Input.ini config overrides placed into the user's
@@ -66,11 +59,11 @@ public enum FF7RInstallType
     /// or into engine/config directories relative to game root.
     /// Example: FFVIIHook's bundled Engine.ini.
     /// </summary>
-    IniConfig = 1 << 6,
+    IniConfig = 1 << 5,
 
     /// <summary>
     /// UE4 .pak file placed directly in End\Content\Paks\ (NOT ~mods).
     /// Some older or experimental mods use this path instead of ~mods.
     /// </summary>
-    PakRoot = 1 << 7
+    PakRoot = 1 << 6
 }
