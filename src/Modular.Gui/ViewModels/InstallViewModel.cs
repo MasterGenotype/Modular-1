@@ -399,7 +399,7 @@ public partial class InstallViewModel : ViewModelBase
         {
             for (var i = 0; i < ArchivePaths.Count; i++)
             {
-                var archivePath = ArchivePaths[i];
+                var archivePath = pathsToInstall[i];
                 var fileName = Path.GetFileName(archivePath);
                 CurrentArchiveIndex = i + 1;
 
@@ -469,5 +469,18 @@ public partial class InstallViewModel : ViewModelBase
             IsInstalling = false;
             InstallProgress = 100;
         }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] suffixes = { "B", "KB", "MB", "GB" };
+        int i = 0;
+        double size = bytes;
+        while (size >= 1024 && i < suffixes.Length - 1)
+        {
+            size /= 1024;
+            i++;
+        }
+        return $"{size:F1} {suffixes[i]}";
     }
 }

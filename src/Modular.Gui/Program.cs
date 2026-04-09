@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Modular.Core.Backends;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Backends.NexusMods;
+using Modular.Core.Collections;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.Authentication;
@@ -147,6 +148,14 @@ sealed class Program
 
         // Other core services
         services.AddSingleton<IRenameService, RenameService>();
+        services.AddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var collectionsDir = Path.Combine(
+                Path.GetDirectoryName(settings.DatabasePath) ?? Environment.CurrentDirectory,
+                "collections");
+            return new ModCollectionRepository(collectionsDir);
+        });
 
         // Plugin services
         services.AddSingleton(sp =>

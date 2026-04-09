@@ -307,12 +307,12 @@ public partial class MainWindowViewModel : ViewModelBase
                     var files = await backend.GetModFilesAsync(
                         modDisplay.ModId,
                         modDisplay.GameDomain,
-                        new Modular.Sdk.Backends.Common.FileFilter { Categories = ["main"] });
+                        Modular.Sdk.Backends.Common.FileFilter.MainAndOptional);
 
                     if (files.Count > 0)
                     {
-                        var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
-                        itemsToQueue.Add((modDisplay.Mod, latestFile));
+                        foreach (var file in files)
+                            itemsToQueue.Add((modDisplay.Mod, file));
                     }
                     else
                     {
@@ -359,12 +359,12 @@ public partial class MainWindowViewModel : ViewModelBase
                     var files = await nexus.GetModFilesAsync(
                         modDisplay.ModId,
                         modDisplay.GameDomain,
-                        new Modular.Sdk.Backends.Common.FileFilter { Categories = ["main"] });
+                        Modular.Sdk.Backends.Common.FileFilter.MainAndOptional);
 
                     if (files.Count > 0)
                     {
-                        var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
-                        itemsToQueue.Add((modDisplay.Mod, latestFile));
+                        foreach (var file in files)
+                            itemsToQueue.Add((modDisplay.Mod, file));
                     }
                 }
                 catch (Exception ex)
@@ -422,8 +422,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 var files = await backend.GetModFilesAsync(modDisplay.ModId);
                 if (files.Count > 0)
                 {
-                    var latestFile = files.OrderByDescending(f => f.UploadedAt).First();
-                    itemsToQueue.Add((modDisplay.Mod, latestFile));
+                    foreach (var file in files)
+                        itemsToQueue.Add((modDisplay.Mod, file));
                 }
             }
             catch (Exception ex)

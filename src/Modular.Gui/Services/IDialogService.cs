@@ -65,6 +65,16 @@ public interface IDialogService
     Task<int> ShowListPickerAsync(string title, string message, List<string> items);
 
     /// <summary>
+    /// Shows a multi-select dialog with checkboxes.
+    /// </summary>
+    /// <param name="title">Dialog title.</param>
+    /// <param name="message">Description message.</param>
+    /// <param name="items">Items to display with labels.</param>
+    /// <param name="preSelected">Indices of items that should be pre-selected. Null selects all.</param>
+    /// <returns>List of selected indices, or empty if cancelled.</returns>
+    Task<List<int>> ShowMultiSelectAsync(string title, string message, List<string> items, List<int>? preSelected = null);
+
+    /// <summary>
     /// Shows a progress dialog for long-running operations.
     /// </summary>
     /// <param name="title">Dialog title.</param>

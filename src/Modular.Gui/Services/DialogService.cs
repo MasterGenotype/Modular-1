@@ -349,6 +349,100 @@ public class DialogService : IDialogService
         return result;
     }
 
+    public async Task<List<int>> ShowMultiSelectAsync(string title, string message, List<string> items, List<int>? preSelected = null)
+    {
+        var window = GetMainWindow();
+        if (window == null) return [];
+
+        var result = new List<int>();
+        var checkBoxes = new List<CheckBox>();
+
+        var listPanel = new StackPanel { Spacing = 4 };
+        for (var i = 0; i < items.Count; i++)
+        {
+            var cb = new CheckBox
+            {
+                Content = items[i],
+                IsChecked = preSelected == null || preSelected.Contains(i),
+                FontSize = 12
+            };
+            checkBoxes.Add(cb);
+            listPanel.Children.Add(cb);
+        }
+
+        var scrollViewer = new ScrollViewer
+        {
+            Content = listPanel,
+            MaxHeight = 350,
+            MinHeight = 100
+        };
+
+        var selectAllBtn = new Button { Content = "Select All", FontSize = 11, Padding = new Thickness(8, 3) };
+        var selectNoneBtn = new Button { Content = "Select None", FontSize = 11, Padding = new Thickness(8, 3) };
+        selectAllBtn.Click += (_, _) => { foreach (var cb in checkBoxes) cb.IsChecked = true; };
+        selectNoneBtn.Click += (_, _) => { foreach (var cb in checkBoxes) cb.IsChecked = false; };
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 550,
+            Height = 500,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        Spacing = 8,
+                        Children = { selectAllBtn, selectNoneBtn }
+                    },
+                    scrollViewer,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        Spacing = 10,
+                        Children =
+                        {
+                            new Button { Content = "OK", MinWidth = 80 },
+                            new Button { Content = "Cancel", MinWidth = 80 }
+                        }
+                    }
+                }
+            }
+        };
+
+        var cancelled = true;
+        if (dialog.Content is StackPanel panel && panel.Children[3] is StackPanel btnPanel)
+        {
+            if (btnPanel.Children[0] is Button okBtn)
+            {
+                okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
+            }
+            if (btnPanel.Children[1] is Button cancelBtn)
+            {
+                cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
+            }
+        }
+
+        await dialog.ShowDialog(window);
+
+        if (cancelled) return [];
+
+        for (var i = 0; i < checkBoxes.Count; i++)
+        {
+            if (checkBoxes[i].IsChecked == true)
+                result.Add(i);
+        }
+
+        return result;
+    }
+
     public Task<IProgressDialog> ShowProgressAsync(string title, string message, bool cancellable = true)
     {
         var window = GetMainWindow();
