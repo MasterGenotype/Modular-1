@@ -1,3 +1,5 @@
+> **Note:** This document was originally written for the C++ codebase. File paths (e.g., `src/core/Rename.cpp`) refer to the legacy implementation. The current C# equivalents are in `src/Modular.Core/Services/`.
+
 # Reorganization Improvements
 
 ## Issue Report
@@ -103,7 +105,7 @@ The user reported two issues:
 
 Result:
 ```
-~/Games/Mods-Lists/stardewvalley/
+~/Mods/stardewvalley/
 ├── Gameplay Mechanics/
 │   ├── Automate/
 │   └── CJB Cheats Menu/
@@ -115,7 +117,7 @@ Result:
 
 If you already ran the tool without `--organize-by-category` and have:
 ```
-~/Games/Mods-Lists/stardewvalley/
+~/Mods/stardewvalley/
 ├── Automate/
 ├── CJB Cheats Menu/
 └── Alternative Textures/
@@ -128,7 +130,7 @@ Running with `--organize-by-category`:
 
 Will reorganize to:
 ```
-~/Games/Mods-Lists/stardewvalley/
+~/Mods/stardewvalley/
 ├── Gameplay Mechanics/
 │   ├── Automate/
 │   └── CJB Cheats Menu/
@@ -160,13 +162,13 @@ The downloads database (`downloads.db.json`) tracks:
 {
   "game_domain": "stardewvalley",
   "mod_id": 1063,
-  "filepath": "/home/user/Games/Mods-Lists/stardewvalley/Automate/Automate.zip",
+  "filepath": "/home/user/Mods/stardewvalley/Automate/Automate.zip",
   ...
 }
 ```
 
 From the filepath, we extract:
-- Parent directory: `/home/user/Games/Mods-Lists/stardewvalley/Automate/`
+- Parent directory: `/home/user/Mods/stardewvalley/Automate/`
 - This gives us `mod_id: 1063` → `Automate` mapping
 
 ### Path Handling
@@ -193,13 +195,13 @@ To test the improvements:
 
 2. **Verify category structure**:
    ```bash
-   ls -la /home/superphenotype/Games/Mods-Lists/stardewvalley/
+   ls -la /home/superphenotype/Mods/stardewvalley/
    ```
    Should show category subdirectories like "Gameplay Mechanics/", "Visuals and Graphics/", etc.
 
 3. **Check mod movement**:
    ```bash
-   ls -la /home/superphenotype/Games/Mods-Lists/stardewvalley/Gameplay\ Mechanics/
+   ls -la /home/superphenotype/Mods/stardewvalley/Gameplay\ Mechanics/
    ```
    Should show mods moved into the category.
 

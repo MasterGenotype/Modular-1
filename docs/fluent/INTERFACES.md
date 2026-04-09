@@ -2,106 +2,117 @@
 
 ## Architecture Overview
 
-The fluent interfaces provide a modern, chainable API for HTTP operations while
-maintaining compatibility with Modular's requirements.
+The fluent interfaces provide a modern, chainable API for HTTP operations within Modular.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        IFluentClient                             │
-│  Entry point for creating requests and setting client defaults   │
+│                        IFluentClient                            │
+│  Entry point for creating requests and setting client defaults  │
 └─────────────────────────────────────────────────────────────────┘
                                │
                                │ creates
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                          IRequest                                │
-│  Fluent builder for configuring individual HTTP requests         │
-│  Methods return IRequest& for chaining                          │
+│                          IRequest                               │
+│  Fluent builder for configuring individual HTTP requests        │
+│  Methods return IRequest for chaining                          │
 └─────────────────────────────────────────────────────────────────┘
                                │
                                │ executes → returns
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                          IResponse                               │
-│  Wrapper for HTTP responses with parsing methods                 │
+│                          IResponse                              │
+│  Wrapper for HTTP responses with parsing methods               │
 └─────────────────────────────────────────────────────────────────┘
 
 Supporting Interfaces:
-┌─────────────┐  ┌──────────────────┐  ┌───────────────┐
-│ IHttpFilter │  │ IRequestCoord.   │  │ IRateLimiter  │
-│ Middleware  │  │ Retry/Dispatch   │  │ API Limits    │
-└─────────────┘  └──────────────────┘  └───────────────┘
+┌─────────────┐  ┌───────────────┐
+│ IHttpFilter │  │ IRetryConfig  │
+│ Middleware  │  │ Retry Policy  │
+└─────────────┘  └───────────────┘
 ```
 
-## Interface Mapping
+## Interface Reference
 
-| FluentHttpClient (C#) | Modular Fluent (C++) | Notes |
-|----------------------|---------------------|-------|
-| IClient              | IFluentClient       | Main entry point |
-| IRequest             | IRequest            | Request builder |
-| IResponse            | IResponse           | Response wrapper |
-| IHttpFilter          | IHttpFilter         | Middleware |
-| IRetryConfig         | IRetryConfig        | Retry policy |
-| IRequestCoordinator  | IRequestCoordinator | Dispatch control |
-| IBodyBuilder         | IBodyBuilder        | Body construction |
-| (none)               | IRateLimiter        | Modular-specific |
+| Interface | Location | Purpose |
+|-----------|----------|---------|
+| `IFluentClient` | `Interfaces/IFluentClient.cs` | Main entry point for creating requests |
+| `IRequest` | `Interfaces/IRequest.cs` | Fluent request builder |
+| `IResponse` | `Interfaces/IResponse.cs` | Response wrapper with deserialization |
+| `IHttpFilter` | `Interfaces/IHttpFilter.cs` | Middleware for request/response interception |
+| `IRetryConfig` | `Interfaces/IRetryConfig.cs` | Retry policy configuration |
 
 ## Usage Examples
 
 ### Basic GET Request
 
-```cpp
-#include <fluent/Fluent.h>
-using namespace modular::fluent;
+```csharp
+using Modular.FluentHttp.Implementation;
 
-auto client = createFluentClient("https://api.nexusmods.com");
-client->setBearerAuth(apiKey);
+var client = FluentClientFactory.Create("https://api.nexusmods.com");
 
-auto mods = client->getAsync("v1/user/tracked_mods")
-    ->withArgument("game_domain", "skyrimspecialedition")
-    .as<std::vector<TrackedMod>>();
+var response = await client
+    .GetAsync("/v1/user/tracked_mods.json")
+    .WithHeader("apikey", apiKey)
+    .SendAsync();
+
+var mods = await response.AsJsonAsync<List<TrackedMod>>();
 ```
 
 ### POST with JSON Body
 
-```cpp
-NewMod mod{.name = "Test", .version = "1.0"};
-
-auto result = client->postAsync("v1/mods", mod)
-    ->as<ModResponse>();
+```csharp
+var response = await client
+    .PostAsync("/v1/endpoint")
+    .WithJsonBody(new { name = "Test", version = "1.0" })
+    .SendAsync();
 ```
 
-### Custom Error Handling
+### Error Handling
 
-```cpp
-auto response = client->getAsync("v1/mods/12345")
-    ->withIgnoreHttpErrors(true)
-    .asResponse();
+```csharp
+var response = await client
+    .GetAsync("/v1/mods/12345")
+    .SendAsync();
 
-if (!response->isSuccessStatusCode()) {
-    auto error = response->asJson();
-    std::cerr << "Error: " << error["message"] << std::endl;
+if (!response.IsSuccessStatusCode)
+{
+    var error = await response.AsStringAsync();
+    Console.Error.WriteLine($"Error: {error}");
 }
 ```
 
 ### File Download with Progress
 
-```cpp
-client->getAsync("v1/games/skyrim/mods/12345/files/67890/download")
-    ->downloadTo("/tmp/mod.zip", [](size_t downloaded, size_t total) {
-        int percent = total > 0 ? (downloaded * 100 / total) : 0;
-        std::cout << "\rDownloading: " << percent << "%" << std::flush;
-    });
+```csharp
+await client
+    .GetAsync("/v1/games/skyrim/mods/12345/files/67890/download")
+    .WithProgress((downloaded, total) =>
+    {
+        int percent = total > 0 ? (int)(downloaded * 100 / total) : 0;
+        Console.Write($"\rDownloading: {percent}%");
+    })
+    .DownloadAsync("/tmp/mod.zip");
 ```
 
 ## Filter System
 
-Filters are middleware that intercept requests and responses:
+Filters are middleware that intercept requests and responses. They implement `IHttpFilter`:
+
+```csharp
+public interface IHttpFilter
+{
+    string Name { get; }
+    int Priority { get; }
+    Task OnRequestAsync(IRequest request);
+    Task OnResponseAsync(IResponse response);
+}
+```
 
 ### Filter Priority Conventions
 
 | Priority Range | Purpose | Examples |
-|---------------|---------|----------|
+|----------------|---------|----------|
 | 0-99 | Diagnostic/Debug | Timing, Tracing |
 | 100-199 | Logging | Request/Response logging |
 | 200-299 | Authentication | Token injection, refresh |
@@ -113,30 +124,28 @@ Filters are middleware that intercept requests and responses:
 
 ### Creating a Custom Filter
 
-```cpp
-class MyFilter : public IHttpFilter {
-public:
-    void onRequest(IRequest& request) override {
-        request.withHeader("X-Custom", "value");
+```csharp
+public class MyFilter : IHttpFilter
+{
+    public string Name => "MyFilter";
+    public int Priority => 500;
+
+    public Task OnRequestAsync(IRequest request)
+    {
+        request.WithHeader("X-Custom", "value");
+        return Task.CompletedTask;
     }
 
-    void onResponse(IResponse& response, bool httpErrorAsException) override {
+    public Task OnResponseAsync(IResponse response)
+    {
         // Process response
+        return Task.CompletedTask;
     }
+}
 
-    std::string name() const override { return "MyFilter"; }
-    int priority() const override { return 500; }
-};
-
-client->addFilter(std::make_shared<MyFilter>());
+client.AddFilter(new MyFilter());
 ```
 
-## Implementation Guidelines
+## Source Code
 
-When implementing these interfaces:
-
-1. **Thread Safety**: All public methods should be thread-safe
-2. **Exception Safety**: Use RAII, don't leak on exceptions
-3. **Move Semantics**: Prefer moves over copies for efficiency
-4. **Cancellation**: Respect stop_token for long operations
-5. **Logging**: Use ILogger when available for debugging
+All interfaces are defined in `src/Modular.FluentHttp/Interfaces/`. Implementations are in `src/Modular.FluentHttp/Implementation/`.

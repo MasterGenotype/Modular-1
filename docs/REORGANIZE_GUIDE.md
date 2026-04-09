@@ -14,14 +14,14 @@ The Modular tool now includes comprehensive mod organization features:
 ### 1. Simple Rename (Default)
 Renames mod folders from IDs to names:
 ```
-Before: ~/Games/Mods-Lists/stardewvalley/10021/
-After:  ~/Games/Mods-Lists/stardewvalley/Stardew Valley Expanded/
+Before: ~/Mods/stardewvalley/10021/
+After:  ~/Mods/stardewvalley/Stardew Valley Expanded/
 ```
 
 ### 2. Organize by Category
 Creates category subdirectories:
 ```
-After:  ~/Games/Mods-Lists/stardewvalley/
+After:  ~/Mods/stardewvalley/
         ├── Gameplay/
         │   ├── Stardew Valley Expanded/
         │   └── Automate/
@@ -68,7 +68,7 @@ Edit `~/.config/Modular/config.json`:
 ```json
 {
   "nexus_api_key": "your_api_key_here",
-  "mods_directory": "/home/user/Games/Mods-Lists",
+  "mods_directory": "/home/user/Mods",
   "auto_rename": true,
   "gamebanana_user_id": "optional",
   "default_categories": ["main", "optional"],

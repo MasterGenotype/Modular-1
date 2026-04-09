@@ -1,247 +1,157 @@
 # Fluent HTTP Client API
 
-A modern, fluent HTTP client API for C++ inspired by FluentHttpClient (.NET).
+A modern, fluent HTTP client library for C#/.NET built as part of Modular. Provides a chainable API for HTTP operations with middleware support, retry policies, and rate limiting.
 
 ## Features
 
-- **Fluent Interface**: Chain methods for readable request building
-- **Async/Await Support**: Built on `std::future` for async operations
-- **Middleware Filters**: Request/response interception pipeline
-- **Rate Limiting**: NexusMods-compliant rate limit tracking
-- **Retry Policies**: Configurable retry with exponential backoff
-- **Type-Safe**: Strongly typed request/response handling
+- **Fluent Interface** - Chain methods for readable request building
+- **Full Async/Await** - Async throughout using `Task<T>`
+- **Middleware Filters** - Request/response interception pipeline
+- **Rate Limiting** - NexusMods-compliant rate limit tracking
+- **Retry Policies** - Configurable retry with exponential backoff
+- **Type-Safe Responses** - Generic deserialization methods
 
 ## Quick Start
 
-```cpp
-#include <fluent/Fluent.h>
-
-using namespace modular::fluent;
+```csharp
+using Modular.FluentHttp.Implementation;
 
 // Create a client
-auto client = createFluentClient("https://api.example.com");
-client->setUserAgent("MyApp/1.0");
-client->setBearerAuth(apiKey);
+var client = FluentClientFactory.Create("https://api.example.com");
 
 // Make a GET request
-auto response = client->getAsync("users/123")->asResponse();
-auto user = response->as<User>();
+var response = await client
+    .GetAsync("/v1/users/validate.json")
+    .WithHeader("apikey", apiKey)
+    .WithHeader("accept", "application/json")
+    .SendAsync();
 
-// Make a POST request with JSON body
-auto created = client->postAsync("users")
-    ->withJsonBody(newUser)
-    .asJson();
-
-// Download a file with progress
-client->getAsync("files/download")
-    ->withArgument("id", fileId)
-    .downloadTo("/path/to/file.zip", [](size_t done, size_t total) {
-        std::cout << done << "/" << total << std::endl;
-    });
+// Deserialize response
+var user = await response.AsJsonAsync<UserInfo>();
 ```
 
 ## Request Building
 
-### URL Arguments
+### GET with Query Parameters
 
-```cpp
-client->getAsync("search")
-    ->withArgument("q", "hello")
-    ->withArgument("page", 1)
-    ->withArgument("limit", 10)
-    .asJson();
+```csharp
+var response = await client
+    .GetAsync("/api/search")
+    .WithQueryParam("q", "skyrim")
+    .WithQueryParam("page", "1")
+    .SendAsync();
 ```
 
-### Headers
+### POST with JSON Body
 
-```cpp
-client->getAsync("api/data")
-    ->withHeader("X-Custom-Header", "value")
-    ->withHeaders({{"Accept", "application/json"}})
-    .asResponse();
+```csharp
+var response = await client
+    .PostAsync("/api/endpoint")
+    .WithHeader("Content-Type", "application/json")
+    .WithJsonBody(new { key = "value" })
+    .SendAsync();
 ```
 
-### Authentication
+### Headers and Authentication
 
-```cpp
+```csharp
 // Bearer token
-request->withBearerAuth(token);
+var client = FluentClientFactory.Create("https://api.example.com")
+    .SetBearerAuth(token);
 
-// Basic auth
-request->withBasicAuth(username, password);
-
-// Custom scheme
-request->withAuthentication("ApiKey", key);
+// Custom headers per request
+var response = await client
+    .GetAsync("/api/data")
+    .WithHeader("X-Custom-Header", "value")
+    .SendAsync();
 ```
 
-### Request Body
+### Download with Progress
 
-```cpp
-// JSON body
-request->withJsonBody(myObject);
-
-// Form data
-request->withFormBody({{"name", "value"}, {"other", "data"}});
-
-// Using body builder
-request->withBody([](IBodyBuilder& b) {
-    return b.formUrlEncoded({{"key", "value"}});
-});
+```csharp
+await client
+    .GetAsync("/files/download/123")
+    .WithProgress((downloaded, total) =>
+        Console.WriteLine($"{downloaded}/{total}"))
+    .DownloadAsync("/path/to/file.zip");
 ```
 
-### Options
+## Client Configuration
 
-```cpp
-request
-    ->withTimeout(std::chrono::seconds{30})
-    ->withIgnoreHttpErrors(true)  // Don't throw on 4xx/5xx
-    ->withNoRetry();              // Disable retries
-```
-
-## Response Handling
-
-```cpp
-// Get full response
-auto response = request->asResponse();
-int status = response->statusCode();
-std::string body = response->asString();
-
-// Parse JSON
-auto json = request->asJson();
-
-// Deserialize to type
-auto user = request->as<User>();
-
-// Download to file
-request->downloadTo("/path/to/file.zip");
+```csharp
+var client = FluentClientFactory.Create("https://api.example.com")
+    .SetUserAgent("Modular/1.0")
+    .SetBearerAuth(token)
+    .SetRetryPolicy(maxRetries: 3, initialDelayMs: 1000)
+    .SetTimeout(TimeSpan.FromSeconds(30))
+    .SetRateLimiter(rateLimiter);
 ```
 
 ## Filters (Middleware)
 
-Filters intercept requests and responses for cross-cutting concerns.
+Filters intercept requests and responses for cross-cutting concerns:
 
-### Built-in Filters
+```csharp
+// Add custom filter
+client.AddFilter(new LoggingFilter(logger));
 
-```cpp
-// Error handling (throws on 4xx/5xx)
-client->filters().add(std::make_shared<DefaultErrorFilter>());
-
-// Logging
-client->filters().add(std::make_shared<LoggingFilter>(logger));
-
-// Rate limiting
-client->filters().add(std::make_shared<RateLimitFilter>(rateLimiter));
-
-// Authentication
-client->filters().add(AuthenticationFilter::apiKey(key));
-```
-
-### Custom Filters
-
-```cpp
-class MyFilter : public IHttpFilter {
-public:
-    void onRequest(IRequest& request) override {
-        request.withHeader("X-Request-Id", generateId());
-    }
-
-    void onResponse(IResponse& response, bool httpErrorAsException) override {
-        log("Response: " + std::to_string(response.statusCode()));
-    }
-
-    std::string name() const override { return "MyFilter"; }
-    int priority() const override { return 500; }
-};
+// Built-in filters
+client.AddFilter(new AuthenticationFilter(apiKey));
+client.AddFilter(new RateLimitFilter(rateLimiter));
 ```
 
 ### Filter Priority
 
 Filters execute in priority order (lowest first for requests, highest first for responses):
 
-- 0-99: Diagnostic filters
-- 100-199: Logging filters
-- 200-299: Authentication filters
-- 500-599: Rate limiting filters
-- 9000+: Error handling filters
+| Priority Range | Purpose | Examples |
+|----------------|---------|----------|
+| 0-99 | Diagnostic/Debug | Timing, Tracing |
+| 100-199 | Logging | Request/Response logging |
+| 200-299 | Authentication | Token injection, refresh |
+| 300-399 | Caching | Response caching |
+| 500-599 | Rate Limiting | API rate limit handling |
+| 9000+ | Error Handling | Exception throwing |
 
 ## Retry Policies
 
-```cpp
-// Server error retry (5xx + timeout)
-auto config = std::make_shared<ServerErrorRetryConfig>(
-    3,                                  // Max retries
-    std::chrono::milliseconds{1000},    // Initial delay
-    std::chrono::milliseconds{16000}    // Max delay
-);
-
-request->withRetryConfig(config);
-
-// Rate limit retry (429)
-request->withRetryConfig(std::make_shared<RateLimitRetryConfig>(2));
-
-// Timeout only
-request->withRetryConfig(std::make_shared<TimeoutRetryConfig>(2));
+```csharp
+// Configure retry on the client
+var client = FluentClientFactory.Create("https://api.example.com")
+    .SetRetryPolicy(maxRetries: 3, initialDelayMs: 1000);
 ```
 
-## NexusMods Client
-
-High-level client for NexusMods API:
-
-```cpp
-#include <fluent/clients/NexusModsClient.h>
-
-auto nexus = NexusModsClient::create(apiKey, rateLimiter, logger);
-
-// Get tracked mods
-auto mods = nexus->getTrackedMods("stardewvalley");
-
-// Get mod info
-auto info = nexus->getModInfo("stardewvalley", 12345);
-
-// Download a file
-auto file = nexus->getPrimaryFile("stardewvalley", 12345);
-if (file) {
-    nexus->downloadFile("stardewvalley", 12345, file->fileId, 
-        "/mods/download.zip", progressCallback);
-}
-```
+Retry behavior:
+- Retries on 5xx server errors and request timeouts
+- Exponential backoff: 1s, 2s, 4s, ...
+- Respects `Retry-After` headers on 429 responses
 
 ## Error Handling
 
-```cpp
-try {
-    auto response = client->getAsync("api/data")->asResponse();
-} catch (const NetworkException& e) {
-    if (e.isTimeout()) {
-        // Handle timeout
-    }
-} catch (const RateLimitException& e) {
-    auto retryAfter = e.retryAfter();
-    // Wait and retry
-} catch (const ApiException& e) {
-    int status = e.statusCode();
-    std::string body = e.responseBody();
-    // Handle API error
+```csharp
+try
+{
+    var response = await client.GetAsync("/api/data").SendAsync();
+}
+catch (RateLimitException ex)
+{
+    Console.WriteLine($"Rate limited, retry after: {ex.RetryAfter}s");
+}
+catch (ApiException ex)
+{
+    Console.WriteLine($"API error {ex.StatusCode}: {ex.Message}");
 }
 ```
 
-## Thread Safety
+## Source Code
 
-- `IFluentClient` instances are NOT thread-safe
-- Each thread should create its own client or use synchronization
-- Individual requests are independent and can be executed concurrently
+The implementation lives in `src/Modular.FluentHttp/`:
 
-## Building
+| Directory | Contents |
+|-----------|----------|
+| `Interfaces/` | `IFluentClient`, `IRequest`, `IResponse`, `IHttpFilter`, `IRetryConfig` |
+| `Implementation/` | `FluentClient`, `FluentRequest`, `FluentResponse`, `RequestOptions` |
+| `Filters/` | Built-in middleware filters |
+| `Retry/` | Retry policy implementations |
 
-The fluent library is built as part of the main Modular project:
-
-```bash
-cmake --preset default
-cmake --build build
-```
-
-Link against `fluent_client`:
-
-```cmake
-target_link_libraries(myapp PRIVATE fluent_client)
-```
+See also: [INTERFACES.md](INTERFACES.md) for the full interface reference.

@@ -577,7 +577,7 @@ public List<string> EnabledBackends { get; set; } = ["nexusmods", "gamebanana"];
   "enabled_backends": ["nexusmods", "gamebanana"],
   "nexus_api_key": "YOUR_KEY",
   "gamebanana_user_id": "12345",
-  "mods_directory": "~/Games/Mods-Lists",
+  "mods_directory": "~/Mods",
   "default_categories": ["main", "optional"]
 }
 ```

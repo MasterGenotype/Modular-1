@@ -1,28 +1,24 @@
-<!--Modular
-C# Project located within ~/.gitrepos/
-Things to Fix:
+# GUI Implementation Notes
 
-1) GameBanana Backend is present in NexusMods Panel. Re-Locate to GameBanana Panel and add it as default backend.
+Outstanding GUI improvements and fixes to address.
 
-2) Search Feature for GameBanana has yet to be implemented, currently displays placeholders.
+## Issues to Fix
 
-3) Searching for Mods through GameBanana Backend produces empty results. Searching for mods should fuzzy match entries provided in a similar/same manner to NexusMods implementation.
+1. **GameBanana Backend Placement** - GameBanana Backend is present in the NexusMods Panel. Relocate to the GameBanana Panel and set it as the default backend there.
 
-4) Profiles Panel has 0 usable functionality in it's current form. It should also be a sub-menu item within settings which when pressed would open to a new page within the same window with an arrow button indicating 'back' for when finished. Within this new page would be a create button to create and remove profiles for per game use cases like differing loadouts/mods required between single player use vs multiplayer.
+2. **GameBanana Search** - Search for GameBanana currently displays placeholders. Implement search that fuzzy-matches entries in the same manner as the NexusMods implementation. Searching should filter results based on GameDomain and mod name.
 
-5) Collections is currently unusable. It requires the ability to query for collections online on a per backend selection. It must also provide a way to download collections and perform installations for collection mods into per game directories in a manner that simulates actual installation to steam game installation directories, but for the sake of storage as a collection record for future deployment when desired. up to 3 collections per game should be allowed collection record storage. Collections are primarly a NexusMods feature so Collections should be a NexusMods Panel Tab instead of the Backups Panel.
+3. **Profiles Panel** - Currently has no usable functionality. Should be a sub-menu item within Settings that opens a new page with a back button. Within this page, provide create/remove actions for per-game profiles (e.g., different loadouts for single-player vs. multiplayer).
 
-6) A File Picker should be the preferred way for browsing to exported profiles for importing of profiles.
+4. **Collections Panel** - Currently unusable. Requirements:
+   - Query for collections online per backend selection
+   - Download collections and install collection mods into per-game directories
+   - Simulate installation to Steam game directories for collection record storage
+   - Up to 3 collections per game for record storage
+   - Collections are primarily a NexusMods feature, so move them to a NexusMods Panel tab instead of the Backups Panel
 
-7) Plugins is a Developer component and should be hidden somewhere within the settings panel.
- 
- -->
+5. **File Picker for Profile Import** - Use a native file picker dialog for browsing to exported profiles during import.
 
+6. **Plugins Panel** - Plugins is a developer-facing component. Move it to a sub-section within the Settings panel.
 
-1) GameBanana Search should provide searchable entries based on GameDomain and a fuzzy match of the Name for which mod being searched for. Currently searching anything results in the same unfiltered listing of mods unrelated to the single search query
-
-2) NexusMods Collections should use the API to search for and list available collections corresponding with the GameDomain id, it should provide the name, description, total number of mods, and if possible a list of dependencies/requirements, it should also provide the option to download selected collections.
-
-"It must also provide a way to download collections and perform installations for collection mods into per game directories in a manner that simulates actual installation to steam game installation directories, but for the sake of storage as a collection record for future deployment when desired. up to 3 collections per game should be allowed collection record storage. Collections are primarly a NexusMods feature so Collections should be a NexusMods Panel Tab instead of the Backups Panel."
-
-Consult relevant API Documentation for GameBanana and NexusMods when needed.
+7. **NexusMods Collections API** - Use the NexusMods API to search and list available collections by GameDomain ID. Display name, description, total mod count, and dependency/requirement list. Provide an option to download selected collections.
