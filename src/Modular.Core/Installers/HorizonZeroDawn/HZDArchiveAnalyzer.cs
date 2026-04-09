@@ -275,6 +275,7 @@ public static class HZDArchiveAnalyzer
             "vulkan-1.dll";
     }
 
+    private static string StripToAfter(string path, params string[] markers)
     {
         foreach (var marker in markers)
         {
