@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
@@ -27,6 +28,7 @@ public class HZDModInstaller : IModInstaller
     public string InstallerId => "horizon-zero-dawn";
     public string DisplayName => "Horizon Zero Dawn Installer";
     public int Priority => 91;
+    public IReadOnlyList<string> SupportedGameIds { get; } = [GameIds.HorizonZeroDawn, "1151640"];
 
     public HZDModInstaller(
         IArchiveReaderFactory? archiveReaderFactory = null,
