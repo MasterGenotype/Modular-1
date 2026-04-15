@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
@@ -25,6 +26,7 @@ public class CyberpunkModInstaller : IModInstaller
     public string InstallerId => "cyberpunk2077";
     public string DisplayName => "Cyberpunk 2077 Installer";
     public int Priority => 90;
+    public IReadOnlyList<string> SupportedGameIds { get; } = [GameIds.Cyberpunk2077, "1091500"];
 
     public CyberpunkModInstaller(
         IArchiveReaderFactory? archiveReaderFactory = null,

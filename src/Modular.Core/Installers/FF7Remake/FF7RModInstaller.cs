@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
 using Modular.Core.Utilities;
+using Modular.Sdk;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
 
@@ -28,6 +29,7 @@ public class FF7RModInstaller : IModInstaller
     public string InstallerId => "ff7remake";
     public string DisplayName => "Final Fantasy VII Remake Installer";
     public int Priority => 92;
+    public IReadOnlyList<string> SupportedGameIds { get; } = [GameIds.FinalFantasy7Remake, "1462040"];
 
     /// <summary>
     /// The UE4 paks sub-path specific to FF7R Intergrade.

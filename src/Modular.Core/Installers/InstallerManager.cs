@@ -63,15 +63,28 @@ public class InstallerManager
     }
 
     /// <summary>
-    /// Detects the best installer for an archive.
+    /// Detects the best installer for an archive, optionally scoped to a specific game.
+    /// Game-specific installers are excluded when <paramref name="gameId"/> is provided
+    /// and does not appear in their <see cref="IModInstaller.SupportedGameIds"/> list.
+    /// Universal installers (null <see cref="IModInstaller.SupportedGameIds"/>) are always considered.
     /// </summary>
     public async Task<InstallerSelection?> SelectInstallerAsync(
         string archivePath,
+        string? gameId = null,
         CancellationToken ct = default)
     {
         var detectionResults = new List<(IModInstaller Installer, InstallDetectionResult Result)>();
 
-        foreach (var installer in _installers)
+        var candidates = string.IsNullOrEmpty(gameId)
+            ? _installers
+            : _installers.Where(i =>
+                i.SupportedGameIds == null ||
+                i.SupportedGameIds.Count == 0 ||
+                i.SupportedGameIds.Any(g =>
+                    string.Equals(g, gameId, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+        foreach (var installer in candidates)
         {
             try
             {
@@ -133,7 +146,7 @@ public class InstallerManager
 
         if (installer == null)
         {
-            var selection = await SelectInstallerAsync(archivePath, ct);
+            var selection = await SelectInstallerAsync(archivePath, context.GameId, ct);
             if (selection == null)
             {
                 throw new InvalidOperationException($"No installer found for {archivePath}");
@@ -184,7 +197,7 @@ public class InstallerManager
         CancellationToken ct = default)
     {
         // Select installer
-        var selection = await SelectInstallerAsync(archivePath, ct);
+        var selection = await SelectInstallerAsync(archivePath, context.GameId, ct);
         if (selection == null)
         {
             return new InstallResult

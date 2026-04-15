@@ -22,6 +22,13 @@ public interface IModInstaller
     int Priority { get; }
 
     /// <summary>
+    /// Game IDs this installer targets, matched against <see cref="InstallContext.GameId"/>.
+    /// <c>null</c> means the installer is universal and applies to any game.
+    /// Values should be NexusMods game slugs or Steam AppIDs (both are accepted).
+    /// </summary>
+    IReadOnlyList<string>? SupportedGameIds => null;
+
+    /// <summary>
     /// Detects if this installer can handle the given archive.
     /// </summary>
     Task<InstallDetectionResult> DetectAsync(string archivePath, CancellationToken ct = default);
