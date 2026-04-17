@@ -100,7 +100,7 @@ public class ModInstallationService
 
             // Step 3: Select installer
             progress?.Report(new InstallProgress { CurrentOperation = "Detecting installer type..." });
-            var selection = await _installerManager.SelectInstallerAsync(archivePath, ct);
+            var selection = await _installerManager.SelectInstallerAsync(archivePath, ct: ct);
 
             if (selection == null)
             {

@@ -4,6 +4,7 @@ using Modular.Cli.Commands.Diagnostics;
 using Modular.Cli.Commands.GameDetection;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
+using Modular.Cli.Commands.Switch;
 using Modular.Cli.Commands.Telemetry;
 using Modular.Cli.Infrastructure;
 using Spectre.Console.Cli;
@@ -216,6 +217,38 @@ class Program
 
                 telemetry.AddCommand<TelemetryClearCommand>("clear")
                     .WithDescription("Clear all telemetry data");
+            });
+
+            // Switch mod pipeline commands
+            config.AddBranch("switch", switchBranch =>
+            {
+                switchBranch.SetDescription("Manage Nintendo Switch mods for Yuzu-emulated games");
+
+                switchBranch.AddCommand<SwitchScanCommand>("scan")
+                    .WithDescription("Discover and catalogue Switch mods in a directory")
+                    .WithExample("switch", "scan", "./mods")
+                    .WithExample("switch", "scan", "--game", "0100F2C0115B6000");
+
+                switchBranch.AddCommand<SwitchResolveCommand>("resolve")
+                    .WithDescription("Resolve mod dependency graph and load order")
+                    .WithExample("switch", "resolve", "--game", "0100F2C0115B6000");
+
+                switchBranch.AddCommand<SwitchInstallCommand>("install")
+                    .WithDescription("Install Switch mods into Yuzu's load directory")
+                    .WithExample("switch", "install", "--game", "0100F2C0115B6000")
+                    .WithExample("switch", "install", "--game", "0100F2C0115B6000", "--runner", "lutris");
+
+                switchBranch.AddCommand<SwitchRemoveCommand>("remove")
+                    .WithDescription("Remove installed Switch mods")
+                    .WithExample("switch", "remove", "--game", "0100F2C0115B6000", "--mods", "MyMod");
+
+                switchBranch.AddCommand<SwitchRollbackCommand>("rollback")
+                    .WithDescription("Rollback Switch mods to pre-install snapshot")
+                    .WithExample("switch", "rollback", "--game", "0100F2C0115B6000");
+
+                switchBranch.AddCommand<SwitchStatusCommand>("status")
+                    .WithDescription("Show installation status of Switch mods")
+                    .WithExample("switch", "status", "--game", "0100F2C0115B6000");
             });
         });
 

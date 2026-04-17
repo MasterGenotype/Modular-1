@@ -13,6 +13,7 @@ public partial class ModManagerViewModel : ViewModelBase
 {
     public InstallViewModel? InstallViewModel { get; }
     public InstalledModsViewModel? InstalledModsViewModel { get; }
+    public SwitchInstallViewModel? SwitchInstallViewModel { get; }
 
     private readonly AppSettings? _settings;
 
@@ -30,6 +31,7 @@ public partial class ModManagerViewModel : ViewModelBase
     {
         InstallViewModel = new InstallViewModel();
         InstalledModsViewModel = new InstalledModsViewModel();
+        SwitchInstallViewModel = new SwitchInstallViewModel();
         DetectedArchives.Add("/home/user/Mods/skyrim/sample-mod.zip");
     }
 
@@ -37,10 +39,12 @@ public partial class ModManagerViewModel : ViewModelBase
     public ModManagerViewModel(
         InstallViewModel installViewModel,
         InstalledModsViewModel installedModsViewModel,
+        SwitchInstallViewModel switchInstallViewModel,
         AppSettings settings)
     {
         InstallViewModel = installViewModel;
         InstalledModsViewModel = installedModsViewModel;
+        SwitchInstallViewModel = switchInstallViewModel;
         _settings = settings;
         ScanForArchives();
     }

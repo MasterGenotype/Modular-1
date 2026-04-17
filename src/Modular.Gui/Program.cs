@@ -19,6 +19,8 @@ using Modular.Core.Services;
 using Modular.Core.Telemetry;
 using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
+using Modular.Switch.Installer;
+using Modular.Switch.Scanner;
 
 namespace Modular.Gui;
 
@@ -231,6 +233,18 @@ sealed class Program
             return new TelemetryService(telemetryPath, logger: logger);
         });
 
+        // Switch services
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetService<ILogger<SwitchModScanner>>();
+            return new SwitchModScanner(logger);
+        });
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetService<ILogger<SwitchModInstaller>>();
+            return new SwitchModInstaller(logger);
+        });
+
         // GUI services - use pre-loaded instance
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton(_downloadHistory!);
@@ -257,6 +271,7 @@ sealed class Program
         // Sub-ViewModels for combined panels
         services.AddTransient<InstallViewModel>();
         services.AddTransient<InstalledModsViewModel>();
+        services.AddTransient<SwitchInstallViewModel>();
         services.AddTransient<ProfilesViewModel>();
         services.AddTransient<CollectionViewModel>();
         // Combined wrapper ViewModels
