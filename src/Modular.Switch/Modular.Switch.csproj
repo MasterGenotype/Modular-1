@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Modular.Switch</RootNamespace>
+    <AssemblyName>Modular.Switch</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Archive extraction (already used by Modular.Core) -->
+    <PackageReference Include="SharpCompress" Version="0.37.2" />
+    <!-- Logging abstractions -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>
