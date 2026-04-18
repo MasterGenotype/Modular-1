@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Gui.Services;
+using Modular.Switch.DependencyResolver;
 using Modular.Switch.Installer;
 using Modular.Switch.Models;
 using Modular.Switch.Scanner;
@@ -166,6 +167,9 @@ public partial class SwitchInstallViewModel : ViewModelBase
             {
                 var isInstalled = _state?.TryGet(mod.ModKey, out var existing) == true
                                   && existing.IsInstalled;
+                var loadOrder = (_state?.TryGet(mod.ModKey, out var savedMod) == true && savedMod.LoadOrder > 0)
+                    ? savedMod.LoadOrder
+                    : 0;
                 DiscoveredMods.Add(new SwitchModDisplayModel
                 {
                     Name = mod.Name,
@@ -175,9 +179,20 @@ public partial class SwitchInstallViewModel : ViewModelBase
                     SourcePath = mod.SourcePath,
                     IsInstalled = isInstalled,
                     ModKey = mod.ModKey,
-                    IsSelected = !isInstalled
+                    IsSelected = !isInstalled,
+                    HasOptions = mod.HasBnpOptions,
+                    LoadOrder = loadOrder
                 });
             }
+
+            // Sort by persisted load order, then alphabetically for unordered mods
+            var sorted = DiscoveredMods
+                .OrderBy(m => m.LoadOrder == 0 ? int.MaxValue : m.LoadOrder)
+                .ThenBy(m => m.Name)
+                .ToList();
+            DiscoveredMods.Clear();
+            foreach (var m in sorted) DiscoveredMods.Add(m);
+            UpdateLoadOrders();
 
             StatusMessage = mods.Count > 0
                 ? $"Found {mods.Count} Switch mod(s)"
@@ -206,7 +221,10 @@ public partial class SwitchInstallViewModel : ViewModelBase
             return;
         }
 
-        var selected = DiscoveredMods.Where(m => m.IsSelected && !m.IsInstalled).ToList();
+        var selected = DiscoveredMods
+            .Where(m => m.IsSelected && !m.IsInstalled)
+            .OrderBy(m => m.LoadOrder)
+            .ToList();
         if (selected.Count == 0)
         {
             StatusMessage = "No mods selected for installation";
@@ -232,6 +250,45 @@ public partial class SwitchInstallViewModel : ViewModelBase
             var allMods = await _scanner.ScanAsync(SourceFolder, ct: cts.Token);
             var modsByKey = allMods.ToDictionary(m => m.ModKey, StringComparer.OrdinalIgnoreCase);
 
+            // File overlap detection
+            var selectedMods = selected
+                .Where(d => modsByKey.ContainsKey(d.ModKey))
+                .Select(d => modsByKey[d.ModKey])
+                .ToList();
+
+            if (selectedMods.Count > 1)
+            {
+                var overlaps = await SwitchFileOverlapDetector.DetectAsync(selectedMods, cts.Token);
+                if (overlaps.HasOverlaps)
+                {
+                    foreach (var overlap in overlaps.Overlaps)
+                        foreach (var key in overlap.ModKeys)
+                        {
+                            var display = selected.FirstOrDefault(
+                                d => d.ModKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                            if (display != null && string.IsNullOrEmpty(display.OverlapWarning))
+                                display.OverlapWarning = $"Overlaps {overlaps.Overlaps.Count(o => o.ModKeys.Contains(key, StringComparer.OrdinalIgnoreCase))} file(s)";
+                        }
+
+                    if (_dialogService != null)
+                    {
+                        var proceed = await _dialogService.ShowConfirmationAsync(
+                            "File Overlaps Detected",
+                            $"{overlaps.Overlaps.Count} file(s) are provided by multiple selected mods.\n" +
+                            "The mod installed last (bottom of list) wins for overlapping files.\n" +
+                            "Use the arrow buttons to reorder mods before installing.\n\n" +
+                            "Continue with installation?");
+                        if (!proceed)
+                        {
+                            IsInstalling = false;
+                            InstallProgress = 0;
+                            StatusMessage = "Installation cancelled — reorder mods and try again";
+                            return;
+                        }
+                    }
+                }
+            }
+
             for (var i = 0; i < selected.Count; i++)
             {
                 var display = selected[i];
@@ -243,6 +300,17 @@ public partial class SwitchInstallViewModel : ViewModelBase
                     InstallResults.Add($"Skipped: {display.Name} (not found in scan)");
                     failed++;
                     continue;
+                }
+
+                // BNP option selection
+                if (mod.HasBnpOptions)
+                {
+                    var proceed = await PromptBnpOptionsAsync(mod);
+                    if (!proceed)
+                    {
+                        InstallResults.Add($"Skipped: {display.Name} (options cancelled)");
+                        continue;
+                    }
                 }
 
                 var progress = new Progress<SwitchInstallProgress>(p =>
@@ -261,6 +329,7 @@ public partial class SwitchInstallViewModel : ViewModelBase
                     mod.IsInstalled = true;
                     mod.InstalledAt = DateTime.UtcNow;
                     mod.InstalledHash = mod.SourceHash;
+                    mod.LoadOrder = display.LoadOrder;
                     _state?.Upsert(mod);
                     display.IsInstalled = true;
                     display.IsSelected = false;
@@ -299,6 +368,43 @@ public partial class SwitchInstallViewModel : ViewModelBase
             IsInstalling = false;
             InstallProgress = 100;
         }
+    }
+
+    private async Task<bool> PromptBnpOptionsAsync(Modular.Switch.Models.SwitchMod mod)
+    {
+        if (_dialogService == null || !mod.HasBnpOptions) return true;
+
+        var options = mod.BnpOptions!;
+        mod.SelectedBnpOptions.Clear();
+
+        // Single-select groups
+        foreach (var group in options.Single.Where(g => g.Options.Count > 0))
+        {
+            var items = group.Options.Select(o => o.Name).ToList();
+            var index = await _dialogService.ShowListPickerAsync(
+                $"Options: {mod.Name}",
+                group.Description,
+                items);
+
+            if (index < 0) return false; // user cancelled
+            mod.SelectedBnpOptions.Add(group.Options[index].Folder);
+        }
+
+        // Multi-select groups
+        foreach (var group in options.Multi.Where(g => g.Options.Count > 0))
+        {
+            var items = group.Options.Select(o => o.Name).ToList();
+            var selected = await _dialogService.ShowMultiSelectAsync(
+                $"Options: {mod.Name}",
+                group.Description,
+                items,
+                null);
+
+            foreach (var idx in selected)
+                mod.SelectedBnpOptions.Add(group.Options[idx].Folder);
+        }
+
+        return true;
     }
 
     [RelayCommand]
@@ -348,6 +454,32 @@ public partial class SwitchInstallViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void MoveUp(SwitchModDisplayModel? mod)
+    {
+        if (mod == null) return;
+        var idx = DiscoveredMods.IndexOf(mod);
+        if (idx <= 0) return;
+        DiscoveredMods.Move(idx, idx - 1);
+        UpdateLoadOrders();
+    }
+
+    [RelayCommand]
+    private void MoveDown(SwitchModDisplayModel? mod)
+    {
+        if (mod == null) return;
+        var idx = DiscoveredMods.IndexOf(mod);
+        if (idx < 0 || idx >= DiscoveredMods.Count - 1) return;
+        DiscoveredMods.Move(idx, idx + 1);
+        UpdateLoadOrders();
+    }
+
+    private void UpdateLoadOrders()
+    {
+        for (int i = 0; i < DiscoveredMods.Count; i++)
+            DiscoveredMods[i].LoadOrder = i + 1;
+    }
+
+    [RelayCommand]
     private void SelectAll()
     {
         foreach (var mod in DiscoveredMods.Where(m => !m.IsInstalled))
@@ -387,4 +519,13 @@ public partial class SwitchModDisplayModel : ObservableObject
 
     [ObservableProperty]
     private string _modKey = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasOptions;
+
+    [ObservableProperty]
+    private int _loadOrder;
+
+    [ObservableProperty]
+    private string _overlapWarning = string.Empty;
 }

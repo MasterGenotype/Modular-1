@@ -27,7 +27,7 @@ public sealed class SwitchDependencyGraph
 
     // ── Resolution ────────────────────────────────────────────────────────
 
-    public SwitchResolutionResult Resolve(IEnumerable<string> requestedKeys)
+    public SwitchResolutionResult Resolve(IEnumerable<string> requestedKeys, bool allowConflicts = false)
     {
         lock (_lock)
         {
@@ -74,10 +74,14 @@ public sealed class SwitchDependencyGraph
 
             if (result.Conflicts.Count > 0)
             {
-                result.Success = false;
-                result.Error = $"Conflicting mods: " +
-                               string.Join(", ", result.Conflicts.Select(c => $"{c.A} ↔ {c.B}"));
-                return result;
+                var conflictDesc = string.Join(", ", result.Conflicts.Select(c => $"{c.A} ↔ {c.B}"));
+                if (!allowConflicts)
+                {
+                    result.Success = false;
+                    result.Error = $"Conflicting mods: {conflictDesc}";
+                    return result;
+                }
+                result.Warnings.Add($"Declared conflicts (overridden): {conflictDesc}");
             }
 
             // 3. Topological sort (Kahn's algorithm)
@@ -150,6 +154,7 @@ public sealed class SwitchResolutionResult
     /// <summary>Mods in the order they should be installed (dependencies first).</summary>
     public List<SwitchMod> InstallOrder { get; set; } = [];
 
+    public List<string> Warnings { get; set; } = [];
     public List<string> MissingDependencies { get; set; } = [];
     public List<(string A, string B)> Conflicts { get; set; } = [];
     public List<string> Cycles { get; set; } = [];

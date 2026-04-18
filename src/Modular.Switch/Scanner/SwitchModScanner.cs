@@ -9,17 +9,21 @@ namespace Modular.Switch.Scanner;
 
 /// <summary>
 /// Discovers Switch mods from a local directory tree.
-/// Supports .zip, .7z, .rar archives and pre-extracted folders.
+/// Supports .zip, .7z, .rar, .bnp archives and pre-extracted folders.
 ///
 /// Detection heuristics (in priority order):
 /// 1. manifest.json / mod.json / info.json inside root of archive/folder
 /// 2. Well-known LayeredFS path segments (romfs/, exefs/, cheats/)
 /// 3. TitleID embedded in archive name or parent folder name
 /// 4. 16-digit hex TitleID in any leading folder name inside the archive
+///
+/// BNP archives may contain an options/ directory with selectable option
+/// groups described in info.json. The scanner populates BnpOptions on the
+/// resulting SwitchMod when detected.
 /// </summary>
 public sealed class SwitchModScanner
 {
-    private static readonly string[] ArchiveExtensions = [".zip", ".7z", ".rar"];
+    private static readonly string[] ArchiveExtensions = [".zip", ".7z", ".rar", ".bnp"];
     private static readonly Regex TitleIdInName =
         new(@"(?:^|[\s\-_\[(\.])(0[0-9A-Fa-f]{15})(?:$|[\s\-_\])\.])",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -94,7 +98,10 @@ public sealed class SwitchModScanner
             string? titleId = null;
             SwitchModCategory category = SwitchModCategory.Unknown;
             SwitchModManifest? manifest = null;
+            BnpInfo? bnpInfo = null;
             var entryNames = new List<string>();
+            bool isBnp = IsBnpFile(archivePath);
+            bool hasOptionsDir = false;
 
             using (var archive = ArchiveFactory.Open(archivePath))
             {
@@ -104,10 +111,22 @@ public sealed class SwitchModScanner
                     var path = entry.Key?.Replace('\\', '/') ?? string.Empty;
                     entryNames.Add(path);
 
-                    // Try to read manifest
-                    if (manifest == null && IsManifestEntry(path))
+                    if (!hasOptionsDir && path.StartsWith("options/", StringComparison.OrdinalIgnoreCase))
+                        hasOptionsDir = true;
+
+                    // Try to read manifest / BNP info
+                    if (IsManifestEntry(path) && IsRootLevelEntry(path))
                     {
-                        manifest = await TryReadManifestFromEntryAsync(archive, entry, ct);
+                        if (isBnp && bnpInfo == null &&
+                            Path.GetFileName(path).Equals("info.json", StringComparison.OrdinalIgnoreCase))
+                        {
+                            bnpInfo = await TryReadBnpInfoFromEntryAsync(entry, ct);
+                        }
+
+                        if (manifest == null)
+                        {
+                            manifest = await TryReadManifestFromEntryAsync(archive, entry, ct);
+                        }
                     }
                 }
             }
@@ -121,17 +140,31 @@ public sealed class SwitchModScanner
                     category = SwitchModCategoryExtensions.FromPathSegment(manifest.Category);
             }
 
-            // Priority 2: well-known path segments
+            // For BNP archives, use info.json fields when manifest fields are missing
+            var effectiveName = manifest?.Name ?? bnpInfo?.Name;
+            var effectiveVersion = manifest?.Version ?? bnpInfo?.Version;
+
+            // Priority 2: well-known path segments (exclude BNP-internal dirs)
             if (category == SwitchModCategory.Unknown)
-                category = InferCategoryFromEntries(entryNames);
+            {
+                var categoryEntries = isBnp
+                    ? entryNames.Where(e => !IsBnpInternalEntry(e))
+                    : entryNames;
+                category = InferCategoryFromEntries(categoryEntries);
+            }
 
             // Priority 3: TitleID from archive name
             if (titleId == null)
                 titleId = TryExtractTitleIdFromName(Path.GetFileNameWithoutExtension(archivePath));
 
-            // Priority 4: TitleID from first leading folder in entries
+            // Priority 4: TitleID from first leading folder in entries (exclude BNP-internal)
             if (titleId == null)
-                titleId = TryExtractTitleIdFromEntries(entryNames);
+            {
+                var titleEntries = isBnp
+                    ? entryNames.Where(e => !IsBnpInternalEntry(e))
+                    : entryNames;
+                titleId = TryExtractTitleIdFromEntries(titleEntries);
+            }
 
             if (titleId == null)
             {
@@ -139,15 +172,20 @@ public sealed class SwitchModScanner
                 return null;
             }
 
-            var name = manifest?.Name ?? SanitiseName(Path.GetFileNameWithoutExtension(archivePath));
+            var name = effectiveName ?? SanitiseName(Path.GetFileNameWithoutExtension(archivePath));
             var hash = await ComputeFileHashAsync(archivePath, ct);
 
-            return BuildMod(
-                titleId, name, manifest?.Version ?? "0.0.0", category,
+            var mod = BuildMod(
+                titleId, name, effectiveVersion ?? "0.0.0", category,
                 manifest?.LoadOrder ?? 0,
                 manifest?.Dependencies ?? [],
                 manifest?.Conflicts ?? [],
                 archivePath, false, hash);
+
+            if (isBnp && bnpInfo?.Options != null && hasOptionsDir)
+                mod.BnpOptions = bnpInfo.Options;
+
+            return mod;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -168,17 +206,27 @@ public sealed class SwitchModScanner
             // Manifest file in folder root
             var manifest = SwitchModManifest.TryLoad(folderPath);
 
+            // BNP info.json (may coexist with manifest — has different schema)
+            var bnpInfo = BnpInfo.TryLoad(Path.Combine(folderPath, "info.json"));
+            bool hasOptionsDir = Directory.Exists(Path.Combine(folderPath, "options"));
+
             if (manifest?.TitleId != null)
                 titleId = manifest.TitleId.ToUpperInvariant();
             if (manifest?.Category != null)
                 category = SwitchModCategoryExtensions.FromPathSegment(manifest.Category);
 
-            // Infer from immediate sub-directories
+            var effectiveName = manifest?.Name ?? bnpInfo?.Name;
+            var effectiveVersion = manifest?.Version ?? bnpInfo?.Version;
+
+            // Infer from immediate sub-directories (skip BNP-internal dirs)
             if (category == SwitchModCategory.Unknown)
             {
                 var subDirs = Directory.GetDirectories(folderPath).Select(Path.GetFileName);
                 foreach (var sub in subDirs.OfType<string>())
                 {
+                    if (sub.Equals("options", StringComparison.OrdinalIgnoreCase) ||
+                        sub.Equals("logs", StringComparison.OrdinalIgnoreCase))
+                        continue;
                     var cat = SwitchModCategoryExtensions.FromPathSegment(sub);
                     if (cat != SwitchModCategory.Unknown) { category = cat; break; }
                 }
@@ -193,18 +241,37 @@ public sealed class SwitchModScanner
                 titleId = TryExtractTitleIdFromName(
                     Path.GetFileName(Path.GetDirectoryName(folderPath) ?? string.Empty));
 
+            // TitleID from immediate TitleID-named subdirectory
+            if (titleId == null)
+            {
+                var subDirs = Directory.GetDirectories(folderPath).Select(Path.GetFileName);
+                foreach (var sub in subDirs.OfType<string>())
+                {
+                    if (SwitchTitleId.TryParse(sub, out _))
+                    {
+                        titleId = sub.ToUpperInvariant();
+                        break;
+                    }
+                }
+            }
+
             if (titleId == null)
                 return null;
 
-            var name = manifest?.Name ?? SanitiseName(Path.GetFileName(folderPath));
+            var name = effectiveName ?? SanitiseName(Path.GetFileName(folderPath));
             var hash = await ComputeDirectoryHashAsync(folderPath, ct);
 
-            return BuildMod(
-                titleId, name, manifest?.Version ?? "0.0.0", category,
+            var mod = BuildMod(
+                titleId, name, effectiveVersion ?? "0.0.0", category,
                 manifest?.LoadOrder ?? 0,
                 manifest?.Dependencies ?? [],
                 manifest?.Conflicts ?? [],
                 folderPath, true, hash);
+
+            if (bnpInfo?.Options != null && hasOptionsDir)
+                mod.BnpOptions = bnpInfo.Options;
+
+            return mod;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -230,7 +297,8 @@ public sealed class SwitchModScanner
         var sub = Directory.GetDirectories(path).Select(d => Path.GetFileName(d)?.ToLowerInvariant());
         return sub.Any(s => s is "romfs" or "exefs" or "cheats" or "content")
                || File.Exists(Path.Combine(path, "manifest.json"))
-               || File.Exists(Path.Combine(path, "mod.json"));
+               || File.Exists(Path.Combine(path, "mod.json"))
+               || File.Exists(Path.Combine(path, "info.json"));
     }
 
     private static bool IsManifestEntry(string entryPath)
@@ -283,6 +351,41 @@ public sealed class SwitchModScanner
                 return first.ToUpperInvariant();
         }
         return null;
+    }
+
+    private static bool IsBnpFile(string path) =>
+        Path.GetExtension(path).Equals(".bnp", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRootLevelEntry(string entryPath)
+    {
+        var normalized = entryPath.Replace('\\', '/').TrimStart('/');
+        return !normalized.Contains('/');
+    }
+
+    /// <summary>
+    /// Returns true for archive entries under options/ or logs/ (BNP-internal paths
+    /// that should be excluded from TitleID and category inference).
+    /// </summary>
+    private static bool IsBnpInternalEntry(string entryPath)
+    {
+        var normalized = entryPath.Replace('\\', '/').TrimStart('/');
+        return normalized.StartsWith("options/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("logs/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<BnpInfo?> TryReadBnpInfoFromEntryAsync(
+        IArchiveEntry entry, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = entry.OpenEntryStream();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, ct);
+            ms.Position = 0;
+            return await System.Text.Json.JsonSerializer.DeserializeAsync<BnpInfo>(ms,
+                cancellationToken: ct);
+        }
+        catch { return null; }
     }
 
     private static string SanitiseName(string raw) =>

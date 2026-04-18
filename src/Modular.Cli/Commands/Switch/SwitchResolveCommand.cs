@@ -24,6 +24,14 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
         [CommandOption("--mods <MODS>")]
         [Description("Comma-separated mod keys (or names) to resolve; omit to resolve all known mods")]
         public string? Mods { get; init; }
+
+        [CommandOption("--allow-conflicts")]
+        [Description("Treat declared mod conflicts as warnings instead of errors")]
+        public bool AllowConflicts { get; init; }
+
+        [CommandOption("--overlaps")]
+        [Description("Detect and display file overlaps between mods")]
+        public bool ShowOverlaps { get; init; }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext ctx, Settings settings)
@@ -70,7 +78,7 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
             keys = gameMods.Select(m => m.ModKey);
         }
 
-        var result = graph.Resolve(keys);
+        var result = graph.Resolve(keys, settings.AllowConflicts);
 
         if (!result.Success)
         {
@@ -87,6 +95,8 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
                 AnsiConsole.MarkupLine("\n[red]Conflicts:[/]");
                 foreach (var (a, b) in result.Conflicts)
                     AnsiConsole.MarkupLine($"  [red]• {a} ↔ {b}[/]");
+                if (!settings.AllowConflicts)
+                    AnsiConsole.MarkupLine("[grey]Hint: use --allow-conflicts to override declared conflicts[/]");
             }
             if (result.Cycles.Count > 0)
             {
@@ -96,6 +106,10 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
             }
             return 1;
         }
+
+        // Show warnings
+        foreach (var warning in result.Warnings)
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {warning}");
 
         // Success — print install order
         AnsiConsole.MarkupLine($"[green]Resolved {result.InstallOrder.Count} mod(s) for {titleId}[/]\n");
@@ -119,6 +133,30 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
                     : "[grey]—[/]");
         }
         AnsiConsole.Write(table);
+
+        // File overlap analysis
+        if (settings.ShowOverlaps)
+        {
+            var overlapReport = await SwitchFileOverlapDetector.DetectAsync(result.InstallOrder);
+
+            if (overlapReport.HasOverlaps)
+            {
+                AnsiConsole.MarkupLine($"\n[yellow]File overlaps ({overlapReport.Overlaps.Count} file(s)):[/]");
+                var overlapTable = new Table().Border(TableBorder.Simple)
+                    .AddColumn("File").AddColumn("Provided by");
+                foreach (var overlap in overlapReport.Overlaps.Take(30))
+                    overlapTable.AddRow(
+                        Markup.Escape(overlap.NormalizedPath),
+                        Markup.Escape(string.Join(", ", overlap.ModKeys)));
+                if (overlapReport.Overlaps.Count > 30)
+                    overlapTable.AddRow($"[grey]... and {overlapReport.Overlaps.Count - 30} more[/]", "");
+                AnsiConsole.Write(overlapTable);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("\n[green]No file overlaps detected.[/]");
+            }
+        }
 
         return 0;
     }

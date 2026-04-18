@@ -94,15 +94,22 @@
                             <DataTemplate x:DataType="vm:SwitchModDisplayModel">
                                 <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
                                         CornerRadius="4" Padding="10,8" Margin="0,2">
-                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
                                                   IsEnabled="{Binding !IsInstalled}"
-                                                  VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                        <StackPanel Grid.Column="1" Spacing="2">
+                                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding LoadOrder, StringFormat='#{0}'}"
+                                                   FontSize="11" Opacity="0.4" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" MinWidth="24"/>
+                                        <StackPanel Grid.Column="2" Spacing="2">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
                                                 <TextBlock Text="{Binding Version}" Opacity="0.6" FontSize="12"
                                                            VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding OverlapWarning}" Foreground="Orange"
+                                                           FontSize="11" VerticalAlignment="Center"
+                                                           IsVisible="{Binding OverlapWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" Spacing="12">
                                                 <TextBlock Text="{Binding TitleId}" FontSize="11"
@@ -110,9 +117,23 @@
                                                 <TextBlock Text="{Binding Category}" FontSize="11" Opacity="0.5"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="2"
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2"
+                                                    VerticalAlignment="Center"
+                                                    IsVisible="{Binding !IsInstalled}">
+                                            <Button Command="{Binding $parent[ItemsControl].((vm:SwitchInstallViewModel)DataContext).MoveUpCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="Move up (lower priority)" Padding="4,2">
+                                                <mi:MaterialIcon Kind="ArrowUp" Width="14" Height="14"/>
+                                            </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].((vm:SwitchInstallViewModel)DataContext).MoveDownCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="Move down (higher priority)" Padding="4,2">
+                                                <mi:MaterialIcon Kind="ArrowDown" Width="14" Height="14"/>
+                                            </Button>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="4"
                                                    Text="Installed" Opacity="0.5" FontSize="12"
-                                                   VerticalAlignment="Center"
+                                                   VerticalAlignment="Center" Margin="6,0,0,0"
                                                    IsVisible="{Binding IsInstalled}"/>
                                     </Grid>
                                 </Border>

@@ -83,6 +83,23 @@ public sealed class SwitchModInstaller
             else
                 await ExtractArchiveAsync(mod.SourcePath, targetDir, progress, mod, ct);
 
+            // BNP option merging — overlay selected option content on top of base
+            if (mod.SelectedBnpOptions.Count > 0)
+            {
+                foreach (var optionFolder in mod.SelectedBnpOptions)
+                {
+                    _log?.LogInformation("Merging BNP option '{Option}' for '{Mod}'",
+                        optionFolder, mod.ModKey);
+
+                    if (mod.IsExtracted)
+                        await MergeBnpOptionFolderAsync(
+                            mod.SourcePath, optionFolder, slotDir, progress, mod, ct);
+                    else
+                        await MergeBnpOptionArchiveAsync(
+                            mod.SourcePath, optionFolder, slotDir, progress, mod, ct);
+                }
+            }
+
             // Validate no path escaped the load dir
             YuzuPaths.AssertInsideLoadDir(titleId, targetDir);
 
@@ -211,6 +228,7 @@ public sealed class SwitchModInstaller
         IProgress<SwitchInstallProgress>? progress, SwitchMod mod,
         CancellationToken ct)
     {
+        bool isBnp = mod.BnpOptions != null;
         using var archive = ArchiveFactory.Open(archivePath);
         var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
         int i = 0;
@@ -218,6 +236,11 @@ public sealed class SwitchModInstaller
         foreach (var entry in entries)
         {
             ct.ThrowIfCancellationRequested();
+
+            // Skip BNP-internal directories (options/, logs/) during base extraction
+            if (isBnp && IsBnpInternalPath(entry.Key ?? string.Empty))
+                continue;
+
             var relPath = NormaliseArchivePath(entry.Key ?? string.Empty, mod.Category);
             if (relPath == null) continue;
 
@@ -252,6 +275,7 @@ public sealed class SwitchModInstaller
         IProgress<SwitchInstallProgress>? progress, SwitchMod mod,
         CancellationToken ct)
     {
+        bool isBnp = mod.BnpOptions != null;
         var files = Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories).ToList();
         int i = 0;
 
@@ -259,6 +283,11 @@ public sealed class SwitchModInstaller
         {
             ct.ThrowIfCancellationRequested();
             var relPath = Path.GetRelativePath(sourceDir, srcFile).Replace('\\', '/');
+
+            // Skip BNP-internal directories (options/, logs/) during base copy
+            if (isBnp && IsBnpInternalPath(relPath))
+                continue;
+
             var destPath = Path.Combine(targetDir, relPath);
 
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
@@ -291,11 +320,135 @@ public sealed class SwitchModInstaller
         }
     }
 
+    // ── BNP option merging ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Merges a single BNP option folder from a pre-extracted source into the
+    /// install slot, overlaying files on top of the base content.
+    /// </summary>
+    private async Task MergeBnpOptionFolderAsync(
+        string sourceDir, string optionFolder, string slotDir,
+        IProgress<SwitchInstallProgress>? progress, SwitchMod mod,
+        CancellationToken ct)
+    {
+        var optionDir = Path.Combine(sourceDir, "options", optionFolder);
+        if (!Directory.Exists(optionDir))
+        {
+            _log?.LogWarning("BNP option folder not found: {Dir}", optionDir);
+            return;
+        }
+
+        var files = Directory.EnumerateFiles(optionDir, "*", SearchOption.AllDirectories)
+            .Where(f => !IsLogsPath(Path.GetRelativePath(optionDir, f).Replace('\\', '/')))
+            .ToList();
+        int i = 0;
+
+        foreach (var srcFile in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            var relPath = Path.GetRelativePath(optionDir, srcFile).Replace('\\', '/');
+
+            // Option folders contain TitleID/romfs/... structure — write directly
+            // into the slot dir (which is the TitleID-level mod directory)
+            var destPath = Path.Combine(slotDir, relPath);
+
+            // Safety check
+            if (!Path.GetFullPath(destPath).StartsWith(
+                    Path.GetFullPath(slotDir), StringComparison.Ordinal))
+            {
+                _log?.LogWarning("Path traversal blocked in option: {Path}", relPath);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            File.Copy(srcFile, destPath, overwrite: true);
+
+            i++;
+            progress?.Report(new SwitchInstallProgress
+            {
+                ModKey = mod.ModKey,
+                Phase = $"Merging option: {optionFolder}",
+                FilesProcessed = i,
+                TotalFiles = files.Count,
+                CurrentFile = relPath
+            });
+        }
+    }
+
+    /// <summary>
+    /// Merges a single BNP option from inside an archive into the install slot,
+    /// overlaying files on top of the base content.
+    /// </summary>
+    private async Task MergeBnpOptionArchiveAsync(
+        string archivePath, string optionFolder, string slotDir,
+        IProgress<SwitchInstallProgress>? progress, SwitchMod mod,
+        CancellationToken ct)
+    {
+        var prefix = $"options/{optionFolder}/";
+
+        using var archive = ArchiveFactory.Open(archivePath);
+        var entries = archive.Entries
+            .Where(e => !e.IsDirectory)
+            .Where(e => (e.Key?.Replace('\\', '/') ?? "")
+                .StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Where(e => !IsLogsPath(
+                (e.Key?.Replace('\\', '/') ?? "")[prefix.Length..]))
+            .ToList();
+
+        int i = 0;
+        foreach (var entry in entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            // Strip the options/<folder>/ prefix to get the TitleID/romfs/... path
+            var relPath = (entry.Key?.Replace('\\', '/') ?? "")[prefix.Length..];
+            if (string.IsNullOrEmpty(relPath)) continue;
+
+            // Option content writes directly into the slot dir (TitleID level)
+            var destPath = Path.Combine(slotDir, relPath);
+
+            if (!Path.GetFullPath(destPath).StartsWith(
+                    Path.GetFullPath(slotDir), StringComparison.Ordinal))
+            {
+                _log?.LogWarning("Path traversal blocked in option: {Entry}", entry.Key);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+            await using var destStream = File.Create(destPath);
+            await using var srcStream = entry.OpenEntryStream();
+            await srcStream.CopyToAsync(destStream, ct);
+
+            i++;
+            progress?.Report(new SwitchInstallProgress
+            {
+                ModKey = mod.ModKey,
+                Phase = $"Merging option: {optionFolder}",
+                FilesProcessed = i,
+                TotalFiles = entries.Count,
+                CurrentFile = relPath
+            });
+        }
+    }
+
+    internal static bool IsBnpInternalPath(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        return normalized.StartsWith("options/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("logs/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("options", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("logs", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLogsPath(string relativePath) =>
+        relativePath.StartsWith("logs/", StringComparison.OrdinalIgnoreCase)
+        || relativePath.Equals("logs", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Strips the archive-level category sub-folder prefix if present
     /// (e.g. "romfs/..." → "..." because we're already writing into the romfs sub-folder).
     /// </summary>
-    private static string? NormaliseArchivePath(string entryPath, SwitchModCategory category)
+    internal static string? NormaliseArchivePath(string entryPath, SwitchModCategory category)
     {
         var normalised = entryPath.Replace('\\', '/').TrimStart('/');
         if (string.IsNullOrEmpty(normalised)) return null;

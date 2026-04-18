@@ -45,6 +45,14 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
         [CommandOption("--auto-apply-hook")]
         [Description("When --runner lutris: re-run install on every game launch")]
         public bool AutoApplyHook { get; init; }
+
+        [CommandOption("--no-options")]
+        [Description("Skip BNP option selection (install base content only)")]
+        public bool NoOptions { get; init; }
+
+        [CommandOption("--allow-conflicts")]
+        [Description("Treat declared mod conflicts as warnings instead of errors")]
+        public bool AllowConflicts { get; init; }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext ctx, Settings settings)
@@ -94,18 +102,143 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
         // Resolve dependency graph
         var graph = new SwitchDependencyGraph();
         graph.AddRange(gameMods);
-        var resolution = graph.Resolve(requestedKeys);
+        var resolution = graph.Resolve(requestedKeys, settings.AllowConflicts);
 
         if (!resolution.Success)
         {
             AnsiConsole.MarkupLine($"[red]Dependency resolution failed:[/] {resolution.Error}");
+            if (resolution.Conflicts.Count > 0)
+                AnsiConsole.MarkupLine("[grey]Hint: use --allow-conflicts to override declared conflicts[/]");
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[bold]Installing {resolution.InstallOrder.Count} mod(s) → TitleID {titleId}[/]");
+        // Show any warnings from conflict override
+        foreach (var warning in resolution.Warnings)
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {warning}");
+
+        // File overlap detection
+        var overlapReport = await SwitchFileOverlapDetector.DetectAsync(resolution.InstallOrder, cts.Token);
+        if (overlapReport.HasOverlaps)
+        {
+            AnsiConsole.MarkupLine($"\n[yellow]File overlaps detected ({overlapReport.Overlaps.Count} file(s)):[/]");
+            var overlapTable = new Table().Border(TableBorder.Simple)
+                .AddColumn("File").AddColumn("Provided by (last wins)");
+            foreach (var overlap in overlapReport.Overlaps.Take(20))
+                overlapTable.AddRow(
+                    Markup.Escape(overlap.NormalizedPath),
+                    Markup.Escape(string.Join(" → ", overlap.ModKeys)));
+            if (overlapReport.Overlaps.Count > 20)
+                overlapTable.AddRow($"[grey]... and {overlapReport.Overlaps.Count - 20} more[/]", "");
+            AnsiConsole.Write(overlapTable);
+        }
+
+        // Interactive reorder when overlaps or warnings exist
+        if ((overlapReport.HasOverlaps || resolution.Warnings.Count > 0)
+            && !settings.DryRun
+            && resolution.InstallOrder.Count > 1)
+        {
+            AnsiConsole.MarkupLine("\n[bold]Current install order (last mod wins for overlapping files):[/]");
+            for (int i = 0; i < resolution.InstallOrder.Count; i++)
+                AnsiConsole.MarkupLine($"  {i + 1}. {Markup.Escape(resolution.InstallOrder[i].Name)}");
+
+            if (AnsiConsole.Confirm("\nReorder mods before installing?", defaultValue: false))
+            {
+                var modByName = resolution.InstallOrder.ToDictionary(m => m.Name);
+                var names = resolution.InstallOrder.Select(m => m.Name).ToList();
+
+                var reordered = AnsiConsole.Prompt(
+                    new MultiSelectionPrompt<string>()
+                        .Title("Select mods in desired install order (select in order, last selected wins overlaps)")
+                        .Required()
+                        .PageSize(15)
+                        .InstructionsText("[grey](Space to toggle, Enter to confirm)[/]")
+                        .AddChoices(names));
+
+                // Add any unselected mods at the beginning (keep them in original order)
+                var unselected = names.Where(n => !reordered.Contains(n)).ToList();
+                var fullOrder = unselected.Concat(reordered).ToList();
+
+                // Validate dependency constraints
+                var orderValid = true;
+                var positionMap = fullOrder.Select((n, i) => (n, i))
+                    .ToDictionary(x => modByName[x.n].ModKey, x => x.i, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var mod in resolution.InstallOrder)
+                {
+                    foreach (var dep in mod.Dependencies)
+                    {
+                        if (positionMap.TryGetValue(dep, out var depPos)
+                            && positionMap.TryGetValue(mod.ModKey, out var modPos)
+                            && depPos >= modPos)
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"[red]Invalid order:[/] '{Markup.Escape(mod.Name)}' depends on " +
+                                $"'{Markup.Escape(dep)}' which is placed after it.");
+                            orderValid = false;
+                        }
+                    }
+                }
+
+                if (!orderValid)
+                {
+                    AnsiConsole.MarkupLine("[yellow]Keeping original order due to dependency constraint violations.[/]");
+                }
+                else
+                {
+                    resolution.InstallOrder = fullOrder.Select(n => modByName[n]).ToList();
+                    for (int i = 0; i < resolution.InstallOrder.Count; i++)
+                        resolution.InstallOrder[i].LoadOrder = i + 1;
+                }
+            }
+        }
+
+        AnsiConsole.MarkupLine($"\n[bold]Installing {resolution.InstallOrder.Count} mod(s) → TitleID {titleId}[/]");
         if (settings.DryRun)
             AnsiConsole.MarkupLine("[yellow]DRY RUN — no files will be written[/]");
         AnsiConsole.WriteLine();
+
+        // BNP option selection
+        if (!settings.NoOptions)
+        {
+            foreach (var mod in resolution.InstallOrder.Where(m => m.HasBnpOptions))
+            {
+                AnsiConsole.MarkupLine($"\n[bold]Options for '{Markup.Escape(mod.Name)}':[/]");
+                mod.SelectedBnpOptions.Clear();
+                var options = mod.BnpOptions!;
+
+                // Single-select groups (pick exactly one)
+                foreach (var group in options.Single.Where(g => g.Options.Count > 0))
+                {
+                    var prompt = new SelectionPrompt<string>()
+                        .Title($"[yellow]{Markup.Escape(group.Description)}[/]")
+                        .PageSize(10)
+                        .AddChoices(group.Options.Select(o => o.Name));
+
+                    var chosen = AnsiConsole.Prompt(prompt);
+                    var folder = group.Options.First(o => o.Name == chosen).Folder;
+                    mod.SelectedBnpOptions.Add(folder);
+                }
+
+                // Multi-select groups (pick any number)
+                foreach (var group in options.Multi.Where(g => g.Options.Count > 0))
+                {
+                    var prompt = new MultiSelectionPrompt<string>()
+                        .Title($"[yellow]{Markup.Escape(group.Description)}[/]")
+                        .PageSize(10)
+                        .InstructionsText("[grey](Space to toggle, Enter to confirm)[/]")
+                        .AddChoices(group.Options.Select(o => o.Name));
+
+                    var chosen = AnsiConsole.Prompt(prompt);
+                    foreach (var name in chosen)
+                    {
+                        var folder = group.Options.First(o => o.Name == name).Folder;
+                        mod.SelectedBnpOptions.Add(folder);
+                    }
+                }
+
+                AnsiConsole.MarkupLine($"[grey]Selected {mod.SelectedBnpOptions.Count} option(s)[/]");
+            }
+        }
 
         // Force flag: clear installed state so hash check is bypassed
         if (settings.Force)

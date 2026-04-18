@@ -85,6 +85,26 @@ public sealed class SwitchMod
     [JsonPropertyName("installed_hash")]
     public string InstalledHash { get; set; } = string.Empty;
 
+    // ── BNP options ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Available BNP option groups, populated by the scanner when the source
+    /// is a BNP archive with an options/ directory. Null for non-BNP mods.
+    /// </summary>
+    [JsonPropertyName("bnp_options")]
+    public BnpOptionsContainer? BnpOptions { get; set; }
+
+    /// <summary>
+    /// User-selected option folder names (from <see cref="BnpOption.Folder"/>).
+    /// Empty list means "no options selected" (only base content is installed).
+    /// </summary>
+    [JsonPropertyName("selected_bnp_options")]
+    public List<string> SelectedBnpOptions { get; set; } = [];
+
+    /// <summary>True when this mod is a BNP with options that need user selection.</summary>
+    [JsonIgnore]
+    public bool HasBnpOptions => BnpOptions?.HasOptions == true;
+
     // ── Snapshot ─────────────────────────────────────────────────────────
 
     /// <summary>Pre-install snapshot directory (for rollback).</summary>
