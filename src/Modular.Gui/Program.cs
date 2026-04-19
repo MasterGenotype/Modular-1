@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Backends;
@@ -99,10 +100,21 @@ sealed class Program
     }
 
     public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
+    {
+        var builder = AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
+
+        // Gamescope is a Wayland compositor that does not host the XDG Desktop Portal,
+        // so StorageProvider.OpenFilePickerAsync silently returns nothing under it.
+        // UseManagedSystemDialogs switches to Avalonia's in-process file picker which
+        // has no DBus or portal dependency.
+        if (Environment.GetEnvironmentVariable("GAMESCOPE_WAYLAND_DISPLAY") != null)
+            builder = builder.UseManagedSystemDialogs();
+
+        return builder;
+    }
 
     private static IServiceProvider ConfigureServices()
     {
