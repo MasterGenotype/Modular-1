@@ -113,7 +113,11 @@ sealed class Program
         if (OperatingSystem.IsLinux())
         {
             if (Environment.GetEnvironmentVariable("GAMESCOPE_WAYLAND_DISPLAY") != null)
+            {
+#pragma warning disable CA1416 // Validate platform compatibility — guarded by OperatingSystem.IsLinux above
                 builder = builder.UseManagedSystemDialogs();
+#pragma warning restore CA1416
+            }
         }
 
         return builder;
