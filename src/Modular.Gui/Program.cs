@@ -110,7 +110,7 @@ sealed class Program
         // so StorageProvider.OpenFilePickerAsync silently returns nothing under it.
         // UseManagedSystemDialogs switches to Avalonia's in-process file picker which
         // has no DBus or portal dependency.
-        if (Environment.GetEnvironmentVariable("GAMESCOPE_WAYLAND_DISPLAY") != null)
+        if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("GAMESCOPE_WAYLAND_DISPLAY") != null)
             builder = builder.UseManagedSystemDialogs();
 
         return builder;
