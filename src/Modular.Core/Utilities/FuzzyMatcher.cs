@@ -62,7 +62,7 @@ public static class FuzzyMatcher
     /// </summary>
     private static bool HasWordBoundaryPrefix(string query, string target)
     {
-        var words = target.Split([' ', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        var words = target.Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var word in words)
         {
             if (word.StartsWith(query, StringComparison.Ordinal))

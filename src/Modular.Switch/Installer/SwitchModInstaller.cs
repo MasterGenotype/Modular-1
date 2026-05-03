@@ -361,7 +361,7 @@ public sealed class SwitchModInstaller
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-            File.Copy(srcFile, destPath, overwrite: true);
+            await Task.Run(() => File.Copy(srcFile, destPath, overwrite: true), ct);
 
             i++;
             progress?.Report(new SwitchInstallProgress
