@@ -63,12 +63,12 @@ public sealed class ValidatePluginCommand : AsyncCommand<ValidatePluginCommand.S
                     Console.WriteLine($"  [WARN] {warning}");
             }
 
-            return result.IsValid ? 0 : 1;
+            return await Task.FromResult(result.IsValid ? 0 : 1);
         }
         catch (Exception ex)
         {
             LiveProgressDisplay.ShowError($"Validation failed: {ex.Message}");
-            return 1;
+            return await Task.FromResult(1);
         }
     }
 }
