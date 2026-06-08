@@ -165,23 +165,6 @@ class Program
                     .WithExample("collection", "check-updates", "My Skyrim Build");
             });
 
-            // Mod installation commands
-            config.AddCommand<InstallCommand>("install")
-                .WithDescription("Install a mod archive to a game directory")
-                .WithExample("install", "mod.zip", "--game", "730")
-                .WithExample("install", "mod.zip", "--game", "Counter-Strike")
-                .WithExample("install", "mod.zip", "--game", "/path/to/game", "--dry-run")
-                .WithExample("install", "mod.zip", "--game", "730", "--force");
-
-            config.AddCommand<UninstallCommand>("uninstall")
-                .WithDescription("Uninstall a previously installed mod by changeset ID")
-                .WithExample("uninstall", "a1b2c3d4e5f6");
-
-            config.AddCommand<ListInstalledCommand>("installed")
-                .WithDescription("List installed mods")
-                .WithExample("installed")
-                .WithExample("installed", "--game", "730");
-
             // Game detection commands
             config.AddCommand<DetectGamesCommand>("detect-games")
                 .WithDescription("Scan for installed Steam games")
@@ -193,13 +176,6 @@ class Program
                 .WithDescription("Detect game engine for a specific game")
                 .WithExample("detect-engine", "730")
                 .WithExample("detect-engine", "/path/to/game", "--all");
-
-            // Steam mod installer command
-            config.AddCommand<SteamInstallCommand>("steam-install")
-                .WithDescription("Install Steam game mods with dependency resolution")
-                .WithExample("steam-install", "/path/to/game", "--manifest", "mods.json")
-                .WithExample("steam-install", "/path/to/game", "--archive", "mod.zip")
-                .WithExample("steam-install", "/path/to/game", "--manifest", "mods.json", "--dry-run");
 
             // Telemetry command group
             config.AddBranch("telemetry", telemetry =>
