@@ -1,6 +1,6 @@
 # Maintainer: superphenotype
 pkgname=modular-git
-pkgver=r145.g7458fdc
+pkgver=r147.g9060186
 pkgrel=1
 pkgdesc="Extensible mod manager for downloading, organizing, and managing game modifications (CLI + GUI)"
 arch=('x86_64')
@@ -12,7 +12,7 @@ depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
 makedepends=('dotnet-sdk-8.0' 'git')
 provides=('modular')
 conflicts=('modular')
-source=("modular::git+file:///home/artix/.gitrepos/Modular-1")
+source=("modular::git+file:///home/superphenotype/.gitrepos/Modular-1")
 sha256sums=('SKIP')
 
 pkgver() {

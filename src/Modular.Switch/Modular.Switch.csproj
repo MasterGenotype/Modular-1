@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <!-- Archive extraction (already used by Modular.Core) -->
-    <PackageReference Include="SharpCompress" Version="0.37.2" />
+    <PackageReference Include="SharpCompress" Version="0.50.4" />
     <!-- Logging abstractions -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
   </ItemGroup>

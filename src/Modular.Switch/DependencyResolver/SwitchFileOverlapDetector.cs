@@ -60,7 +60,7 @@ public static class SwitchFileOverlapDetector
         if (!File.Exists(mod.SourcePath))
             yield break;
 
-        using var archive = ArchiveFactory.Open(mod.SourcePath);
+        using var archive = ArchiveFactory.OpenArchive(mod.SourcePath);
         foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
         {
             var raw = entry.Key?.Replace('\\', '/') ?? string.Empty;

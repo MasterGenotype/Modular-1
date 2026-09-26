@@ -15,7 +15,7 @@ public class SharpCompressArchiveReader : IArchiveReader
 
     public SharpCompressArchiveReader(string archivePath)
     {
-        _archive = ArchiveFactory.Open(archivePath);
+        _archive = ArchiveFactory.OpenArchive(archivePath);
         _sharpEntryMap = new Dictionary<string, IArchiveEntry>();
         _entries = new List<ArchiveEntry>();
 

@@ -229,7 +229,7 @@ public sealed class SwitchModInstaller
         CancellationToken ct)
     {
         bool isBnp = mod.BnpOptions != null;
-        using var archive = ArchiveFactory.Open(archivePath);
+        using var archive = ArchiveFactory.OpenArchive(archivePath);
         var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
         int i = 0;
 
@@ -386,7 +386,7 @@ public sealed class SwitchModInstaller
     {
         var prefix = $"options/{optionFolder}/";
 
-        using var archive = ArchiveFactory.Open(archivePath);
+        using var archive = ArchiveFactory.OpenArchive(archivePath);
         var entries = archive.Entries
             .Where(e => !e.IsDirectory)
             .Where(e => (e.Key?.Replace('\\', '/') ?? "")
