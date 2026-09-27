@@ -1,3 +1,5 @@
+using Modular.Sdk.Installers;
+
 namespace Modular.Core.Installers.HorizonZeroDawn;
 
 /// <summary>
@@ -28,7 +30,7 @@ public sealed class HZDInstallLayout
     /// destination path under the game root directory.
     /// All routes are fully qualified from game root (e.g. "Packed_DX12/Patch_mod.bin").
     /// </summary>
-    public Dictionary<string, string> FileRoutes { get; init; } = new();
+    public Dictionary<string, FileRoute> FileRoutes { get; init; } = new();
 
     /// <summary>
     /// Common root prefix stripped from archive paths.

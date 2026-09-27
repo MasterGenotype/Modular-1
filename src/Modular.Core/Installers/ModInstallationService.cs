@@ -2,11 +2,17 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
 using Modular.Core.Database;
+using Modular.Core.Configuration;
 using Modular.Core.Dependencies;
+using Modular.Core.Deployment;
 using Modular.Core.GameDetection;
+using Modular.Core.Modules;
+using Modular.Core.Plugins;
 using Modular.Core.Snapshots;
 using Modular.Core.Telemetry;
+using Modular.Core.Utilities;
 using Modular.Sdk.Installers;
+using Modular.Sdk.Modules;
 
 namespace Modular.Core.Installers;
 
@@ -25,13 +31,48 @@ public class ModInstallationService
     private readonly ModularDatabase _database;
     private readonly TelemetryService? _telemetry;
     private readonly SnapshotManager? _snapshotManager;
+    private readonly GameModuleRegistry _moduleRegistry;
+    private readonly GameInstallationResolver _gameResolver;
+    private readonly DeploymentService _deployment;
     private readonly ILogger<ModInstallationService>? _logger;
 
+    /// <summary>
+    /// Creates the installation service.
+    /// </summary>
+    /// <param name="database">Modular database.</param>
+    /// <param name="telemetry">Optional telemetry sink.</param>
+    /// <param name="snapshotManager">Optional snapshot manager for auto-snapshots.</param>
+    /// <param name="logger">Optional logger.</param>
+    /// <param name="pluginLoader">
+    /// Optional plugin loader. When supplied, plugin-provided installers and game
+    /// modules are registered, which is what finally makes them reachable from a
+    /// real install.
+    /// </param>
+    /// <param name="moduleRegistry">Module registry; a default one is created when omitted.</param>
+    /// <param name="gameResolver">
+    /// Game installation resolver; a default one wired to this database is created
+    /// when omitted.
+    /// </param>
+    /// <param name="stagingBasePath">
+    /// Root of the staging areas. Defaults to <c>~/.config/Modular/staging</c>.
+    /// </param>
+    /// <param name="settings">
+    /// App settings, for the configured deployment method and fallback.
+    /// </param>
+    /// <param name="deployment">
+    /// Deployment service; a default one wired to this database is created when omitted.
+    /// </param>
     public ModInstallationService(
         ModularDatabase database,
         TelemetryService? telemetry = null,
         SnapshotManager? snapshotManager = null,
-        ILogger<ModInstallationService>? logger = null)
+        ILogger<ModInstallationService>? logger = null,
+        PluginLoader? pluginLoader = null,
+        GameModuleRegistry? moduleRegistry = null,
+        GameInstallationResolver? gameResolver = null,
+        string? stagingBasePath = null,
+        AppSettings? settings = null,
+        DeploymentService? deployment = null)
     {
         _database = database;
         _telemetry = telemetry;
@@ -41,17 +82,62 @@ public class ModInstallationService
         var configDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".config", "Modular");
-        var stagingPath = Path.Combine(configDir, "staging");
+        var stagingPath = stagingBasePath ?? Path.Combine(configDir, "staging");
+
+        var archiveReaderFactory = new ArchiveReaderFactory();
 
         _installerManager = new InstallerManager(
-            archiveReaderFactory: new ArchiveReaderFactory(),
-            logger: logger != null ? null : null,
+            archiveReaderFactory: archiveReaderFactory,
             telemetry: telemetry);
         _stagingManager = new StagingManager(stagingPath);
         _changesetManager = new ChangesetManager(database);
         _archiveInventory = new ArchiveInventoryService(database);
         _conflictIndex = new FileConflictIndex();
+
+        _moduleRegistry = moduleRegistry ?? new GameModuleRegistry(archiveReaderFactory);
+        _gameResolver = gameResolver ?? new GameInstallationResolver(
+            registry: _moduleRegistry, database: database);
+
+        _deployment = deployment ?? new DeploymentService(
+            database, _stagingManager, _gameResolver, settings);
+
+        if (pluginLoader != null)
+            RegisterPluginContributions(pluginLoader);
     }
+
+    /// <summary>
+    /// Registers the installers and game modules a plugin loader has discovered.
+    /// </summary>
+    /// <param name="pluginLoader">The loader whose plugins have already been loaded.</param>
+    /// <remarks>
+    /// Plugin installers were previously discovered but never reached the
+    /// <see cref="InstallerManager"/>, so they could not be selected for an install.
+    /// </remarks>
+    public void RegisterPluginContributions(PluginLoader pluginLoader)
+    {
+        ArgumentNullException.ThrowIfNull(pluginLoader);
+
+        var installers = pluginLoader.GetAllInstallers();
+        if (installers.Count > 0)
+        {
+            _installerManager.RegisterInstallers(installers);
+            _logger?.LogInformation(
+                "Registered {Count} plugin installer(s)", installers.Count);
+        }
+
+        var modules = pluginLoader.GetAllModules();
+        if (modules.Count > 0)
+        {
+            _moduleRegistry.RegisterAll(modules);
+            _logger?.LogInformation(
+                "Registered {Count} plugin game module(s)", modules.Count);
+        }
+    }
+
+    /// <summary>
+    /// The module registry this service resolves games against.
+    /// </summary>
+    public GameModuleRegistry ModuleRegistry => _moduleRegistry;
 
     /// <summary>
     /// Installs a mod archive to a target game directory with full lifecycle tracking.
@@ -80,14 +166,52 @@ public class ModInstallationService
             return result;
         }
 
+        // Step 0: Resolve the game and the module that owns it.
+        //
+        // Two bugs die here. Installer selection used to run with no game id at all, so
+        // SupportedGameIds scoping never applied to a real install; and nothing ever
+        // wrote detected_games, so the auto-snapshot below could never find a game and
+        // silently did nothing.
+        progress?.Report(new InstallProgress { CurrentOperation = "Resolving game..." });
+
+        var installation = await ResolveInstallationAsync(targetDirectory, options, ct);
+        var module = installation != null
+            ? _gameResolver.GetModule(installation)
+            : _moduleRegistry.Resolve(options.GameId, null, targetDirectory);
+        var gameId = options.GameId ?? installation?.GameId;
+        var gameKey = installation?.GameKey ?? DeriveGameKey(targetDirectory);
+
+        result.GameId = gameId;
+        result.ModuleId = module?.ModuleId;
+
+        var modPaths = installation != null && module != null
+            ? module.ResolveModPaths(installation)
+            : null;
+
+        if (installation != null)
+        {
+            _logger?.LogInformation(
+                "Installing for {Game} via module {ModuleId}",
+                installation, module?.ModuleId ?? GenericGameModule.Id);
+        }
+
+        var staged = options.UseStaging;
+        var modId = options.ModId ?? Path.GetFileNameWithoutExtension(archivePath);
+
         // Step 1: Create changeset record
         var changesetId = await _changesetManager.CreateChangesetAsync(
             modId: options.ModId,
             archivePath: archivePath,
             targetDirectory: targetDirectory,
+            managedBy: staged ? ChangesetOwnership.Deployment : ChangesetOwnership.Legacy,
+            gameKey: staged ? gameKey : null,
             ct: ct);
         result.ChangesetId = changesetId;
+        result.ManagedBy = staged ? ChangesetOwnership.Deployment : ChangesetOwnership.Legacy;
+        result.GameKey = gameKey;
         _logger?.LogInformation("Created changeset {Id} for {Archive}", changesetId, Path.GetFileName(archivePath));
+
+        StagingSession? stagingSession = null;
 
         try
         {
@@ -98,9 +222,10 @@ public class ModInstallationService
             var inventory = await _archiveInventory.GetInventoryAsync(archivePath, ct);
             _logger?.LogInformation("Archive contains {Count} entries", inventory.Count);
 
-            // Step 3: Select installer
+            // Step 3: Select installer, scoped to the resolved game and module
             progress?.Report(new InstallProgress { CurrentOperation = "Detecting installer type..." });
-            var selection = await _installerManager.SelectInstallerAsync(archivePath, ct: ct);
+            var selection = await _installerManager.SelectInstallerAsync(
+                archivePath, gameId, module, ct);
 
             if (selection == null)
             {
@@ -118,13 +243,17 @@ public class ModInstallationService
             var context = new InstallContext
             {
                 GameDirectory = targetDirectory,
+                GameId = gameId,
                 ModId = options.ModId,
                 AllowOverwrite = options.AllowOverwrite,
                 CreateBackups = options.CreateBackups,
-                ConflictPolicy = options.AllowOverwrite ? ConflictPolicy.LastWriterWins : ConflictPolicy.FailOnConflict
+                ConflictPolicy = options.AllowOverwrite ? ConflictPolicy.LastWriterWins : ConflictPolicy.FailOnConflict,
+                Game = installation,
+                ModPaths = modPaths
             };
 
-            var plan = await _installerManager.CreateInstallPlanAsync(archivePath, context, ct: ct);
+            var plan = await _installerManager.CreateInstallPlanAsync(
+                archivePath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
 
             if (options.DryRun)
             {
@@ -135,15 +264,39 @@ public class ModInstallationService
                 return result;
             }
 
-            // Step 5: Check for file conflicts
-            progress?.Report(new InstallProgress { CurrentOperation = "Checking for conflicts..." });
-            foreach (var op in plan.Operations.Where(o => o.Type == FileOperationType.Extract || o.Type == FileOperationType.Copy))
+            // Step 5: Check for file conflicts — legacy direct installs only.
+            //
+            // For a staged install this check is worse than useless: every file Modular
+            // itself deployed already exists in the game folder, so each reinstall or
+            // redeploy would report conflicts with its own output. Overlaps between
+            // mods come from the deployment planner instead, which knows which files
+            // Modular owns.
+            if (!staged)
             {
-                var destPath = Path.Combine(targetDirectory, op.DestinationPath);
-                if (File.Exists(destPath) && !options.AllowOverwrite)
+                progress?.Report(new InstallProgress { CurrentOperation = "Checking for conflicts..." });
+                foreach (var op in plan.Operations.Where(o => o.Type == FileOperationType.Extract || o.Type == FileOperationType.Copy))
                 {
-                    _conflictIndex.RegisterFile(op.DestinationPath, options.ModId ?? "current", op.SourcePath, null);
+                    var destPath = Path.Combine(targetDirectory, op.DestinationPath);
+                    if (File.Exists(destPath) && !options.AllowOverwrite)
+                    {
+                        _conflictIndex.RegisterFile(op.DestinationPath, options.ModId ?? "current", op.SourcePath, null);
+                    }
                 }
+            }
+
+            // Step 5b: Redirect the plan into this mod's staging tree.
+            //
+            // After this the installer writes nothing into the game folder. Paths are
+            // normalised here, once, into (root, root-relative path) pairs, so no later
+            // stage has to know that an installer targeted a subdirectory of the game.
+            StagingRedirection? redirection = null;
+            if (staged)
+            {
+                stagingSession = _stagingManager.CreateSession(changesetId, gameKey, modId);
+                redirection = _stagingManager.RedirectPlan(
+                    plan, targetDirectory, stagingSession.StagingDirectory);
+
+                result.StagingPath = stagingSession.StagingDirectory;
             }
 
             // Step 6: Sort operations by dependencies (DAG)
@@ -176,10 +329,113 @@ public class ModInstallationService
                 return result;
             }
 
-            // Step 8: Record operations for rollback
+            // Step 7b: Validate the staged layout, then place the files.
+            if (staged && stagingSession != null && redirection != null)
+            {
+                // Labels come from the redirection: the staged tree on disk knows paths,
+                // not what kind of package each file is or which rule routed it.
+                var stagedMod = StagingManager.BuildStagedMod(
+                    modId, stagingSession.StagingDirectory, redirection.NormalizedFiles);
+
+                result.StagedFiles = stagedMod.Files
+                    .Select(f => $"{f.RootName}/{f.RelativePath}")
+                    .ToList();
+
+                if (installation != null && module != null)
+                {
+                    var diagnostics = SafeValidateStaged(module, installation, stagedMod);
+
+                    result.Diagnostics.AddRange(diagnostics);
+
+                    var errors = diagnostics
+                        .Where(d => d.Severity == DiagnosticSeverity.Error)
+                        .ToList();
+
+                    if (errors.Count > 0)
+                    {
+                        // An invalid layout must not reach the game folder, and the
+                        // staged tree is kept so the user can inspect it.
+                        result.Error =
+                            "Staged layout rejected: " +
+                            string.Join("; ", errors.Select(e => $"{e.Code}: {e.Message}"));
+                        await _changesetManager.UpdateStateAsync(
+                            changesetId, ChangesetState.Failed, ct: ct);
+                        return result;
+                    }
+                }
+
+                // Step 7c: Register the mod in the game's deployment, then deploy the
+                // whole ordered set. Registering before deploying is what makes the
+                // deployment the single source of truth for what is in the game folder.
+                var effectiveInstallation = installation ?? new GameInstallation
+                {
+                    GameId = gameId ?? string.Empty,
+                    InstallPath = targetDirectory,
+                    ModuleId = module?.ModuleId ?? GenericGameModule.Id,
+                    DisplayName = new DirectoryInfo(targetDirectory).Name
+                };
+
+                await _deployment.RegisterModAsync(new GameModRecord
+                {
+                    GameKey = gameKey,
+                    ModId = modId,
+                    ModuleId = module?.ModuleId,
+                    InstallerId = selection.Installer.InstallerId,
+                    StagingPath = stagingSession.StagingDirectory,
+                    DisplayName = options.ModId,
+                    Source = options.Source,
+                    SourceFileId = options.SourceFileId,
+                    ChangesetId = changesetId
+                }, ct);
+
+                if (options.NoDeploy)
+                {
+                    result.Deployed = false;
+                    installResult.InstalledFiles = new List<string>();
+                    installResult.BackedUpFiles = new List<string>();
+                }
+                else
+                {
+                    progress?.Report(new InstallProgress { CurrentOperation = "Deploying..." });
+
+                    var deployment = await _deployment.DeployAsync(
+                        effectiveInstallation, ct: ct);
+
+                    if (!deployment.Success)
+                    {
+                        result.Error = deployment.Error ?? "Deployment failed";
+                        await _changesetManager.UpdateStateAsync(
+                            changesetId, ChangesetState.Failed, ct: ct);
+                        return result;
+                    }
+
+                    result.Deployed = true;
+                    result.Deployment = deployment;
+                    result.Warnings.AddRange(deployment.Warnings);
+
+                    installResult.InstalledFiles = deployment.Manifest?.Files
+                        .Where(f => string.Equals(f.ModId, modId, StringComparison.OrdinalIgnoreCase))
+                        .Select(f => deployment.Manifest!.Roots.TryGetValue(f.Root, out var root)
+                            ? Path.Combine(root, f.Path.Replace('/', Path.DirectorySeparatorChar))
+                            : f.Path)
+                        .ToList() ?? new List<string>();
+                    installResult.BackedUpFiles = deployment.VanillaBackedUp.ToList();
+                }
+            }
+
+            // Step 8: Record operations for rollback.
+            //
+            // A staged changeset records its staged paths *as staged paths*, so they can
+            // never be mistaken for game paths and deleted out from under a deployment,
+            // plus the deployed paths the temporary single-mod deploy actually wrote.
             var operationsData = JsonSerializer.Serialize(new
             {
-                installedFiles = installResult.InstalledFiles,
+                managedBy = staged ? "deployment" : "legacy",
+                gameKey = staged ? gameKey : null,
+                stagingPath = stagingSession?.StagingDirectory,
+                stagedFiles = result.StagedFiles,
+                deployedFiles = staged ? installResult.InstalledFiles : null,
+                installedFiles = staged ? new List<string>() : installResult.InstalledFiles,
                 backedUpFiles = installResult.BackedUpFiles,
                 manifest = installResult.Manifest
             });
@@ -200,19 +456,32 @@ public class ModInstallationService
                 "Installation complete: {Count} files installed in {Duration:F1}s",
                 installResult.InstalledFiles.Count, stopwatch.Elapsed.TotalSeconds);
 
-            // Auto-snapshot after successful install
-            if (options.AutoSnapshot && _snapshotManager != null)
+            // Auto-snapshot after a successful deploy. An install that deployed nothing
+            // changed nothing in the game folder, so there is no new state to capture.
+            if (options.AutoSnapshot && _snapshotManager != null && !options.NoDeploy)
             {
                 try
                 {
-                    var gameInfo = await TryDetectGameForPathAsync(targetDirectory, ct);
-                    if (gameInfo != null)
+                    // The resolved installation is authoritative; the table lookup
+                    // is the fallback for callers that skipped resolution.
+                    var appId = installation?.SteamAppId;
+                    var name = installation?.DisplayName;
+
+                    if (appId == null)
+                    {
+                        var gameInfo = await TryDetectGameForPathAsync(targetDirectory, ct);
+                        appId = gameInfo?.appId;
+                        name ??= gameInfo?.name;
+                    }
+
+                    if (appId != null)
                     {
                         await _snapshotManager.CreateSnapshotAsync(
-                            gameInfo.Value.appId, gameInfo.Value.name, targetDirectory,
+                            appId.Value, name ?? "Unknown Game", targetDirectory,
                             SnapshotTrigger.AutoInstall,
                             name: $"Auto — {options.ModId ?? Path.GetFileName(archivePath)} installed",
-                            ct: ct);
+                            ct: ct,
+                            gameKey: gameKey);
                     }
                 }
                 catch (Exception ex)
@@ -270,47 +539,74 @@ public class ModInstallationService
 
         try
         {
-            var ops = JsonSerializer.Deserialize<JsonElement>(changeset.OperationsJson);
-            var installedFiles = new List<string>();
-            var backedUpFiles = new List<string>();
+            // A managed changeset is undone through the deployment, not by deleting
+            // paths: its operations record staged paths, and the deployment owns what is
+            // in the game folder.
+            if (changeset.ManagedBy == ChangesetOwnership.Deployment)
+            {
+                var managed = await UninstallManagedAsync(changeset, result, ct);
+                if (managed)
+                {
+                    await _changesetManager.UpdateStateAsync(
+                        changesetId, ChangesetState.RolledBack, ct: ct);
+                    return result;
+                }
 
-            if (ops.TryGetProperty("installedFiles", out var installed))
-            {
-                foreach (var f in installed.EnumerateArray())
-                    installedFiles.Add(f.GetString()!);
+                // No game_mod row: a changeset from the phase where staged installs were
+                // still placed file by file. Fall through to the recorded paths.
             }
-            if (ops.TryGetProperty("backedUpFiles", out var backed))
-            {
-                foreach (var f in backed.EnumerateArray())
-                    backedUpFiles.Add(f.GetString()!);
-            }
+
+            var ops = JsonSerializer.Deserialize<JsonElement>(changeset.OperationsJson);
+
+            // A managed changeset records staged paths, never game paths. Its
+            // game-folder files are named by "deployedFiles"; deleting the staged paths
+            // would remove the deployable copies and leave the game folder modded.
+            var isManaged = changeset.ManagedBy == ChangesetOwnership.Deployment;
+
+            var pathsToRemove = ReadStringArray(
+                ops, isManaged ? "deployedFiles" : "installedFiles");
 
             var removedCount = 0;
             var restoredCount = 0;
 
-            // Remove installed files
-            foreach (var file in installedFiles)
+            foreach (var file in pathsToRemove)
             {
-                var fullPath = Path.Combine(changeset.TargetDirectory, file);
-                var backupPath = fullPath + ".backup";
+                // Managed paths are absolute; legacy paths may be either.
+                var fullPath = Path.IsPathRooted(file)
+                    ? file
+                    : Path.Combine(changeset.TargetDirectory, file);
 
                 if (File.Exists(fullPath))
                 {
+                    // Delete, never truncate. A deployed file may be a hardlink or a
+                    // symlink sharing its bytes with the staged copy, and File.Delete
+                    // removes the link itself rather than writing through it.
                     File.Delete(fullPath);
                     removedCount++;
                 }
 
-                // Restore backup if one exists
-                if (File.Exists(backupPath))
+                // Restore a vanilla backup under either suffix. The installers write
+                // ".modular.bak" and the staging commit writes ".backup"; restoring only
+                // one of them left the other orphaned and the game file missing.
+                foreach (var suffix in BackupSuffixes)
                 {
+                    var backupPath = fullPath + suffix;
+                    if (!File.Exists(backupPath))
+                        continue;
+
+                    if (File.Exists(fullPath))
+                        File.Delete(fullPath);
+
                     File.Move(backupPath, fullPath);
                     restoredCount++;
+                    break;
                 }
             }
 
             // Clean up empty directories (bottom-up)
-            var dirs = installedFiles
-                .Select(f => Path.GetDirectoryName(Path.Combine(changeset.TargetDirectory, f)))
+            var dirs = pathsToRemove
+                .Select(f => Path.GetDirectoryName(
+                    Path.IsPathRooted(f) ? f : Path.Combine(changeset.TargetDirectory, f)))
                 .Where(d => d != null)
                 .Distinct()
                 .OrderByDescending(d => d!.Length)
@@ -323,6 +619,22 @@ public class ModInstallationService
                     dir != changeset.TargetDirectory)
                 {
                     Directory.Delete(dir!);
+                }
+            }
+
+            // The staging tree goes only after the game folder is clean, so a failure
+            // above leaves a recoverable state.
+            if (isManaged)
+            {
+                var stagingPath = ops.TryGetProperty("stagingPath", out var sp) &&
+                                  sp.ValueKind == JsonValueKind.String
+                    ? sp.GetString()
+                    : null;
+
+                if (!string.IsNullOrEmpty(stagingPath) && Directory.Exists(stagingPath))
+                {
+                    Directory.Delete(stagingPath, recursive: true);
+                    result.StagingRemoved = true;
                 }
             }
 
@@ -348,7 +660,8 @@ public class ModInstallationService
                             gameInfo.Value.appId, gameInfo.Value.name, changeset.TargetDirectory,
                             SnapshotTrigger.AutoUninstall,
                             name: $"Auto — {changeset.ModId ?? changesetId} uninstalled",
-                            ct: ct);
+                            ct: ct,
+                            gameKey: changeset.GameKey);
                     }
                 }
                 catch (Exception ex2)
@@ -364,6 +677,158 @@ public class ModInstallationService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The deployment service behind this install service.
+    /// </summary>
+    public DeploymentService Deployment => _deployment;
+
+    /// <summary>
+    /// Deploys a game's whole ordered mod set.
+    /// </summary>
+    /// <param name="gameRef">AppID, slug, display name or path of the game.</param>
+    /// <param name="method">Deployment method for this run only.</param>
+    /// <param name="loadOrder">An explicit load order, normally a profile's.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>What the deployment did.</returns>
+    public Task<Deployment.DeploymentResult> DeployGameAsync(
+        string gameRef,
+        Deployment.DeploymentMethod? method = null,
+        IReadOnlyList<string>? loadOrder = null,
+        CancellationToken ct = default) =>
+        _deployment.DeployAsync(gameRef, method, loadOrder, ct);
+
+    /// <summary>
+    /// Removes a managed mod from its game's deployment and redeploys.
+    /// </summary>
+    /// <param name="changeset">The changeset being undone.</param>
+    /// <param name="result">Result to fill in.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// True when the mod was found in a deployment and removed; false when there is no
+    /// <c>game_mod</c> row, so the caller should fall back to the recorded paths.
+    /// </returns>
+    private async Task<bool> UninstallManagedAsync(
+        ChangesetRecord changeset,
+        ModUninstallResult result,
+        CancellationToken ct)
+    {
+        var record = await _deployment.Mods.GetByChangesetAsync(changeset.ChangesetId, ct);
+        if (record == null)
+            return false;
+
+        var installation = await ResolveInstallationForKeyAsync(
+            record.GameKey, changeset.TargetDirectory, ct);
+
+        if (installation == null)
+        {
+            result.Error =
+                $"Cannot uninstall '{record.ModId}': the game for key '{record.GameKey}' " +
+                "could not be resolved. Pass its install path or reinstall the game.";
+            return true;
+        }
+
+        var deployment = await _deployment.RemoveModAsync(installation, record.ModId, ct);
+
+        if (!deployment.Success)
+        {
+            // Staging is intact and the mod is back in the set, so the state is recoverable.
+            result.Error = deployment.Error ?? "Redeploy after removal failed";
+            return true;
+        }
+
+        result.Success = true;
+        result.FilesRemoved = deployment.Removed.Count;
+        result.FilesRestored = deployment.Restored.Count;
+        result.StagingRemoved = deployment.StagingRemoved.Count > 0;
+        result.Deployment = deployment;
+
+        _logger?.LogInformation(
+            "Removed {ModId} from {GameKey}: {Removed} files removed, {Restored} restored",
+            record.ModId, record.GameKey, deployment.Removed.Count, deployment.Restored.Count);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes one mod from a game's deployment by name.
+    /// </summary>
+    /// <param name="gameRef">AppID, slug, display name or path of the game.</param>
+    /// <param name="modId">Mod to remove.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>What was removed.</returns>
+    /// <remarks>
+    /// The same code path as <see cref="UninstallAsync"/> for a managed mod, so
+    /// <c>uninstall --game g --mod m</c> and <c>uninstall &lt;changesetId&gt;</c> cannot
+    /// diverge.
+    /// </remarks>
+    public async Task<ModUninstallResult> UninstallModAsync(
+        string gameRef,
+        string modId,
+        CancellationToken ct = default)
+    {
+        var result = new ModUninstallResult { ChangesetId = string.Empty };
+
+        var installation = await _gameResolver.ResolveAsync(gameRef, persist: false, ct);
+        if (installation == null)
+        {
+            result.Error = $"Could not resolve game '{gameRef}'.";
+            return result;
+        }
+
+        var record = await _deployment.Mods.GetAsync(installation.GameKey, modId, ct);
+        if (record == null)
+        {
+            result.Error =
+                $"'{modId}' is not part of the deployment for {installation.DisplayName ?? gameRef}.";
+            return result;
+        }
+
+        result.ChangesetId = record.ChangesetId ?? string.Empty;
+
+        var deployment = await _deployment.RemoveModAsync(installation, modId, ct);
+
+        if (!deployment.Success)
+        {
+            result.Error = deployment.Error ?? "Redeploy after removal failed";
+            return result;
+        }
+
+        if (record.ChangesetId != null)
+        {
+            await _changesetManager.UpdateStateAsync(
+                record.ChangesetId, ChangesetState.RolledBack, ct: ct);
+        }
+
+        result.Success = true;
+        result.FilesRemoved = deployment.Removed.Count;
+        result.FilesRestored = deployment.Restored.Count;
+        result.StagingRemoved = deployment.StagingRemoved.Count > 0;
+        result.Deployment = deployment;
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves the installation behind a game key.
+    /// </summary>
+    /// <param name="gameKey">Game key from the deployment tables.</param>
+    /// <param name="knownPath">A directory recorded for the game, when one is known.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The installation, or <c>null</c> when it could not be resolved.</returns>
+    private async Task<GameInstallation?> ResolveInstallationForKeyAsync(
+        string gameKey, string? knownPath, CancellationToken ct)
+    {
+        // The recorded directory is the most reliable route: it is where the files
+        // actually went.
+        if (!string.IsNullOrEmpty(knownPath) && Directory.Exists(knownPath))
+        {
+            var byPath = await _gameResolver.ResolveAsync(knownPath, persist: false, ct);
+            if (byPath != null)
+                return byPath;
+        }
+
+        return await _gameResolver.ResolveAsync(gameKey, persist: false, ct);
     }
 
     /// <summary>
@@ -414,6 +879,135 @@ public class ModInstallationService
     }
 
     /// <summary>
+    /// Backup suffixes Modular has written, newest convention first.
+    /// </summary>
+    /// <remarks>
+    /// The game-specific installers use <c>.modular.bak</c> and the universal ones use
+    /// <c>.backup</c>. Uninstall used to restore only the latter, which silently lost
+    /// the vanilla file for any Cyberpunk, FF7R or HZD install.
+    /// </remarks>
+    private static readonly string[] BackupSuffixes = [".backup", ".modular.bak"];
+
+    private static List<string> ReadStringArray(JsonElement element, string propertyName)
+    {
+        var values = new List<string>();
+
+        if (!element.TryGetProperty(propertyName, out var array) ||
+            array.ValueKind != JsonValueKind.Array)
+        {
+            return values;
+        }
+
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String && item.GetString() is { } value)
+                values.Add(value);
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// Runs a module's staged-layout validation without letting it break the install.
+    /// </summary>
+    /// <param name="module">The module to ask.</param>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="stagedMod">The staged mod.</param>
+    /// <returns>The diagnostics, or none when the module threw.</returns>
+    private IReadOnlyList<ModDiagnostic> SafeValidateStaged(
+        IGameModule module, GameInstallation installation, StagedMod stagedMod)
+    {
+        var diagnostics = new List<ModDiagnostic>();
+
+        try
+        {
+            diagnostics.AddRange(module.ValidateStaged(installation, stagedMod));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                ex, "Game module {ModuleId} threw during staged validation", module.ModuleId);
+        }
+
+        // Route-table checks run for every module, so a module that declares its
+        // destinations as data gets them without writing them.
+        diagnostics.AddRange(PackageRouteValidator.Validate(module, stagedMod));
+
+        return diagnostics;
+    }
+
+    /// <summary>
+    /// Derives a stable staging key for a target directory with no resolved game.
+    /// </summary>
+    /// <param name="targetDirectory">The game directory.</param>
+    /// <returns>A filesystem-safe key.</returns>
+    /// <remarks>
+    /// Keyed on the full path so two unresolved games never share a staging area.
+    /// </remarks>
+    private static string DeriveGameKey(string targetDirectory)
+    {
+        var full = Path.GetFullPath(targetDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(full));
+
+        return "path-" + Convert.ToHexString(hash)[..12].ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Resolves the installation an install is targeting.
+    /// </summary>
+    /// <param name="targetDirectory">The game directory the caller supplied.</param>
+    /// <param name="options">Installation options, which may name the game explicitly.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The resolved installation, or <c>null</c> when nothing could be resolved.</returns>
+    /// <remarks>
+    /// Resolution walks up from the supplied directory, so pointing at
+    /// <c>&lt;game&gt;/bin/x64</c> still resolves the real root. An explicit
+    /// <see cref="ModInstallationOptions.GameId"/> is tried first, and its result is
+    /// only accepted when it agrees with the directory being installed into —
+    /// otherwise the directory wins, because that is where files will actually land.
+    /// </remarks>
+    private async Task<GameInstallation?> ResolveInstallationAsync(
+        string targetDirectory,
+        ModInstallationOptions options,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(options.GameId))
+            {
+                var byId = await _gameResolver.ResolveAsync(options.GameId, persist: true, ct);
+                if (byId != null && SameDirectory(byId.InstallPath, targetDirectory))
+                    return byId;
+            }
+
+            return await _gameResolver.ResolveAsync(targetDirectory, persist: true, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Resolution is an enrichment step. A failure costs scoping and
+            // auto-snapshots, not the install itself.
+            _logger?.LogWarning(ex, "Game resolution failed for {Path}", targetDirectory);
+            return null;
+        }
+    }
+
+    private static bool SameDirectory(string? a, string? b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            return false;
+
+        return string.Equals(
+            Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Tries to detect the game for a target directory by querying the detected_games table.
     /// </summary>
     private async Task<(int appId, string name)?> TryDetectGameForPathAsync(
@@ -446,6 +1040,16 @@ public class ModInstallationOptions
     /// <summary>Optional mod identifier for tracking.</summary>
     public string? ModId { get; set; }
 
+    /// <summary>
+    /// Game the archive is being installed for: a NexusMods slug, a Steam AppID or
+    /// a GameBanana game id.
+    /// </summary>
+    /// <remarks>
+    /// Scopes installer selection. When omitted, the game is resolved from the
+    /// target directory instead.
+    /// </remarks>
+    public string? GameId { get; set; }
+
     /// <summary>Whether to overwrite existing files.</summary>
     public bool AllowOverwrite { get; set; }
 
@@ -457,6 +1061,30 @@ public class ModInstallationOptions
 
     /// <summary>Whether to automatically create a snapshot after installation.</summary>
     public bool AutoSnapshot { get; set; } = true;
+
+    /// <summary>
+    /// Whether the install goes through a persistent per-mod staging tree.
+    /// </summary>
+    /// <remarks>
+    /// The default. Setting this false takes the legacy path, which writes the archive
+    /// straight into the game folder and keeps the old pre-install conflict check.
+    /// </remarks>
+    public bool UseStaging { get; set; } = true;
+
+    /// <summary>
+    /// Whether to stage the mod without deploying it.
+    /// </summary>
+    /// <remarks>
+    /// The mod is registered in the game's mod set but nothing reaches the game folder
+    /// until the next deploy. No auto-snapshot is taken, because nothing changed.
+    /// </remarks>
+    public bool NoDeploy { get; set; }
+
+    /// <summary>Where the mod came from: <c>nexus</c>, <c>gamebanana</c> or <c>local</c>.</summary>
+    public string Source { get; set; } = "local";
+
+    /// <summary>Backend file id, stored so an update or 1-Click flow can find it again.</summary>
+    public string? SourceFileId { get; set; }
 }
 
 /// <summary>
@@ -471,6 +1099,38 @@ public class ModInstallationResult
     public string TargetDirectory { get; set; } = string.Empty;
     public string? ChangesetId { get; set; }
     public string? InstallerUsed { get; set; }
+
+    /// <summary>Game identifier that scoped installer selection, when one was resolved.</summary>
+    public string? GameId { get; set; }
+
+    /// <summary>Identifier of the game module that owned this install.</summary>
+    public string? ModuleId { get; set; }
+
+    /// <summary>Key of the game this install belongs to.</summary>
+    public string? GameKey { get; set; }
+
+    /// <summary>Who owns the installed files.</summary>
+    public ChangesetOwnership ManagedBy { get; set; } = ChangesetOwnership.Legacy;
+
+    /// <summary>Absolute path of the mod's staging tree, when the install was staged.</summary>
+    public string? StagingPath { get; set; }
+
+    /// <summary>
+    /// Staged files as <c>&lt;root&gt;/&lt;root-relative path&gt;</c>.
+    /// </summary>
+    public List<string> StagedFiles { get; set; } = new();
+
+    /// <summary>Layout findings reported by the game module after staging.</summary>
+    public List<ModDiagnostic> Diagnostics { get; set; } = new();
+
+    /// <summary>Whether the mod was deployed into the game folder.</summary>
+    public bool Deployed { get; set; }
+
+    /// <summary>The deployment that ran, when one did.</summary>
+    public Deployment.DeploymentResult? Deployment { get; set; }
+
+    /// <summary>Non-fatal findings worth showing the user.</summary>
+    public List<string> Warnings { get; set; } = new();
     public List<string> InstalledFiles { get; set; } = new();
     public List<string> BackedUpFiles { get; set; } = new();
     public List<string> PlannedOperations { get; set; } = new();
@@ -482,6 +1142,12 @@ public class ModInstallationResult
 /// </summary>
 public class ModUninstallResult
 {
+    /// <summary>Whether the mod's staging tree was removed.</summary>
+    public bool StagingRemoved { get; set; }
+
+    /// <summary>The redeployment that removed the mod, when the mod was managed.</summary>
+    public Deployment.DeploymentResult? Deployment { get; set; }
+
     public bool Success { get; set; }
     public string ChangesetId { get; set; } = string.Empty;
     public int FilesRemoved { get; set; }

@@ -1,3 +1,5 @@
+using Modular.Sdk.Installers;
+
 namespace Modular.Core.Installers.FF7Remake;
 
 /// <summary>
@@ -28,7 +30,7 @@ public sealed class FF7RInstallLayout
     /// Per-file routing decisions. Key = archive entry FullName, value = relative
     /// destination path under the game root directory.
     /// </summary>
-    public Dictionary<string, string> FileRoutes { get; init; } = new();
+    public Dictionary<string, FileRoute> FileRoutes { get; init; } = new();
 
     /// <summary>
     /// Common root prefix stripped from archive paths.

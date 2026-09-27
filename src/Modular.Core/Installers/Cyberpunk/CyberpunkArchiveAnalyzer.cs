@@ -1,4 +1,5 @@
 using Modular.Sdk.Archives;
+using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers.Cyberpunk;
 
@@ -129,7 +130,7 @@ public static class CyberpunkArchiveAnalyzer
         // ── Phase 2: classify each entry ─────────────────────────────────
 
         var detectedTypes = CyberpunkInstallType.Unknown;
-        var fileRoutes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var fileRoutes = new Dictionary<string, FileRoute>(StringComparer.OrdinalIgnoreCase);
         var frameworkHints = new List<FrameworkFileHint>();
         var signalConfidences = new List<double>();
 
@@ -145,7 +146,7 @@ public static class CyberpunkArchiveAnalyzer
                     lowerPath.EndsWith("/" + marker.ToLowerInvariant()))
                 {
                     detectedTypes |= CyberpunkInstallType.FrameworkRoot;
-                    fileRoutes[entry.FullName] = marker; // route to exact framework path
+                    fileRoutes[entry.FullName] = FileRoute.Declared(marker, PackageTypes.Cp77Framework);
                     frameworkHints.Add(new FrameworkFileHint
                     {
                         SourceEntry = entry.FullName,
@@ -164,7 +165,9 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, Red4ExtPluginPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.Red4ExtPlugin;
-                fileRoutes[entry.FullName] = EnsurePrefix("red4ext/plugins/", path, Red4ExtPluginPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("red4ext/plugins/", path, Red4ExtPluginPrefixes),
+                    PackageTypes.Cp77Red4ExtPlugin);
                 signalConfidences.Add(0.95);
                 continue;
             }
@@ -173,8 +176,10 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, CetModPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.CetMod;
-                fileRoutes[entry.FullName] = EnsurePrefix(
-                    "bin/x64/plugins/cyber_engine_tweaks/mods/", path, CetModPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix(
+                        "bin/x64/plugins/cyber_engine_tweaks/mods/", path, CetModPrefixes),
+                    PackageTypes.Cp77CetMod);
                 signalConfidences.Add(0.95);
                 continue;
             }
@@ -184,7 +189,9 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, RedscriptPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.RedscriptMod;
-                fileRoutes[entry.FullName] = EnsurePrefix("r6/scripts/", path, RedscriptPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("r6/scripts/", path, RedscriptPrefixes),
+                    PackageTypes.Cp77Redscript);
                 signalConfidences.Add(lowerPath.EndsWith(".reds") ? 0.95 : 0.80);
                 continue;
             }
@@ -194,7 +201,8 @@ public static class CyberpunkArchiveAnalyzer
                 !StartsWithAny(lowerPath, RedscriptPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.RedscriptMod;
-                fileRoutes[entry.FullName] = "r6/scripts/" + path;
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "r6/scripts/" + path, PackageTypes.Cp77Redscript);
                 signalConfidences.Add(0.80);
                 continue;
             }
@@ -204,7 +212,9 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, LegacyArchivePrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes),
+                    PackageTypes.Cp77LegacyArchive);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -212,7 +222,9 @@ public static class CyberpunkArchiveAnalyzer
             if (lowerPath.EndsWith(".archive.xl"))
             {
                 detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "archive/pc/mod/" + Path.GetFileName(path),
+                    PackageTypes.Cp77LegacyArchive);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -222,7 +234,9 @@ public static class CyberpunkArchiveAnalyzer
                 !StartsWithAny(lowerPath, RedModPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = "archive/pc/mod/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "archive/pc/mod/" + Path.GetFileName(path),
+                    PackageTypes.Cp77LegacyArchive);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -232,7 +246,7 @@ public static class CyberpunkArchiveAnalyzer
                 HasRedModStructure(lowerPath, normalized.Select(n => n.Normalized).ToList()))
             {
                 detectedTypes |= CyberpunkInstallType.RedMod;
-                fileRoutes[entry.FullName] = path; // already has mods/ prefix
+                fileRoutes[entry.FullName] = FileRoute.FromMetadata(path, PackageTypes.Cp77RedMod);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -242,7 +256,9 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, TweakPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.TweakMod;
-                fileRoutes[entry.FullName] = EnsurePrefix("r6/tweaks/", path, TweakPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("r6/tweaks/", path, TweakPrefixes),
+                    PackageTypes.Cp77Tweak);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -252,7 +268,8 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, IniConfigPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.IniTweak;
-                fileRoutes[entry.FullName] = path;
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    path, PackageTypes.Cp77IniTweak);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -260,7 +277,9 @@ public static class CyberpunkArchiveAnalyzer
             if (hasCyberpunkAnchor && lowerPath.EndsWith(".ini"))
             {
                 detectedTypes |= CyberpunkInstallType.IniTweak;
-                fileRoutes[entry.FullName] = "engine/config/platform/pc/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "engine/config/platform/pc/" + Path.GetFileName(path),
+                    PackageTypes.Cp77IniTweak);
                 signalConfidences.Add(0.70);
                 continue;
             }
@@ -270,7 +289,9 @@ public static class CyberpunkArchiveAnalyzer
             if (StartsWithAny(lowerPath, InputMappingPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.InputMapping;
-                fileRoutes[entry.FullName] = EnsurePrefix("r6/input/", path, InputMappingPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("r6/input/", path, InputMappingPrefixes),
+                    PackageTypes.Cp77InputMapping);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -279,7 +300,8 @@ public static class CyberpunkArchiveAnalyzer
                 lowerPath.EndsWith(".xml") && lowerPath.Contains("input"))
             {
                 detectedTypes |= CyberpunkInstallType.InputMapping;
-                fileRoutes[entry.FullName] = "r6/input/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "r6/input/" + Path.GetFileName(path), PackageTypes.Cp77InputMapping);
                 signalConfidences.Add(0.70);
                 continue;
             }
@@ -289,7 +311,9 @@ public static class CyberpunkArchiveAnalyzer
             if (lowerPath.EndsWith(".asi") && StartsWithAny(lowerPath, AsiPluginPrefixes))
             {
                 detectedTypes |= CyberpunkInstallType.AsiPlugin;
-                fileRoutes[entry.FullName] = EnsurePrefix("bin/x64/plugins/", path, AsiPluginPrefixes);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    EnsurePrefix("bin/x64/plugins/", path, AsiPluginPrefixes),
+                    PackageTypes.Cp77AsiPlugin);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -297,7 +321,8 @@ public static class CyberpunkArchiveAnalyzer
             if (hasCyberpunkAnchor && lowerPath.EndsWith(".asi"))
             {
                 detectedTypes |= CyberpunkInstallType.AsiPlugin;
-                fileRoutes[entry.FullName] = "bin/x64/plugins/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "bin/x64/plugins/" + Path.GetFileName(path), PackageTypes.Cp77AsiPlugin);
                 signalConfidences.Add(0.75);
                 continue;
             }
@@ -310,13 +335,13 @@ public static class CyberpunkArchiveAnalyzer
                 !StartsWithAny(lowerPath, new[] { "bin/", "engine/" }))
             {
                 detectedTypes |= CyberpunkInstallType.StandaloneExe;
-                fileRoutes[entry.FullName] = path; // deploy as-is
+                fileRoutes[entry.FullName] = FileRoute.Declared(path);
                 signalConfidences.Add(0.70);
                 continue;
             }
 
             // ── Fallback: keep the path as-is, route to game root ────
-            fileRoutes[entry.FullName] = path;
+            fileRoutes[entry.FullName] = FileRoute.Declared(path, PackageTypes.Unknown);
         }
 
         // ── Confidence calculation ───────────────────────────────────────

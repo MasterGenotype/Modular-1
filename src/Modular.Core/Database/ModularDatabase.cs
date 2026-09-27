@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 6;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -187,6 +187,8 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             // Also create v2+ tables for fresh installs
             await CreateV2TablesAsync(connection, (SqliteTransaction)transaction);
             await CreateV4TablesAsync(connection, (SqliteTransaction)transaction);
+            await CreateV5SchemaAsync(connection, (SqliteTransaction)transaction);
+            await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
@@ -219,6 +221,16 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             if (fromVersion < 4)
             {
                 await CreateV4TablesAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 5)
+            {
+                await CreateV5SchemaAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 6)
+            {
+                await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
             }
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
@@ -392,6 +404,181 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                 """;
             await cmd.ExecuteNonQueryAsync();
         }
+    }
+
+    /// <summary>
+    /// Creates the v5 schema: the ownership columns that split staged installs from
+    /// legacy direct installs.
+    /// </summary>
+    /// <param name="connection">Open connection.</param>
+    /// <param name="transaction">Enclosing transaction.</param>
+    /// <returns>A task that completes when the schema is current.</returns>
+    /// <remarks>
+    /// <para>
+    /// <c>managed_by</c> decides how a changeset is uninstalled. <c>legacy</c> rows
+    /// record real game-directory paths and are undone by deleting them;
+    /// <c>deployment</c> rows record staged paths and are undone by removing the mod
+    /// and redeploying. Existing rows stay <c>legacy</c>, which is what they are.
+    /// </para>
+    /// <para>
+    /// <c>game_key</c> ties a changeset to the game whose deployment owns it.
+    /// </para>
+    /// </remarks>
+    private static async Task CreateV5SchemaAsync(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        await AddColumnIfMissingAsync(
+            connection, transaction,
+            table: "changeset",
+            column: "managed_by",
+            definition: "TEXT NOT NULL DEFAULT 'legacy'");
+
+        await AddColumnIfMissingAsync(
+            connection, transaction,
+            table: "changeset",
+            column: "game_key",
+            definition: "TEXT");
+
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE INDEX IF NOT EXISTS idx_changeset_managed_by ON changeset(managed_by);
+                CREATE INDEX IF NOT EXISTS idx_changeset_game_key ON changeset(game_key);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// Creates the v6 schema: the ordered deployment tables.
+    /// </summary>
+    /// <param name="connection">Open connection.</param>
+    /// <param name="transaction">Enclosing transaction.</param>
+    /// <returns>A task that completes when the schema is current.</returns>
+    /// <remarks>
+    /// Separate from v5 so a database that already migrated to v5 — the changeset
+    /// ownership split — still gets these tables. Folding them into v5 would have left
+    /// such a database permanently without them.
+    /// </remarks>
+    private static async Task CreateV6SchemaAsync(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        // The deployed mod set for a game, in load order. "Later wins" is Modular's
+        // single user-facing rule; each module translates that into its engine's own
+        // convention when it writes a load-order manifest.
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS game_mod (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_key TEXT NOT NULL,
+                    mod_id TEXT NOT NULL,
+                    module_id TEXT,
+                    installer_id TEXT,
+                    staging_path TEXT NOT NULL,
+                    order_index INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    installed_at TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'local',
+                    source_file_id TEXT,
+                    changeset_id TEXT,
+                    display_name TEXT,
+                    UNIQUE(game_key, mod_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_game_mod_order
+                    ON game_mod(game_key, order_index);
+                CREATE INDEX IF NOT EXISTS idx_game_mod_changeset
+                    ON game_mod(changeset_id);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Per-game deployment method. Identity records are not comparable across
+        // methods, so changing this forces a full purge and a fresh deploy.
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS game_deploy_settings (
+                    game_key TEXT PRIMARY KEY NOT NULL,
+                    method TEXT NOT NULL DEFAULT 'hardlink',
+                    fallback TEXT NOT NULL DEFAULT 'copy',
+                    updated_at_utc TEXT NOT NULL
+                );
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Snapshot capture of the deployed mod set, so a restore is one transaction
+        // followed by exactly one deploy.
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS snapshot_game_mod (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT NOT NULL REFERENCES snapshot(snapshot_id) ON DELETE CASCADE,
+                    game_key TEXT NOT NULL,
+                    mod_id TEXT NOT NULL,
+                    module_id TEXT,
+                    installer_id TEXT,
+                    staging_path TEXT NOT NULL,
+                    staging_hash TEXT,
+                    order_index INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    changeset_id TEXT,
+                    source TEXT,
+                    source_file_id TEXT,
+                    display_name TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_snapshot_game_mod_snapshot
+                    ON snapshot_game_mod(snapshot_id);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// Adds a column to a table when it is not already present.
+    /// </summary>
+    /// <param name="connection">Open connection.</param>
+    /// <param name="transaction">Enclosing transaction.</param>
+    /// <param name="table">Table to alter.</param>
+    /// <param name="column">Column name.</param>
+    /// <param name="definition">Column type and constraints.</param>
+    /// <returns>A task that completes when the column exists.</returns>
+    /// <remarks>
+    /// SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>, and a migration may run over a
+    /// database that already has the column (a fresh v5 install, or a re-run).
+    /// </remarks>
+    private static async Task AddColumnIfMissingAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        string column,
+        string definition)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        await using (var info = connection.CreateCommand())
+        {
+            info.Transaction = transaction;
+            info.CommandText = $"PRAGMA table_info({table});";
+
+            await using var reader = await info.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                existing.Add(reader.GetString(1));
+        }
+
+        if (existing.Count == 0 || existing.Contains(column))
+            return;
+
+        await using var alter = connection.CreateCommand();
+        alter.Transaction = transaction;
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+        await alter.ExecuteNonQueryAsync();
     }
 
     public async ValueTask DisposeAsync()

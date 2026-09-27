@@ -15,9 +15,19 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
 {
     public sealed class Settings : CommandSettings
     {
-        [CommandArgument(0, "<changeset-id>")]
+        [CommandArgument(0, "[changeset-id]")]
         [Description("Changeset ID from the install operation")]
-        public string ChangesetId { get; init; } = string.Empty;
+        public string? ChangesetId { get; init; }
+
+        /// <summary>The game to remove a mod from.</summary>
+        [CommandOption("--game <GAME>")]
+        [Description("Game to remove a mod from, used with --mod")]
+        public string? Game { get; init; }
+
+        /// <summary>The mod to remove.</summary>
+        [CommandOption("--mod <MOD_ID>")]
+        [Description("Mod id to remove from --game")]
+        public string? ModId { get; init; }
 
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
@@ -39,12 +49,46 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
             var db = new ModularDatabase(dbPath);
             await db.InitializeAsync();
 
-            var installService = new ModInstallationService(db, services.Telemetry);
+            var installService = new ModInstallationService(
+                db, services.Telemetry, settings: services.Settings);
 
-            AnsiConsole.MarkupLine($"[bold]Uninstalling changeset:[/] {settings.ChangesetId}");
-            AnsiConsole.WriteLine();
+            ModUninstallResult result;
 
-            var result = await installService.UninstallAsync(settings.ChangesetId, cts.Token);
+            if (settings.Game != null || settings.ModId != null)
+            {
+                if (settings.Game == null || settings.ModId == null)
+                {
+                    AnsiConsole.MarkupLine("[red]--game and --mod must be given together.[/]");
+                    await db.DisposeAsync();
+                    services.Dispose();
+                    return 1;
+                }
+
+                AnsiConsole.MarkupLine(
+                    $"[bold]Removing[/] {Markup.Escape(settings.ModId)} " +
+                    $"[bold]from[/] {Markup.Escape(settings.Game)}");
+                AnsiConsole.WriteLine();
+
+                // The same code path a changeset uninstall takes for a managed mod, so the
+                // two cannot diverge.
+                result = await installService.UninstallModAsync(
+                    settings.Game, settings.ModId, cts.Token);
+            }
+            else if (!string.IsNullOrWhiteSpace(settings.ChangesetId))
+            {
+                AnsiConsole.MarkupLine($"[bold]Uninstalling changeset:[/] {settings.ChangesetId}");
+                AnsiConsole.WriteLine();
+
+                result = await installService.UninstallAsync(settings.ChangesetId, cts.Token);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine(
+                    "[red]Give a changeset id, or --game and --mod.[/]");
+                await db.DisposeAsync();
+                services.Dispose();
+                return 1;
+            }
 
             if (result.Success)
             {

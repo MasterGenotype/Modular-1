@@ -93,23 +93,40 @@ public class FluentResponse : IResponse
         var totalBytes = ContentLength ?? -1;
         var downloadedBytes = 0L;
 
-        await using var contentStream = await _response.Content.ReadAsStreamAsync(ct);
-        await using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-
-        var buffer = new byte[81920];
-        int bytesRead;
-        var lastUpdate = DateTime.UtcNow;
-
-        while ((bytesRead = await contentStream.ReadAsync(buffer, ct)) > 0)
+        // Write to a temporary file and move it into place only on success,
+        // so an interrupted download never leaves a truncated file at the final path.
+        var tempPath = path + ".tmp";
+        try
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-            downloadedBytes += bytesRead;
-
-            if ((DateTime.UtcNow - lastUpdate).TotalMilliseconds >= 100)
+            await using (var contentStream = await _response.Content.ReadAsStreamAsync(ct))
+            await using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
             {
-                progress?.Report((downloadedBytes, totalBytes));
-                lastUpdate = DateTime.UtcNow;
+                var buffer = new byte[81920];
+                int bytesRead;
+                var lastUpdate = DateTime.UtcNow;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer, ct)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+                    downloadedBytes += bytesRead;
+
+                    if ((DateTime.UtcNow - lastUpdate).TotalMilliseconds >= 100)
+                    {
+                        progress?.Report((downloadedBytes, totalBytes));
+                        lastUpdate = DateTime.UtcNow;
+                    }
+                }
             }
+
+            if (totalBytes >= 0 && downloadedBytes != totalBytes)
+                throw new IOException($"Download incomplete: received {downloadedBytes} of {totalBytes} bytes");
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch (IOException) { }
+            throw;
         }
         progress?.Report((downloadedBytes, totalBytes));
     }

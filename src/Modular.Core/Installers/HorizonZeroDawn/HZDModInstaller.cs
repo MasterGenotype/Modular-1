@@ -124,18 +124,20 @@ public class HZDModInstaller : IModInstaller
 
         foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
         {
-            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var destination))
+            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var route))
             {
-                destination = entry.FullName;
+                var fallback = entry.FullName;
                 if (!string.IsNullOrEmpty(layout.StrippedPrefix) &&
-                    destination.StartsWith(layout.StrippedPrefix,
+                    fallback.StartsWith(layout.StrippedPrefix,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    destination = destination[layout.StrippedPrefix.Length..];
+                    fallback = fallback[layout.StrippedPrefix.Length..];
                 }
+
+                route = FileRoute.Declared(fallback, PackageTypes.Unknown);
             }
 
-            destination = destination.Replace('\\', '/');
+            var destination = route.Destination.Replace('\\', '/');
 
             var isCritical =
                 destination.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
@@ -148,7 +150,10 @@ public class HZDModInstaller : IModInstaller
                 SourcePath = entry.FullName,
                 DestinationPath = destination,
                 SizeBytes = entry.Length,
-                IsCritical = isCritical
+                IsCritical = isCritical,
+                TargetRoot = route.Root,
+                PackageType = route.PackageType,
+                RouteSource = route.RouteSource
             });
 
             totalBytes += entry.Length;

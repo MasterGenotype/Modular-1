@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Database;
+using Modular.Core.Deployment;
 using Modular.Core.Installers;
 using Modular.Sdk.Installers;
 
@@ -60,21 +61,79 @@ public class SnapshotRestoreResult
 }
 
 /// <summary>
+/// One deployed mod as a snapshot captured it.
+/// </summary>
+public sealed class SnapshotGameModRecord
+{
+    /// <summary>Key of the game the mod belongs to.</summary>
+    public string GameKey { get; init; } = string.Empty;
+
+    /// <summary>Mod identifier.</summary>
+    public string ModId { get; init; } = string.Empty;
+
+    /// <summary>Module that owned the game.</summary>
+    public string? ModuleId { get; init; }
+
+    /// <summary>Installer that staged the mod.</summary>
+    public string? InstallerId { get; init; }
+
+    /// <summary>Absolute path of the mod's staging tree.</summary>
+    public string StagingPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Fingerprint of the staging tree at capture time, so a restore can tell that the
+    /// tree is gone or has changed.
+    /// </summary>
+    public string? StagingHash { get; init; }
+
+    /// <summary>Position in the load order; later wins.</summary>
+    public int OrderIndex { get; init; }
+
+    /// <summary>Whether the mod was enabled.</summary>
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>Changeset that installed the mod, used to find its archive for re-staging.</summary>
+    public string? ChangesetId { get; init; }
+
+    /// <summary>Where the mod came from.</summary>
+    public string Source { get; init; } = "local";
+
+    /// <summary>Backend file id.</summary>
+    public string? SourceFileId { get; init; }
+
+    /// <summary>Human-readable name.</summary>
+    public string? DisplayName { get; init; }
+}
+
+/// <summary>
 /// Manages creation, listing, and restoration of mod installation snapshots.
 /// </summary>
 public class SnapshotManager
 {
     private readonly ModularDatabase _database;
     private readonly ChangesetManager _changesetManager;
+    private readonly GameModRepository _gameMods;
     private readonly ILogger<SnapshotManager>? _logger;
 
+    /// <summary>
+    /// Creates the manager.
+    /// </summary>
+    /// <param name="database">Modular database.</param>
+    /// <param name="changesetManager">Changeset manager, for legacy snapshots.</param>
+    /// <param name="logger">Optional logger.</param>
+    /// <param name="gameMods">
+    /// Deployed-mod repository; a default one over the same database is created when
+    /// omitted.
+    /// </param>
     public SnapshotManager(
         ModularDatabase database,
         ChangesetManager changesetManager,
-        ILogger<SnapshotManager>? logger = null)
+        ILogger<SnapshotManager>? logger = null,
+        GameModRepository? gameMods = null)
     {
         _database = database;
         _changesetManager = changesetManager;
+        _gameMods = gameMods ?? new GameModRepository(database);
         _logger = logger;
     }
 
@@ -88,7 +147,8 @@ public class SnapshotManager
         SnapshotTrigger trigger,
         string? name = null,
         string? description = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? gameKey = null)
     {
         var connection = await _database.GetConnectionAsync();
         var snapshotId = Guid.NewGuid().ToString("N")[..12];
@@ -107,6 +167,13 @@ public class SnapshotManager
             c.TargetDirectory != null &&
             Path.GetFullPath(c.TargetDirectory).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        // The deployed mod set is the state that actually matters for a managed game:
+        // which mods, in what order, enabled or not. Restoring it is one transaction plus
+        // one deploy, rather than a changeset diff replayed mod by mod.
+        var managedMods = string.IsNullOrEmpty(gameKey)
+            ? new List<GameModRecord>()
+            : await _gameMods.ListAsync(gameKey, enabledOnly: false, ct);
 
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
@@ -151,10 +218,42 @@ public class SnapshotManager
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
+            foreach (var mod in managedMods)
+            {
+                await using var cmd = connection.CreateCommand();
+                cmd.Transaction = (SqliteTransaction)transaction;
+                cmd.CommandText = """
+                    INSERT INTO snapshot_game_mod
+                        (snapshot_id, game_key, mod_id, module_id, installer_id, staging_path,
+                         staging_hash, order_index, enabled, changeset_id, source,
+                         source_file_id, display_name)
+                    VALUES
+                        (@sid, @gameKey, @modId, @moduleId, @installerId, @stagingPath,
+                         @stagingHash, @orderIndex, @enabled, @changesetId, @source,
+                         @sourceFileId, @displayName)
+                    """;
+                cmd.Parameters.AddWithValue("@sid", snapshotId);
+                cmd.Parameters.AddWithValue("@gameKey", mod.GameKey);
+                cmd.Parameters.AddWithValue("@modId", mod.ModId);
+                cmd.Parameters.AddWithValue("@moduleId", (object?)mod.ModuleId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@installerId", (object?)mod.InstallerId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@stagingPath", mod.StagingPath);
+                cmd.Parameters.AddWithValue(
+                    "@stagingHash", (object?)HashStagingTree(mod.StagingPath) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@orderIndex", mod.OrderIndex ?? 0);
+                cmd.Parameters.AddWithValue("@enabled", mod.Enabled ? 1 : 0);
+                cmd.Parameters.AddWithValue("@changesetId", (object?)mod.ChangesetId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@source", mod.Source);
+                cmd.Parameters.AddWithValue("@sourceFileId", (object?)mod.SourceFileId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@displayName", (object?)mod.DisplayName ?? DBNull.Value);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
             await transaction.CommitAsync(ct);
 
-            _logger?.LogInformation("Created snapshot {Id} for {Game} with {Count} mods",
-                snapshotId, gameName, gameChangesets.Count);
+            _logger?.LogInformation(
+                "Created snapshot {Id} for {Game} with {Count} changesets and {Managed} managed mods",
+                snapshotId, gameName, gameChangesets.Count, managedMods.Count);
 
             return new SnapshotRecord
             {
@@ -330,6 +429,14 @@ public class SnapshotManager
             return result;
         }
 
+        // A snapshot of a managed game restores through the deployment: rewrite the mod
+        // set in one transaction, re-stage anything missing without deploying, then deploy
+        // exactly once. Replaying it changeset by changeset would purge and redeploy N
+        // times and make every intermediate state visible on disk.
+        var managedMods = await GetSnapshotGameModsAsync(snapshotId, ct);
+        if (managedMods.Count > 0)
+            return await RestoreManagedSnapshotAsync(snapshot, managedMods, installService, progress, ct);
+
         // Load desired state (snapshot entries)
         var desiredEntries = await GetSnapshotEntriesAsync(snapshotId, ct);
         var desiredChangesetIds = desiredEntries.Select(e => e.ChangesetId).ToHashSet();
@@ -425,6 +532,188 @@ public class SnapshotManager
             result.ModsRemoved, result.ModsReinstalled, result.Errors.Count);
 
         return result;
+    }
+
+    /// <summary>
+    /// Reads the deployed mod set a snapshot captured.
+    /// </summary>
+    /// <param name="snapshotId">Snapshot identifier.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The captured mods in load order; empty for a legacy snapshot.</returns>
+    public async Task<List<SnapshotGameModRecord>> GetSnapshotGameModsAsync(
+        string snapshotId, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT game_key, mod_id, module_id, installer_id, staging_path, staging_hash,
+                   order_index, enabled, changeset_id, source, source_file_id, display_name
+            FROM snapshot_game_mod
+            WHERE snapshot_id = @sid
+            ORDER BY order_index, mod_id
+            """;
+        cmd.Parameters.AddWithValue("@sid", snapshotId);
+
+        var results = new List<SnapshotGameModRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new SnapshotGameModRecord
+            {
+                GameKey = reader.GetString(0),
+                ModId = reader.GetString(1),
+                ModuleId = reader.IsDBNull(2) ? null : reader.GetString(2),
+                InstallerId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                StagingPath = reader.GetString(4),
+                StagingHash = reader.IsDBNull(5) ? null : reader.GetString(5),
+                OrderIndex = reader.GetInt32(6),
+                Enabled = reader.GetInt32(7) != 0,
+                ChangesetId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                Source = reader.IsDBNull(9) ? "local" : reader.GetString(9),
+                SourceFileId = reader.IsDBNull(10) ? null : reader.GetString(10),
+                DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11)
+            });
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Restores a managed game's mod set and deploys it once.
+    /// </summary>
+    private async Task<SnapshotRestoreResult> RestoreManagedSnapshotAsync(
+        SnapshotRecord snapshot,
+        List<SnapshotGameModRecord> desired,
+        ModInstallationService installService,
+        IProgress<InstallProgress>? progress,
+        CancellationToken ct)
+    {
+        var result = new SnapshotRestoreResult { SnapshotId = snapshot.SnapshotId };
+        var gameKey = desired[0].GameKey;
+
+        var current = await _gameMods.ListAsync(gameKey, enabledOnly: false, ct);
+        var desiredIds = desired.Select(d => d.ModId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        result.ModsRemoved = current.Count(c => !desiredIds.Contains(c.ModId));
+
+        // Re-stage anything whose staging tree has gone, without deploying: the single
+        // deploy at the end is what puts files in the game folder.
+        foreach (var mod in desired)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (Directory.Exists(mod.StagingPath) &&
+                Directory.EnumerateFileSystemEntries(mod.StagingPath).Any())
+            {
+                continue;
+            }
+
+            var archivePath = mod.ChangesetId == null
+                ? null
+                : (await _changesetManager.GetChangesetAsync(mod.ChangesetId, ct))?.ArchivePath;
+
+            if (archivePath == null || !File.Exists(archivePath))
+            {
+                result.Errors.Add(
+                    $"Cannot re-stage '{mod.ModId}': its archive is no longer available " +
+                    $"({archivePath ?? "no path recorded"}).");
+                continue;
+            }
+
+            progress?.Report(new InstallProgress
+            {
+                CurrentOperation = $"Re-staging {mod.DisplayName ?? mod.ModId}..."
+            });
+
+            var installResult = await installService.InstallAsync(
+                archivePath,
+                snapshot.GameInstallPath,
+                new ModInstallationOptions
+                {
+                    ModId = mod.ModId,
+                    AllowOverwrite = true,
+                    AutoSnapshot = false,
+                    NoDeploy = true,
+                    Source = mod.Source,
+                    SourceFileId = mod.SourceFileId
+                },
+                progress,
+                ct);
+
+            if (installResult.Success)
+                result.ModsReinstalled++;
+            else
+                result.Errors.Add($"Failed to re-stage '{mod.ModId}': {installResult.Error}");
+        }
+
+        // One transaction to the recorded state.
+        await _gameMods.ReplaceAllAsync(
+            gameKey,
+            desired.Select(d => new GameModRecord
+            {
+                GameKey = d.GameKey,
+                ModId = d.ModId,
+                ModuleId = d.ModuleId,
+                InstallerId = d.InstallerId,
+                StagingPath = d.StagingPath,
+                OrderIndex = d.OrderIndex,
+                Enabled = d.Enabled,
+                Source = d.Source,
+                SourceFileId = d.SourceFileId,
+                ChangesetId = d.ChangesetId,
+                DisplayName = d.DisplayName
+            }).ToList(),
+            ct);
+
+        // …then exactly one deploy.
+        progress?.Report(new InstallProgress { CurrentOperation = "Deploying restored mod set..." });
+
+        var deployment = await installService.DeployGameAsync(snapshot.GameInstallPath, ct: ct);
+
+        if (deployment is { Success: false })
+            result.Errors.Add($"Deploy after restore failed: {deployment.Error}");
+
+        result.Success = result.Errors.Count == 0;
+
+        _logger?.LogInformation(
+            "Restored managed snapshot {Id}: {Desired} mods, {Removed} removed, {Restaged} re-staged",
+            snapshot.SnapshotId, desired.Count, result.ModsRemoved, result.ModsReinstalled);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Fingerprints a staging tree so a restore can tell that its content changed.
+    /// </summary>
+    /// <param name="stagingPath">Root of the mod's staging tree.</param>
+    /// <returns>The hash, or <c>null</c> when the tree is missing.</returns>
+    /// <remarks>
+    /// Paths, sizes and modification times rather than contents: this needs to be cheap
+    /// enough to run for every mod on every snapshot, and it only has to notice that a
+    /// tree is no longer what was captured.
+    /// </remarks>
+    private static string? HashStagingTree(string stagingPath)
+    {
+        if (!Directory.Exists(stagingPath))
+            return null;
+
+        var hash = new System.IO.Hashing.XxHash64();
+
+        foreach (var file in Directory
+                     .EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories)
+                     .OrderBy(f => f, StringComparer.Ordinal))
+        {
+            var info = new FileInfo(file);
+            var entry =
+                $"{Path.GetRelativePath(stagingPath, file).Replace('\\', '/')}|" +
+                $"{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+
+            hash.Append(System.Text.Encoding.UTF8.GetBytes(entry));
+        }
+
+        return Convert.ToHexString(hash.GetCurrentHash()).ToLowerInvariant();
     }
 
     private static SnapshotRecord ReadSnapshotRecord(SqliteDataReader reader)

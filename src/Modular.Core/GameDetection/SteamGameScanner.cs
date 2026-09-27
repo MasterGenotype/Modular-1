@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Modular.Core.Utilities;
 
@@ -88,7 +89,14 @@ public class SteamGameScanner
         var stateFlagsStr = appState.GetValue("StateFlags");
         int.TryParse(stateFlagsStr, out var stateFlags);
 
+        var buildId = appState.GetValue("buildid");
+
         var installPath = Path.Combine(libraryRoot, "steamapps", "common", installDir);
+
+        // Proton keeps one Wine prefix per app under the same library root.
+        // Its absence just means the game has never been launched through Proton.
+        var prefixPath = Path.Combine(
+            libraryRoot, "steamapps", "compatdata", appId.ToString(CultureInfo.InvariantCulture), "pfx");
 
         return new SteamGameInstall
         {
@@ -100,7 +108,9 @@ public class SteamGameScanner
             SizeOnDisk = sizeOnDisk,
             StateFlags = stateFlags,
             IsFullyInstalled = stateFlags == 4, // StateFlags 4 = fully installed
-            ManifestPath = manifestPath
+            ManifestPath = manifestPath,
+            BuildId = string.IsNullOrEmpty(buildId) ? null : buildId,
+            ProtonPrefixPath = Directory.Exists(prefixPath) ? prefixPath : null
         };
     }
 }
@@ -154,6 +164,22 @@ public class SteamGameInstall
     /// Path to the ACF manifest file.
     /// </summary>
     public string ManifestPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Steam build identifier for the installed version.
+    /// </summary>
+    /// <remarks>
+    /// Changes whenever the game updates. Deployment uses this to tell that
+    /// previously captured vanilla backups belong to an older build and must not
+    /// be restored over the updated game files.
+    /// </remarks>
+    public string? BuildId { get; set; }
+
+    /// <summary>
+    /// Path to this game's Proton compatibility prefix, or <c>null</c> when the
+    /// game has never been run through Proton.
+    /// </summary>
+    public string? ProtonPrefixPath { get; set; }
 
     public override string ToString() => $"{DisplayName} (AppID: {AppId})";
 }

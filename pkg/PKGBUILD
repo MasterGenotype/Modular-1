@@ -1,6 +1,6 @@
 # Maintainer: superphenotype
 pkgname=modular-git
-pkgver=r147.g9060186
+pkgver=r148.g1cd95db.d202609270043
 pkgrel=1
 pkgdesc="Extensible mod manager for downloading, organizing, and managing game modifications (CLI + GUI)"
 arch=('x86_64')
@@ -12,15 +12,46 @@ depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
 makedepends=('dotnet-sdk-8.0' 'git')
 provides=('modular')
 conflicts=('modular')
-source=("modular::git+file:///home/superphenotype/.gitrepos/Modular-1")
-sha256sums=('SKIP')
+# strip corrupts .NET single-file bundles
+options=('!strip')
+
+# Builds from the local working tree (the repository containing this pkg/ directory),
+# including uncommitted changes and untracked files that are not git-ignored.
+# No git clone is made, so nothing needs to be committed first.
+source=()
+sha256sums=()
+
+_repodir() {
+    realpath "$startdir/.."
+}
 
 pkgver() {
-    cd modular
-    ( set -o pipefail
+    cd "$(_repodir)"
+    local ver
+    ver=$( ( set -o pipefail
       git describe --long --tags --abbrev=7 2>/dev/null \
           | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
-    ) || printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    ) || printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)")
+
+    # Uncommitted changes (outside pkg/) get a timestamp suffix so each such build
+    # sorts newer than the clean commit, and the next commit sorts newer than it.
+    if [[ -n $(git status --porcelain -- . ':(exclude)pkg') ]]; then
+        ver+=".d$(date -u +%Y%m%d%H%M)"
+    fi
+    printf '%s' "$ver"
+}
+
+prepare() {
+    local repo
+    repo="$(_repodir)"
+
+    # Copy tracked + untracked (non-ignored) files, skipping pkg/ itself.
+    # --ignore-failed-read skips tracked files deleted in the working tree.
+    rm -rf "$srcdir/modular"
+    mkdir -p "$srcdir/modular"
+    git -C "$repo" ls-files -z --cached --others --exclude-standard -- . ':(exclude)pkg' \
+        | tar -C "$repo" --null --ignore-failed-read --no-recursion -T - -cf - \
+        | tar -C "$srcdir/modular" -xf -
 }
 
 build() {
@@ -36,6 +67,7 @@ build() {
         --self-contained \
         -p:PublishSingleFile=true \
         -p:IncludeNativeLibrariesForSelfExtract=true \
+        -p:DebugType=none \
         -o publish/cli-linux
 
     # Build GUI — self-contained
@@ -43,6 +75,7 @@ build() {
         -c Release \
         -r linux-x64 \
         --self-contained \
+        -p:DebugType=none \
         -o publish/gui-linux
 }
 

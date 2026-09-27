@@ -146,4 +146,22 @@ public class AppSettings
     public string TelemetryPath { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".config", "Modular", "telemetry");
+
+    /// <summary>
+    /// How deployed files are placed into a game: <c>hardlink</c>, <c>symlink</c> or
+    /// <c>copy</c>.
+    /// </summary>
+    /// <remarks>
+    /// Hardlink is the default: no extra disk use, and indistinguishable from a normal
+    /// file. A per-game setting and the <c>--method</c> flag both take precedence.
+    /// </remarks>
+    [JsonPropertyName("deployment_method")]
+    public string DeploymentMethod { get; set; } = "hardlink";
+
+    /// <summary>
+    /// What to do when the chosen deployment method cannot be used for a file:
+    /// <c>copy</c> or <c>fail</c>.
+    /// </summary>
+    [JsonPropertyName("deployment_fallback")]
+    public string DeploymentFallback { get; set; } = "copy";
 }

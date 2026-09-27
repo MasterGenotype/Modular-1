@@ -10,6 +10,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.Authentication;
 using Modular.Core.Diagnostics;
+using Modular.Core.Downloads;
 using Modular.Core.GameDetection;
 using Modular.Core.Installers;
 using Modular.Core.Plugins;
@@ -140,6 +141,10 @@ sealed class Program
         services.AddSingleton(_metadataCache!);
         services.AddSingleton<IRateLimiter, NexusRateLimiter>();
 
+        // Shared resumable downloader (used by backends and the download queue)
+        services.AddSingleton(sp =>
+            new ResumableDownloader(logger: sp.GetService<ILogger<ResumableDownloader>>()));
+
         // Backend services
         services.AddSingleton(sp =>
         {
@@ -148,13 +153,15 @@ sealed class Program
             var database = sp.GetRequiredService<DownloadDatabase>();
             var metadataCache = sp.GetRequiredService<ModMetadataCache>();
             var logger = sp.GetService<ILogger<NexusModsBackend>>();
-            return new NexusModsBackend(settings, rateLimiter, database, metadataCache, logger);
+            var downloader = sp.GetRequiredService<ResumableDownloader>();
+            return new NexusModsBackend(settings, rateLimiter, database, metadataCache, logger, downloader);
         });
         services.AddSingleton(sp =>
         {
             var settings = sp.GetRequiredService<AppSettings>();
             var logger = sp.GetService<ILogger<GameBananaBackend>>();
-            return new GameBananaBackend(settings, logger);
+            var downloader = sp.GetRequiredService<ResumableDownloader>();
+            return new GameBananaBackend(settings, logger, downloader);
         });
         services.AddSingleton(sp =>
         {
@@ -223,7 +230,14 @@ sealed class Program
             var telemetry = sp.GetService<TelemetryService>();
             var snapshotManager = sp.GetRequiredService<SnapshotManager>();
             var logger = sp.GetService<ILogger<ModInstallationService>>();
-            return new ModInstallationService(db, telemetry, snapshotManager, logger);
+            var pluginLoader = sp.GetService<PluginLoader>();
+
+            // Plugin installers and game modules only become install candidates
+            // once their plugins are actually loaded.
+            pluginLoader?.LoadAllPlugins();
+
+            return new ModInstallationService(
+                db, telemetry, snapshotManager, logger, pluginLoader);
         });
 
         // Profiles

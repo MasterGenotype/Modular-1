@@ -1,4 +1,5 @@
 using Modular.Sdk.Archives;
+using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers.FF7Remake;
 
@@ -21,6 +22,18 @@ public static class FF7RArchiveAnalyzer
 
     private static readonly string[] PaksModsPrefixes =
         { "end/content/paks/~mods/" };
+
+    /// <summary>
+    /// Game-root-relative destination prefix for every pak mod.
+    /// </summary>
+    /// <remarks>
+    /// Paks are routed from the game root rather than from <c>~mods</c> so that the
+    /// destination does not depend on the archive's shape. Nothing downstream can
+    /// recover the intent afterwards: for a multi-type plan the offset between the game
+    /// root and the plan's target directory is empty, so a <c>~mods</c>-relative route
+    /// is indistinguishable from a game-root one.
+    /// </remarks>
+    public const string PaksModsRoute = "End/Content/Paks/~mods/";
 
     private static readonly string[] PaksRootPrefixes =
         { "end/content/paks/" };
@@ -49,10 +62,28 @@ public static class FF7RArchiveAnalyzer
     /// Filename fragments that strongly suggest FF7R context when found
     /// alongside .pak files. Case-insensitive matching.
     /// </summary>
+    /// <remarks>
+    /// The bare fragment <c>"ff7"</c> matches <c>ff7rebirth_</c> as well as any Remake mod,
+    /// and the structural anchors do not discriminate either, because Rebirth ships the same
+    /// <c>End/Content/Paks/</c> and <c>End/Binaries/Win64/</c> layout. Rather than dropping
+    /// the fragment — which would stop a legitimately named mod such as
+    /// <c>CoolFF7Mod_P.pak</c> being recognised at all — Rebirth is excluded explicitly by
+    /// <see cref="RebirthMarkers"/>. Module-scoped installer candidates normally keep the two
+    /// games apart; this is defence in depth for the case where the analyzer is reached
+    /// outside that scoping.
+    /// </remarks>
     private static readonly string[] FF7RFilenameHints =
     {
         "ff7", "ffvii", "finalfantasy7", "finalfantasyvii",
         "remake", "intergrade", "midgar"
+    };
+
+    /// <summary>
+    /// Fragments that prove an archive targets FF7 Rebirth, not Remake.
+    /// </summary>
+    private static readonly string[] RebirthMarkers =
+    {
+        "ff7rebirth", "rebirth_", "zgameinstanceloader", "end/mods/"
     };
 
     // ── 3DMigoto framework markers ──────────────────────────────────────
@@ -106,7 +137,14 @@ public static class FF7RArchiveAnalyzer
         // ── Phase 1: Anchor detection ───────────────────────────────────
         var allLower = normalized.Select(n => n.Normalized.ToLowerInvariant()).ToList();
 
+        // A Rebirth archive must never raise the Remake anchor: the two share the End/
+        // layout, so without this the structural anchors alone would claim it.
+        bool looksLikeRebirth = allLower.Any(p =>
+            RebirthMarkers.Any(m => p.Contains(m, StringComparison.Ordinal)));
+
         bool hasFF7RAnchor =
+            !looksLikeRebirth &&
+            (
             // Structural anchors — paths unique to FF7R
             allLower.Any(p => FF7RAnchorPaths.Any(a =>
                 p.Contains(a, StringComparison.Ordinal))) ||
@@ -120,12 +158,12 @@ public static class FF7RArchiveAnalyzer
                 p.Contains(m, StringComparison.Ordinal))) ||
             // DXVK markers
             allLower.Any(p => DxvkMarkers.Any(d =>
-                p.Contains(d, StringComparison.Ordinal)));
+                p.Contains(d, StringComparison.Ordinal))));
 
         // ── Phase 2: Classify each entry ─────────────────────────────────
 
         var detectedTypes = FF7RInstallType.Unknown;
-        var fileRoutes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var fileRoutes = new Dictionary<string, FileRoute>(StringComparer.OrdinalIgnoreCase);
         var signalConfidences = new List<double>();
         bool requiresDx11 = false;
 
@@ -137,7 +175,14 @@ public static class FF7RArchiveAnalyzer
             if (ContainsAny(lower, PaksModsPrefixes))
             {
                 detectedTypes |= FF7RInstallType.PakMod;
-                fileRoutes[entry.FullName] = StripToAfter(path, "~mods/");
+
+                // Game-root-relative, always. Routing paks relative to ~mods only
+                // worked while the plan itself targeted ~mods, which it does for a
+                // pak-only archive and not for a multi-type one — so a pak shipped
+                // alongside an INI or a hook DLL landed in the game root and never
+                // mounted.
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    PaksModsRoute + StripToAfter(path, "~mods/"), PackageTypes.UePak);
                 signalConfidences.Add(0.98);
                 continue;
             }
@@ -148,7 +193,8 @@ public static class FF7RArchiveAnalyzer
                 lower.EndsWith(".pak"))
             {
                 detectedTypes |= FF7RInstallType.PakRoot;
-                fileRoutes[entry.FullName] = "End/Content/Paks/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    "End/Content/Paks/" + Path.GetFileName(path), PackageTypes.UePak);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -159,8 +205,8 @@ public static class FF7RArchiveAnalyzer
             {
                 detectedTypes |= FF7RInstallType.ThreeDMigoto;
                 requiresDx11 = true;
-                var dest = RouteToWin64(path, lower);
-                fileRoutes[entry.FullName] = dest;
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    RouteToWin64(path, lower), PackageTypes.UeMigoto);
                 signalConfidences.Add(0.95);
                 continue;
             }
@@ -171,11 +217,11 @@ public static class FF7RArchiveAnalyzer
             {
                 detectedTypes |= FF7RInstallType.ThreeDMigotoMod;
                 requiresDx11 = true;
-                if (lower.Contains("win64/mods/"))
-                    fileRoutes[entry.FullName] = "End/Binaries/Win64/Mods/" +
-                        StripToAfter(path, "Mods/");
-                else
-                    fileRoutes[entry.FullName] = "End/Binaries/Win64/Mods/" + path;
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    lower.Contains("win64/mods/")
+                        ? "End/Binaries/Win64/Mods/" + StripToAfter(path, "Mods/")
+                        : "End/Binaries/Win64/Mods/" + path,
+                    PackageTypes.UeMigoto);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -185,8 +231,8 @@ public static class FF7RArchiveAnalyzer
             {
                 detectedTypes |= FF7RInstallType.DxvkWrapper;
                 requiresDx11 = true;
-                var dest = RouteToWin64(path, lower);
-                fileRoutes[entry.FullName] = dest;
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    RouteToWin64(path, lower), PackageTypes.Dxvk);
                 signalConfidences.Add(0.92);
                 continue;
             }
@@ -196,8 +242,8 @@ public static class FF7RArchiveAnalyzer
                 (lower.EndsWith(".dll") || lower.EndsWith(".asi")))
             {
                 detectedTypes |= FF7RInstallType.DllHook;
-                fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                    Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    "End/Binaries/Win64/" + Path.GetFileName(path), PackageTypes.UeHook);
                 signalConfidences.Add(0.95);
                 continue;
             }
@@ -208,8 +254,8 @@ public static class FF7RArchiveAnalyzer
             {
                 // INI next to EXE (e.g. d3dx.ini for 3DMigoto)
                 detectedTypes |= FF7RInstallType.IniConfig;
-                fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                    Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    "End/Binaries/Win64/" + Path.GetFileName(path), PackageTypes.UeMigoto);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -220,8 +266,10 @@ public static class FF7RArchiveAnalyzer
             if (hasFF7RAnchor && lower.EndsWith(".pak"))
             {
                 detectedTypes |= FF7RInstallType.PakMod;
-                // Route to ~mods — the standard FF7R pak location
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                // Route to ~mods — the standard FF7R pak location — game-root-relative,
+                // so the destination survives a multi-type archive.
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    PaksModsRoute + Path.GetFileName(path), PackageTypes.UePak);
                 signalConfidences.Add(0.88);
                 continue;
             }
@@ -231,8 +279,8 @@ public static class FF7RArchiveAnalyzer
                 IsKnownProxyDll(lower))
             {
                 detectedTypes |= FF7RInstallType.DllHook;
-                fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                    Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "End/Binaries/Win64/" + Path.GetFileName(path), PackageTypes.UeHook);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -241,8 +289,8 @@ public static class FF7RArchiveAnalyzer
             if (hasFF7RAnchor && lower.EndsWith(".asi"))
             {
                 detectedTypes |= FF7RInstallType.DllHook;
-                fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                    Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "End/Binaries/Win64/" + Path.GetFileName(path), PackageTypes.UeHook);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -252,12 +300,16 @@ public static class FF7RArchiveAnalyzer
                 !lower.Contains("desktop.ini"))
             {
                 detectedTypes |= FF7RInstallType.IniConfig;
-                // Default to Win64 unless it looks like an Engine.ini
-                if (lower.Contains("engine") || lower.Contains("input"))
-                    fileRoutes[entry.FullName] = "Config/" + Path.GetFileName(path);
-                else
-                    fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                        Path.GetFileName(path);
+                // A user INI belongs in the Documents config folder, not the game
+                // directory: UE4 never reads user configuration from there. The route is
+                // labelled and rooted so the module can point it at the real location.
+                fileRoutes[entry.FullName] =
+                    lower.Contains("engine") || lower.Contains("input")
+                        ? FileRoute.Heuristic(
+                            Path.GetFileName(path), PackageTypes.UeUserConfig)
+                        : FileRoute.Heuristic(
+                            "End/Binaries/Win64/" + Path.GetFileName(path),
+                            PackageTypes.UeMigoto);
                 signalConfidences.Add(0.70);
                 continue;
             }
@@ -267,14 +319,14 @@ public static class FF7RArchiveAnalyzer
             {
                 detectedTypes |= FF7RInstallType.DxvkWrapper;
                 requiresDx11 = true;
-                fileRoutes[entry.FullName] = "End/Binaries/Win64/" +
-                    Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "End/Binaries/Win64/" + Path.GetFileName(path), PackageTypes.Dxvk);
                 signalConfidences.Add(0.80);
                 continue;
             }
 
             // ── Fallback: route to game root ─────────────────────────
-            fileRoutes[entry.FullName] = path;
+            fileRoutes[entry.FullName] = FileRoute.Declared(path, PackageTypes.Unknown);
         }
 
         // ── Confidence calculation ───────────────────────────────────────

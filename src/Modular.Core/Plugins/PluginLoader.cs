@@ -5,6 +5,7 @@ using Modular.Core.ErrorHandling;
 using Modular.Sdk;
 using Modular.Sdk.Installers;
 using Modular.Sdk.Metadata;
+using Modular.Sdk.Modules;
 using Modular.Sdk.UI;
 
 namespace Modular.Core.Plugins;
@@ -156,14 +157,16 @@ public class PluginLoader
             Metadata = metadataInstance,
             Installers = DiscoverInstallers(assembly),
             Enrichers = DiscoverEnrichers(assembly),
-            UiExtensions = DiscoverUiExtensions(assembly)
+            UiExtensions = DiscoverUiExtensions(assembly),
+            Modules = DiscoverModules(assembly)
         };
 
         _loadedPlugins[manifest.Id] = loadedPlugin;
         _logger?.LogInformation(
-            "Successfully loaded plugin: {PluginId} v{Version} (Installers: {InstallerCount}, Enrichers: {EnricherCount}, UI: {UiCount})",
+            "Successfully loaded plugin: {PluginId} v{Version} (Installers: {InstallerCount}, Enrichers: {EnricherCount}, UI: {UiCount}, Modules: {ModuleCount})",
             manifest.Id, manifest.Version,
-            loadedPlugin.Installers.Count, loadedPlugin.Enrichers.Count, loadedPlugin.UiExtensions.Count);
+            loadedPlugin.Installers.Count, loadedPlugin.Enrichers.Count,
+            loadedPlugin.UiExtensions.Count, loadedPlugin.Modules.Count);
 
         return loadedPlugin;
     }
@@ -186,6 +189,39 @@ public class PluginLoader
         plugin.LoadContext.Unload();
 
         _loadedPlugins.Remove(pluginId);
+    }
+
+    /// <summary>
+    /// Discovers and loads every plugin in the plugin directory.
+    /// </summary>
+    /// <returns>The plugins that loaded successfully.</returns>
+    /// <remarks>
+    /// A plugin that fails to load is logged and skipped, so one broken plugin
+    /// cannot stop the rest from contributing installers or game modules.
+    /// </remarks>
+    public IReadOnlyList<LoadedPlugin> LoadAllPlugins()
+    {
+        var loaded = new List<LoadedPlugin>();
+
+        foreach (var manifest in DiscoverPlugins())
+        {
+            if (_loadedPlugins.TryGetValue(manifest.Id, out var already))
+            {
+                loaded.Add(already);
+                continue;
+            }
+
+            try
+            {
+                loaded.Add(LoadPlugin(manifest));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to load plugin {PluginId}", manifest.Id);
+            }
+        }
+
+        return loaded;
     }
 
     /// <summary>
@@ -232,6 +268,52 @@ public class PluginLoader
                 return installers;
             },
             new List<IModInstaller>()).Value ?? new List<IModInstaller>();
+    }
+
+    /// <summary>
+    /// Discovers <see cref="IGameModule"/> implementations in an assembly.
+    /// </summary>
+    /// <param name="assembly">The plugin assembly.</param>
+    /// <returns>Instantiated modules; empty when the plugin supplies none.</returns>
+    /// <remarks>
+    /// A module must have a public parameterless constructor. Discovery runs
+    /// inside the error boundary, so a plugin whose module throws in its
+    /// constructor does not stop the rest of the plugin from loading.
+    /// </remarks>
+    private List<IGameModule> DiscoverModules(Assembly assembly)
+    {
+        return _errorBoundary.Execute(
+            $"Discover game modules in {assembly.GetName().Name}",
+            () =>
+            {
+                var modules = new List<IGameModule>();
+                var moduleTypes = assembly.GetTypes()
+                    .Where(t => typeof(IGameModule).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+                    .ToList();
+
+                foreach (var type in moduleTypes)
+                {
+                    _errorBoundary.Execute(
+                        $"Create game module {type.Name}",
+                        () =>
+                        {
+                            if (Activator.CreateInstance(type) is IGameModule instance)
+                            {
+                                modules.Add(instance);
+                                _logger?.LogDebug(
+                                    "Discovered game module: {ModuleId} ({Type})",
+                                    instance.ModuleId, type.Name);
+                                return instance;
+                            }
+
+                            return null;
+                        },
+                        null!);
+                }
+
+                return modules;
+            },
+            new List<IGameModule>()).Value ?? new List<IGameModule>();
     }
 
     /// <summary>
@@ -316,6 +398,17 @@ public class PluginLoader
     }
 
     /// <summary>
+    /// Gets all game modules from loaded plugins.
+    /// </summary>
+    /// <returns>Every module contributed by a loaded plugin.</returns>
+    public List<IGameModule> GetAllModules()
+    {
+        return _loadedPlugins.Values
+            .SelectMany(p => p.Modules)
+            .ToList();
+    }
+
+    /// <summary>
     /// Gets all enrichers from loaded plugins.
     /// </summary>
     public Dictionary<string, IMetadataEnricher> GetAllEnrichers()
@@ -376,4 +469,9 @@ public class LoadedPlugin
     /// UI extensions provided by this plugin.
     /// </summary>
     public List<IUiExtension> UiExtensions { get; init; } = new();
+
+    /// <summary>
+    /// Game modules provided by this plugin.
+    /// </summary>
+    public List<IGameModule> Modules { get; init; } = new();
 }

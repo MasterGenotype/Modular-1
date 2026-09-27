@@ -35,7 +35,6 @@ public class FF7RModInstaller : IModInstaller
     /// The UE4 paks sub-path specific to FF7R Intergrade.
     /// </summary>
     private const string PaksSubPath = "End/Content/Paks";
-    private const string PaksModsSubPath = "End/Content/Paks/~mods";
     private const string BinariesSubPath = "End/Binaries/Win64";
 
     public FF7RModInstaller(
@@ -111,10 +110,10 @@ public class FF7RModInstaller : IModInstaller
 
         var layout = FF7RArchiveAnalyzer.Analyze(reader.Entries);
 
-        // Determine primary target directory based on dominant type
+        // The plan always targets the game root. The analyzer's routes are
+        // game-root-relative, including pak routes, so the archive's shape no longer
+        // decides where its paks land.
         var targetDir = context.GameDirectory;
-        if (layout.IsSingleType && layout.Types == FF7RInstallType.PakMod)
-            targetDir = Path.Combine(context.GameDirectory, PaksModsSubPath);
 
         var plan = new InstallPlan
         {
@@ -135,22 +134,23 @@ public class FF7RModInstaller : IModInstaller
 
         foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
         {
-            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var destination))
+            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var route))
             {
-                destination = entry.FullName;
+                var fallback = entry.FullName;
                 if (!string.IsNullOrEmpty(layout.StrippedPrefix) &&
-                    destination.StartsWith(layout.StrippedPrefix,
+                    fallback.StartsWith(layout.StrippedPrefix,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    destination = destination[layout.StrippedPrefix.Length..];
+                    fallback = fallback[layout.StrippedPrefix.Length..];
                 }
+
+                route = FileRoute.Declared(fallback, PackageTypes.Unknown);
             }
 
-            destination = destination.Replace('\\', '/');
+            var destination = route.Destination.Replace('\\', '/');
 
-            // For pure PakMod archives routed to ~mods, destinations are
-            // relative to ~mods (just the filename). For multi-type archives,
-            // destinations are relative to game root.
+            // Every game-rooted destination is relative to the game root; a route that
+            // names its own root (a user config INI) is relative to that root instead.
             var isCritical =
                 destination.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
                 destination.EndsWith(".asi", StringComparison.OrdinalIgnoreCase) ||
@@ -162,7 +162,10 @@ public class FF7RModInstaller : IModInstaller
                 SourcePath = entry.FullName,
                 DestinationPath = destination,
                 SizeBytes = entry.Length,
-                IsCritical = isCritical
+                IsCritical = isCritical,
+                TargetRoot = route.Root,
+                PackageType = route.PackageType,
+                RouteSource = route.RouteSource
             });
 
             totalBytes += entry.Length;

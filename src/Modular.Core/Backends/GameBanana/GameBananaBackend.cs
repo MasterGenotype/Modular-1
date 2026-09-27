@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Configuration;
+using Modular.Core.Downloads;
 using Modular.Core.Utilities;
 using Modular.FluentHttp.Implementation;
 using Modular.FluentHttp.Interfaces;
@@ -21,6 +22,7 @@ public class GameBananaBackend : IModBackend
     private readonly AppSettings _settings;
     private readonly IFluentClient _client;
     private readonly ILogger<GameBananaBackend>? _logger;
+    private readonly ResumableDownloader _downloader;
     private readonly SemaphoreSlim _throttle = new(1, 1);
     private DateTime _lastRequest = DateTime.MinValue;
 
@@ -33,10 +35,12 @@ public class GameBananaBackend : IModBackend
 
     public GameBananaBackend(
         AppSettings settings,
-        ILogger<GameBananaBackend>? logger = null)
+        ILogger<GameBananaBackend>? logger = null,
+        ResumableDownloader? downloader = null)
     {
         _settings = settings;
         _logger = logger;
+        _downloader = downloader ?? new ResumableDownloader(logger: null);
         _client = FluentClientFactory.Create(BaseUrl);
         _client.SetUserAgent("Modular/1.0");
     }
@@ -490,7 +494,8 @@ public class GameBananaBackend : IModBackend
             var modOutputDir = Path.Combine(outputDirectory, downloadDir, FileUtils.SanitizeDirectoryName(mod.Name));
             var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
 
-            // Check if file exists (simple check - no database tracking for GameBanana yet)
+            // Check if file exists (simple check - no database tracking for GameBanana yet).
+            // Partial downloads live in a separate .part file, so an existing file is always complete.
             if (!options.Force && File.Exists(outputPath))
             {
                 completed++;
@@ -515,8 +520,44 @@ public class GameBananaBackend : IModBackend
                 _logger?.LogDebug("Downloading from URL: {Url}", url);
                 _logger?.LogDebug("Output path: {OutputPath}", outputPath);
                 FileUtils.EnsureDirectoryExists(modOutputDir);
-                await _client.GetAsync(url).DownloadToAsync(outputPath, null, ct);
-                _logger?.LogInformation("Downloaded: {File}", outputPath);
+
+                var resume = options.Resume && !options.Force;
+                var partialBytes = resume ? ResumableDownloader.GetPartialLength(outputPath) : 0;
+                var completedSoFar = completed;
+                progress?.Report(DownloadProgress.Downloading(
+                    partialBytes > 0 ? $"Resuming {file.FileName}" : $"Downloading {file.FileName}",
+                    completedSoFar, total, file.FileName));
+
+                var result = await _downloader.DownloadAsync(
+                    new ResumableDownloadRequest
+                    {
+                        Url = url,
+                        DestinationPath = outputPath,
+                        Identity = DownloadIdentity.GameBanana(mod.ModId, file.FileId),
+                        // GameBanana's _nFilesize and _sMd5Checksum are exact.
+                        ExpectedSize = file.SizeBytes,
+                        ExpectedMd5 = file.Md5,
+                        VerifyMd5 = options.VerifyDownloads,
+                        Resume = resume
+                    },
+                    progress == null ? null : new SyncProgress<(long downloaded, long total)>(p =>
+                        progress.Report(new DownloadProgress
+                        {
+                            Status = $"Downloading {file.FileName}",
+                            Completed = completedSoFar,
+                            Total = total,
+                            CurrentFile = file.FileName,
+                            CurrentFileBytes = p.downloaded,
+                            CurrentFileTotalBytes = p.total >= 0 ? p.total : file.SizeBytes,
+                            Phase = DownloadPhase.Downloading
+                        })),
+                    ct);
+                _logger?.LogInformation("Downloaded: {File}{Resumed}", outputPath, result.Resumed ? " (resumed)" : string.Empty);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Partial data is kept on disk; the next run resumes it.
+                throw;
             }
             catch (HttpRequestException ex)
             {

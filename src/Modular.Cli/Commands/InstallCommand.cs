@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Modular.Cli.Infrastructure;
 using Modular.Core.Database;
 using Modular.Core.Installers;
+using Modular.Core.Plugins;
 using Modular.Sdk.Installers;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -38,6 +39,11 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
         [CommandOption("--no-backup")]
         [Description("Do not create backups of overwritten files")]
         public bool NoBackup { get; init; }
+
+        /// <summary>Whether to stage the mod without deploying it.</summary>
+        [CommandOption("--no-deploy")]
+        [Description("Stage and register the mod without placing files in the game")]
+        public bool NoDeploy { get; init; }
 
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
@@ -96,14 +102,24 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             var db = new ModularDatabase(dbPath);
             await db.InitializeAsync();
 
-            var installService = new ModInstallationService(db, services.Telemetry);
+            // Loading plugins here is what makes plugin-supplied installers and
+            // game modules candidates for a real install.
+            var pluginLoader = new PluginLoader();
+            pluginLoader.LoadAllPlugins();
+
+            var installService = new ModInstallationService(
+                db, services.Telemetry,
+                pluginLoader: pluginLoader,
+                settings: services.Settings);
 
             var options = new ModInstallationOptions
             {
                 ModId = settings.ModId ?? Path.GetFileNameWithoutExtension(archivePath),
+                GameId = settings.Game,
                 AllowOverwrite = settings.Force,
                 CreateBackups = !settings.NoBackup,
-                DryRun = settings.DryRun
+                DryRun = settings.DryRun,
+                NoDeploy = settings.NoDeploy
             };
 
             // Show install header
@@ -143,11 +159,38 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             }
             else if (result.Success)
             {
-                AnsiConsole.MarkupLine($"[green]Installed {result.InstalledFiles.Count} files[/]");
+                if (result.Deployed)
+                {
+                    AnsiConsole.MarkupLine($"[green]Installed {result.InstalledFiles.Count} files[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[green]Staged {result.StagedFiles.Count} files[/] " +
+                        "[grey](not deployed)[/]");
+                    AnsiConsole.MarkupLine(
+                        $"[grey]Run 'modular deploy --game {Markup.Escape(settings.Game!)}' to apply it.[/]");
+                }
+
                 if (result.BackedUpFiles.Count > 0)
                     AnsiConsole.MarkupLine($"[grey]Backed up {result.BackedUpFiles.Count} existing files[/]");
                 AnsiConsole.MarkupLine($"[grey]Changeset: {result.ChangesetId} (use to uninstall later)[/]");
                 AnsiConsole.MarkupLine($"[grey]Installer: {result.InstallerUsed}[/]");
+                if (result.ModuleId != null)
+                    AnsiConsole.MarkupLine($"[grey]Module: {Markup.Escape(result.ModuleId)}[/]");
+
+                foreach (var diagnostic in result.Diagnostics)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]![/] {Markup.Escape(diagnostic.Code)}: " +
+                        Markup.Escape(diagnostic.Message));
+                }
+
+                foreach (var warning in result.Warnings)
+                    AnsiConsole.MarkupLine($"[yellow]![/] {Markup.Escape(warning)}");
+
+                if (result.Deployment != null)
+                    DeploymentReport.RenderLaunchRequirements(result.Deployment);
             }
             else
             {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Modular.Cli.UI;
 using Modular.Core.GameDetection;
+using Modular.Core.Modules;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands.GameDetection;
@@ -31,6 +32,7 @@ public sealed class DetectGamesCommand : AsyncCommand<DetectGamesCommand.Setting
         {
             var scanner = new SteamGameScanner();
             var engineDetector = settings.DetectEngines ? new CompositeEngineDetector() : null;
+            var moduleRegistry = new GameModuleRegistry();
 
             var games = await scanner.ScanAllAsync();
 
@@ -52,6 +54,14 @@ public sealed class DetectGamesCommand : AsyncCommand<DetectGamesCommand.Setting
 
                 Console.Write($"  [{game.AppId}] {game.DisplayName}{sizeStr}{status}");
 
+                // A module is what decides where this game's mods belong, so it is
+                // worth showing even without --engines.
+                var module = moduleRegistry.ResolveByAppId(game.AppId);
+                if (module != null)
+                {
+                    Console.Write($" — Module: {module.ModuleId}");
+                }
+
                 if (engineDetector != null && Directory.Exists(game.InstallPath))
                 {
                     var result = engineDetector.Detect(game.InstallPath);
@@ -67,6 +77,11 @@ public sealed class DetectGamesCommand : AsyncCommand<DetectGamesCommand.Setting
                 {
                     Console.WriteLine($"    Path: {game.InstallPath}");
                     Console.WriteLine($"    Library: {game.LibraryRoot}");
+
+                    if (game.ProtonPrefixPath != null)
+                        Console.WriteLine($"    Proton prefix: {game.ProtonPrefixPath}");
+                    if (game.BuildId != null)
+                        Console.WriteLine($"    Build id: {game.BuildId}");
                 }
             }
 
@@ -161,6 +176,15 @@ public sealed class DetectEngineCommand : AsyncCommand<DetectEngineCommand.Setti
                 Console.WriteLine("Evidence:");
                 foreach (var evidence in result.Evidence)
                     Console.WriteLine($"  - {evidence}");
+
+                var resolution = new GameModuleRegistry().ResolveByPath(installPath);
+                if (resolution != null)
+                {
+                    Console.WriteLine(
+                        $"Module: {resolution.Module.ModuleId} ({resolution.Match.Confidence:P0})");
+                    foreach (var evidence in resolution.Match.Evidence)
+                        Console.WriteLine($"  - {evidence}");
+                }
             }
 
             return 0;

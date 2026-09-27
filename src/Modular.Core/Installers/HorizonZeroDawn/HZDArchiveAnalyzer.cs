@@ -1,4 +1,5 @@
 using Modular.Sdk.Archives;
+using Modular.Sdk.Installers;
 
 namespace Modular.Core.Installers.HorizonZeroDawn;
 
@@ -114,7 +115,7 @@ public static class HZDArchiveAnalyzer
         // ── Phase 2: Classify each entry ─────────────────────────────────
 
         var detectedTypes = HZDInstallType.Unknown;
-        var fileRoutes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var fileRoutes = new Dictionary<string, FileRoute>(StringComparer.OrdinalIgnoreCase);
         var signalConfidences = new List<double>();
 
         foreach (var (entry, path) in normalized)
@@ -126,8 +127,9 @@ public static class HZDArchiveAnalyzer
             if (lower.Contains("packed_dx12/") && lower.EndsWith(".bin"))
             {
                 detectedTypes |= HZDInstallType.DecimaPatch;
-                fileRoutes[entry.FullName] = "Packed_DX12/" +
-                    StripToAfter(path, "Packed_DX12/", "packed_dx12/");
+                fileRoutes[entry.FullName] = FileRoute.Declared(
+                    "Packed_DX12/" + StripToAfter(path, "Packed_DX12/", "packed_dx12/"),
+                    PackageTypes.HzdPatchBin);
                 signalConfidences.Add(0.98);
                 continue;
             }
@@ -136,7 +138,8 @@ public static class HZDArchiveAnalyzer
             if (fileName.StartsWith("patch_") && lower.EndsWith(".bin"))
             {
                 detectedTypes |= HZDInstallType.DecimaPatch;
-                fileRoutes[entry.FullName] = "Packed_DX12/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "Packed_DX12/" + Path.GetFileName(path), PackageTypes.HzdPatchBin);
                 signalConfidences.Add(0.95);
                 continue;
             }
@@ -147,7 +150,8 @@ public static class HZDArchiveAnalyzer
                 !lower.Contains("packed_dx12/"))
             {
                 detectedTypes |= HZDInstallType.DecimaPatch;
-                fileRoutes[entry.FullName] = "Packed_DX12/" + Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    "Packed_DX12/" + Path.GetFileName(path), PackageTypes.HzdPatchBin);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -156,7 +160,8 @@ public static class HZDArchiveAnalyzer
             if (GpuUtilityMarkers.Any(g => lower.Contains(g)))
             {
                 detectedTypes |= HZDInstallType.GpuUtility;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.92);
                 continue;
             }
@@ -173,7 +178,8 @@ public static class HZDArchiveAnalyzer
                 {
                     detectedTypes |= HZDInstallType.DllHook;
                 }
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.88);
                 continue;
             }
@@ -182,7 +188,8 @@ public static class HZDArchiveAnalyzer
             if (hasHZDAnchor && lower.EndsWith(".asi"))
             {
                 detectedTypes |= HZDInstallType.GpuUtility;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.85);
                 continue;
             }
@@ -192,7 +199,8 @@ public static class HZDArchiveAnalyzer
                 !lower.Contains("desktop.ini"))
             {
                 detectedTypes |= HZDInstallType.ConfigFile;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.80);
                 continue;
             }
@@ -203,7 +211,8 @@ public static class HZDArchiveAnalyzer
             if (hasHZDAnchor && lower.EndsWith(".reg"))
             {
                 detectedTypes |= HZDInstallType.GpuUtility;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.90);
                 continue;
             }
@@ -212,13 +221,14 @@ public static class HZDArchiveAnalyzer
             if (hasHZDAnchor && lower.EndsWith(".exe"))
             {
                 detectedTypes |= HZDInstallType.BinaryReplacement;
-                fileRoutes[entry.FullName] = Path.GetFileName(path);
+                fileRoutes[entry.FullName] = FileRoute.Heuristic(
+                    Path.GetFileName(path), PackageTypes.HzdLooseFile);
                 signalConfidences.Add(0.80);
                 continue;
             }
 
             // ── Fallback ─────────────────────────────────────────────
-            fileRoutes[entry.FullName] = path;
+            fileRoutes[entry.FullName] = FileRoute.Declared(path, PackageTypes.Unknown);
         }
 
         // ── Confidence calculation ───────────────────────────────────────

@@ -1,3 +1,5 @@
+using Modular.Sdk.Modules;
+
 namespace Modular.Sdk.Installers;
 
 /// <summary>
@@ -115,6 +117,19 @@ public class InstallContext
     /// Additional metadata.
     /// </summary>
     public Dictionary<string, object> Metadata { get; set; } = new();
+
+    /// <summary>
+    /// The resolved game installation, when the caller went through game
+    /// resolution. Carries the Steam AppID, Proton prefix, engine family and
+    /// build id that <see cref="GameId"/> alone cannot express.
+    /// </summary>
+    public GameInstallation? Game { get; set; }
+
+    /// <summary>
+    /// Named deployment roots for <see cref="Game"/>, so an installer can target
+    /// a non-game root such as Documents without knowing about Proton prefixes.
+    /// </summary>
+    public GameModPaths? ModPaths { get; set; }
 }
 
 /// <summary>
@@ -197,6 +212,29 @@ public class FileOperation
     /// IDs of operations that must complete before this one (dependency edges).
     /// </summary>
     public List<string> DependsOn { get; set; } = new();
+
+    /// <summary>
+    /// Name of the deployment root <see cref="DestinationPath"/> is relative to.
+    /// <c>null</c> means <see cref="ModRoots.Game"/>.
+    /// </summary>
+    /// <remarks>
+    /// Lets an installer route a file outside the game directory, for example a
+    /// user config INI that belongs under Documents.
+    /// </remarks>
+    public string? TargetRoot { get; set; }
+
+    /// <summary>
+    /// Package type this file belongs to, such as <c>cp77.legacy_archive</c> or
+    /// <c>ue.pak_bundle</c>. Destinations are a property of the package type, not
+    /// only of the game.
+    /// </summary>
+    public string? PackageType { get; set; }
+
+    /// <summary>
+    /// Which routing rule decided this file's destination, so a mis-route can be
+    /// traced back to the rule responsible.
+    /// </summary>
+    public RouteSource RouteSource { get; set; } = RouteSource.Heuristic;
 }
 
 /// <summary>

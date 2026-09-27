@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Modular.Cli.Commands;
+using Modular.Cli.Commands.Deployment;
 using Modular.Cli.Commands.Diagnostics;
 using Modular.Cli.Commands.GameDetection;
+using Modular.Cli.Commands.Modules;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
 using Modular.Cli.Commands.Switch;
@@ -174,8 +176,9 @@ class Program
                 .WithExample("install", "mod.zip", "--game", "730", "--force");
 
             config.AddCommand<UninstallCommand>("uninstall")
-                .WithDescription("Uninstall a previously installed mod by changeset ID")
-                .WithExample("uninstall", "a1b2c3d4e5f6");
+                .WithDescription("Uninstall a mod by changeset ID, or by game and mod id")
+                .WithExample("uninstall", "a1b2c3d4e5f6")
+                .WithExample("uninstall", "--game", "1091500", "--mod", "my-mod");
 
             config.AddCommand<ListInstalledCommand>("installed")
                 .WithDescription("List installed mods")
@@ -183,6 +186,12 @@ class Program
                 .WithExample("installed", "--game", "730");
 
             // Game detection commands
+            config.AddCommand<DetectCommand>("detect")
+                .WithDescription("Resolve a game and show its module, engine and deployment roots")
+                .WithExample("detect", "1091500")
+                .WithExample("detect", "cyberpunk2077")
+                .WithExample("detect", "/path/to/game/bin/x64");
+
             config.AddCommand<DetectGamesCommand>("detect-games")
                 .WithDescription("Scan for installed Steam games")
                 .WithExample("detect-games")
@@ -193,6 +202,50 @@ class Program
                 .WithDescription("Detect game engine for a specific game")
                 .WithExample("detect-engine", "730")
                 .WithExample("detect-engine", "/path/to/game", "--all");
+
+            // Deployment commands
+            config.AddCommand<DeployCommand>("deploy")
+                .WithDescription("Deploy a game's enabled mods, in order")
+                .WithExample("deploy", "--game", "1091500")
+                .WithExample("deploy", "--game", "cyberpunk2077", "--method", "copy")
+                .WithExample("deploy", "--game", "1091500", "--purge");
+
+            config.AddBranch("order", order =>
+            {
+                order.SetDescription("Inspect and set a game's load order");
+
+                order.AddCommand<OrderListCommand>("list")
+                    .WithDescription("Show the load order, and the engine order it maps to")
+                    .WithExample("order", "list", "--game", "1091500");
+
+                order.AddCommand<OrderSetCommand>("set")
+                    .WithDescription("Set the load order; the last mod wins")
+                    .WithExample("order", "set", "--game", "1091500", "base-mod", "override-mod");
+            });
+
+            config.AddBranch("config", configBranch =>
+            {
+                configBranch.SetDescription("Read and change settings");
+
+                configBranch.AddCommand<ConfigShowCommand>("show")
+                    .WithDescription("Show the settings that can be changed here");
+
+                configBranch.AddCommand<ConfigSetCommand>("set")
+                    .WithDescription("Change a setting")
+                    .WithExample("config", "set", "deployment.method", "copy")
+                    .WithExample("config", "set", "deployment.fallback", "fail");
+            });
+
+            // Game module commands
+            config.AddBranch("modules", modules =>
+            {
+                modules.SetDescription("Inspect the registered game modules");
+
+                modules.AddCommand<ModulesListCommand>("list")
+                    .WithDescription("List built-in and plugin-supplied game modules")
+                    .WithExample("modules", "list")
+                    .WithExample("modules", "list", "--verbose");
+            });
 
             // Steam mod installer command
             config.AddCommand<SteamInstallCommand>("steam-install")

@@ -136,20 +136,24 @@ public class CyberpunkModInstaller : IModInstaller
 
         foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
         {
-            // Look up the routed destination for this entry
-            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var destination))
+            // Look up the routed destination for this entry, together with the package
+            // type and the rule that chose it — recorded on the operation so a mis-route
+            // traces back to the rule rather than having to be re-derived.
+            if (!layout.FileRoutes.TryGetValue(entry.FullName, out var route))
             {
                 // Fallback: place unrecognized files at game root maintaining relative path
-                destination = entry.FullName;
+                var fallback = entry.FullName;
                 if (!string.IsNullOrEmpty(layout.StrippedPrefix) &&
-                    destination.StartsWith(layout.StrippedPrefix, StringComparison.OrdinalIgnoreCase))
+                    fallback.StartsWith(layout.StrippedPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    destination = destination[layout.StrippedPrefix.Length..];
+                    fallback = fallback[layout.StrippedPrefix.Length..];
                 }
+
+                route = FileRoute.Declared(fallback, PackageTypes.Unknown);
             }
 
             // Normalize path separators
-            destination = destination.Replace('\\', '/');
+            var destination = route.Destination.Replace('\\', '/');
 
             // Determine criticality
             var isCritical = IsCriticalFile(entry.FullName, layout);
@@ -160,7 +164,10 @@ public class CyberpunkModInstaller : IModInstaller
                 SourcePath = entry.FullName,
                 DestinationPath = destination,
                 SizeBytes = entry.Length,
-                IsCritical = isCritical
+                IsCritical = isCritical,
+                TargetRoot = route.Root,
+                PackageType = route.PackageType,
+                RouteSource = route.RouteSource
             });
 
             totalBytes += entry.Length;

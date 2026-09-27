@@ -8,6 +8,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.Dependencies;
 using Modular.Core.Diagnostics;
+using Modular.Core.Downloads;
 using Modular.Core.Plugins;
 using Modular.Core.Profiles;
 using Modular.Core.RateLimiting;
@@ -83,6 +84,14 @@ public sealed class RuntimeServices : IDisposable
     public required ConfigurationService ConfigService { get; init; }
     public ILoggerFactory? LoggerFactory { get; init; }
     public TelemetryService Telemetry { get; init; } = null!;
+
+    private ResumableDownloader? _downloader;
+
+    /// <summary>
+    /// Shared resumable downloader used by all backends.
+    /// </summary>
+    public ResumableDownloader Downloader =>
+        _downloader ??= new ResumableDownloader(logger: LoggerFactory?.CreateLogger<ResumableDownloader>());
 
     /// <summary>
     /// Initializes runtime services without requiring NexusMods API key.
@@ -199,14 +208,16 @@ public sealed class RuntimeServices : IDisposable
                 RateLimiter,
                 Database,
                 MetadataCache,
-                LoggerFactory?.CreateLogger<NexusModsBackend>()));
+                LoggerFactory?.CreateLogger<NexusModsBackend>(),
+                Downloader));
         }
 
         if (Settings.EnabledBackends.Contains("gamebanana", StringComparer.OrdinalIgnoreCase))
         {
             registry.Register(new GameBananaBackend(
                 Settings,
-                LoggerFactory?.CreateLogger<GameBananaBackend>()));
+                LoggerFactory?.CreateLogger<GameBananaBackend>(),
+                Downloader));
         }
 
         return registry;
@@ -250,6 +261,7 @@ public sealed class RuntimeServices : IDisposable
 
     public void Dispose()
     {
+        _downloader?.Dispose();
         LoggerFactory?.Dispose();
     }
 }

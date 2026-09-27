@@ -14,8 +14,15 @@ public class DownloadOptions
 
     /// <summary>
     /// If true, re-download files even if they already exist locally.
+    /// Also discards any partially downloaded data.
     /// </summary>
     public bool Force { get; set; }
+
+    /// <summary>
+    /// If true (default), interrupted downloads resume from their partial data
+    /// instead of starting over. Ignored when <see cref="Force"/> is true.
+    /// </summary>
+    public bool Resume { get; set; } = true;
 
     /// <summary>
     /// Filter to apply when selecting which files to download.
@@ -62,6 +69,7 @@ public class DownloadOptions
     {
         DryRun = false,
         Force = false,
+        Resume = true,
         Filter = FileFilter.MainAndOptional,
         MaxConcurrency = 1,
         VerifyDownloads = false,

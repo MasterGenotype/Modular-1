@@ -9,18 +9,23 @@ namespace Modular.Gui.Models;
 public partial class DownloadItemModel : ObservableObject
 {
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(CanResume))]
     private DownloadItemState _state = DownloadItemState.Queued;
 
     [ObservableProperty]
     private double _progress;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressText))]
     private long _bytesDownloaded;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressText))]
     private long _totalBytes;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedText))]
     private double _speedBytesPerSecond;
 
     [ObservableProperty]
@@ -36,6 +41,32 @@ public partial class DownloadItemModel : ObservableObject
     /// Unique identifier for this download item.
     /// </summary>
     public string Id { get; } = Guid.NewGuid().ToString();
+
+    /// <summary>
+    /// Cancellation source for the in-flight transfer of this item (used for pausing).
+    /// </summary>
+    public CancellationTokenSource? ItemCts { get; set; }
+
+    /// <summary>
+    /// Set when the user pauses this item, to distinguish a pause from a cancellation.
+    /// </summary>
+    public bool PauseRequested { get; set; }
+
+    /// <summary>
+    /// Set when the user removes this item while it is downloading, to distinguish a
+    /// removal from a pause or a batch cancellation.
+    /// </summary>
+    public bool RemoveRequested { get; set; }
+
+    /// <summary>
+    /// Whether the item can currently be paused.
+    /// </summary>
+    public bool CanPause => State is DownloadItemState.Downloading or DownloadItemState.Queued;
+
+    /// <summary>
+    /// Whether the item can be resumed (paused, failed or cancelled items keep their partial data).
+    /// </summary>
+    public bool CanResume => State is DownloadItemState.Paused or DownloadItemState.Failed or DownloadItemState.Cancelled;
 
     /// <summary>
     /// The mod being downloaded.

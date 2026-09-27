@@ -444,6 +444,10 @@ public partial class InstallViewModel : ViewModelBase
                 var options = new ModInstallationOptions
                 {
                     ModId = Path.GetFileNameWithoutExtension(archivePath),
+                    // The selected game's AppID scopes installer selection, so a
+                    // game-specific installer is only considered for its own game.
+                    GameId = SelectedGame?.AppId.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
                     AllowOverwrite = AllowOverwrite,
                     CreateBackups = CreateBackups,
                     DryRun = DryRun
@@ -466,10 +470,38 @@ public partial class InstallViewModel : ViewModelBase
                     {
                         InstallResults.Add($"[Dry run] {fileName}: {result.PlannedOperations.Count} operation(s)");
                     }
+                    else if (result.Deployed)
+                    {
+                        InstallResults.Add(
+                            $"Installed: {fileName} ({result.InstalledFiles.Count} files, {result.InstallerUsed})");
+                    }
                     else
                     {
-                        InstallResults.Add($"Installed: {fileName} ({result.InstalledFiles.Count} files, {result.InstallerUsed})");
+                        InstallResults.Add(
+                            $"Staged: {fileName} ({result.StagedFiles.Count} files, {result.InstallerUsed})");
                     }
+
+                    // Layout findings and launch requirements go into the same log the
+                    // user is already watching; a mod that installs but cannot load is
+                    // the failure mode worth surfacing here.
+                    foreach (var diagnostic in result.Diagnostics)
+                        InstallResults.Add($"! {diagnostic.Code}: {diagnostic.Message}");
+
+                    foreach (var warning in result.Warnings)
+                        InstallResults.Add($"! {warning}");
+
+                    if (result.Deployment?.WineDllOverridesLaunchOption is { } overrideOption)
+                    {
+                        InstallResults.Add(
+                            "! Steam launch options needed for Proton: " + overrideOption);
+                    }
+
+                    foreach (var argument in result.Deployment?.LaunchRequirements.LaunchArguments
+                                             ?? Array.Empty<string>())
+                    {
+                        InstallResults.Add($"! Launch argument needed: {argument}");
+                    }
+
                     succeeded++;
                 }
                 else

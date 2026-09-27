@@ -522,10 +522,29 @@ public class SteamModInstaller : IModInstaller
             var stagedFiles = Directory.GetFiles(stagingDir, "*", SearchOption.AllDirectories);
             int processed = 0;
 
+            // Destinations come from the plan, keyed by the archive-relative path the
+            // extraction produced. Mirroring the archive tree directly instead would
+            // ignore any destination the plan set — including one rewritten to point at
+            // a staging tree, which would silently bypass staging altogether.
+            var destinations = plan.Operations
+                .Where(o => !string.IsNullOrEmpty(o.SourcePath) &&
+                            !string.IsNullOrEmpty(o.DestinationPath))
+                .GroupBy(o => NormalizeKey(o.SourcePath), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.First().DestinationPath,
+                    StringComparer.OrdinalIgnoreCase);
+
             foreach (var stagedFile in stagedFiles)
             {
                 var relativePath = Path.GetRelativePath(stagingDir, stagedFile);
-                var destPath = PathSanitizer.SanitizeEntryPath(relativePath, targetDir);
+
+                var plannedDestination =
+                    destinations.TryGetValue(NormalizeKey(relativePath), out var planned)
+                        ? planned
+                        : relativePath;
+
+                var destPath = PathSanitizer.SanitizeEntryPath(plannedDestination, targetDir);
                 var destDir = Path.GetDirectoryName(destPath);
 
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
@@ -575,6 +594,9 @@ public class SteamModInstaller : IModInstaller
 
         return result;
     }
+
+    private static string NormalizeKey(string path) =>
+        path.Replace('\\', '/').TrimStart('/');
 
     private static void CleanupDirectory(string path)
     {

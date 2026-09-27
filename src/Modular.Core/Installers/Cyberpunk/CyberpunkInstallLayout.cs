@@ -1,3 +1,5 @@
+using Modular.Sdk.Installers;
+
 namespace Modular.Core.Installers.Cyberpunk;
 
 /// <summary>
@@ -29,7 +31,7 @@ public sealed class CyberpunkInstallLayout
     /// Per-file routing decisions. Key = archive entry FullName, value = relative
     /// destination path under the game root directory.
     /// </summary>
-    public Dictionary<string, string> FileRoutes { get; init; } = new();
+    public Dictionary<string, FileRoute> FileRoutes { get; init; } = new();
 
     /// <summary>
     /// Common root prefix stripped from archive paths (e.g. the mod name folder

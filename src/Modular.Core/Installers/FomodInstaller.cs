@@ -160,6 +160,18 @@ public class FomodInstaller : IModInstaller
                 ? (List<string>)plan.Options["selected_files"]
                 : plan.Operations.Select(o => o.SourcePath).ToList();
 
+            // Destinations come from the plan, keyed by source path. Extracting to
+            // entry.Name instead flattened every directory into the target root, which
+            // destroys any mod whose layout matters — and it would also ignore a
+            // destination rewritten for staging.
+            var destinations = plan.Operations
+                .Where(o => !string.IsNullOrEmpty(o.SourcePath))
+                .GroupBy(o => o.SourcePath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.First().DestinationPath,
+                    StringComparer.OrdinalIgnoreCase);
+
             int filesProcessed = 0;
             long bytesProcessed = 0;
 
@@ -171,7 +183,14 @@ public class FomodInstaller : IModInstaller
                 if (entry == null)
                     continue;
 
-                var destPath = PathSanitizer.SanitizeEntryPath(entry.Name, plan.TargetDirectory);
+                var relativeDestination =
+                    destinations.TryGetValue(entry.FullName, out var planned) &&
+                    !string.IsNullOrEmpty(planned)
+                        ? planned
+                        : entry.FullName;
+
+                var destPath = PathSanitizer.SanitizeEntryPath(
+                    relativeDestination, plan.TargetDirectory);
 
                 var destDir = Path.GetDirectoryName(destPath);
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
@@ -186,7 +205,7 @@ public class FomodInstaller : IModInstaller
                 progress?.Report(new InstallProgress
                 {
                     CurrentOperation = "Installing FOMOD",
-                    CurrentFile = entry.Name,
+                    CurrentFile = relativeDestination,
                     FilesProcessed = filesProcessed,
                     TotalFiles = selectedFiles.Count,
                     BytesProcessed = bytesProcessed,

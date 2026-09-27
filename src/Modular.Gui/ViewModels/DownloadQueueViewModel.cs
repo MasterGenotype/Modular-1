@@ -10,6 +10,7 @@ using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Configuration;
+using Modular.Core.Downloads;
 using Modular.Core.Services;
 using Modular.Core.Utilities;
 using Modular.Gui.Messages;
@@ -29,7 +30,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     private readonly AppSettings? _settings;
     private readonly DownloadHistoryService? _historyService;
     private readonly DownloadDatabase? _downloadDatabase;
-    private readonly HttpClient _httpClient;
+    private readonly ResumableDownloader _downloader;
     private readonly ConcurrentQueue<DownloadItemModel> _pendingQueue = new();
     private readonly SemaphoreSlim _downloadSemaphore = new(1, 1); // Single concurrent download
     private CancellationTokenSource? _downloadCts;
@@ -71,7 +72,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     // Designer constructor
     public DownloadQueueViewModel()
     {
-        _httpClient = new HttpClient();
+        _downloader = new ResumableDownloader();
         // Sample data for designer
         ActiveDownloads.Add(new DownloadItemModel(new BackendMod
         {
@@ -95,7 +96,8 @@ public partial class DownloadQueueViewModel : ViewModelBase
         IRenameService renameService,
         AppSettings settings,
         DownloadHistoryService historyService,
-        DownloadDatabase downloadDatabase)
+        DownloadDatabase downloadDatabase,
+        ResumableDownloader downloader)
     {
         _nexusBackend = nexusBackend;
         _gameBananaBackend = gameBananaBackend;
@@ -103,8 +105,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
         _settings = settings;
         _historyService = historyService;
         _downloadDatabase = downloadDatabase;
-        _httpClient = new HttpClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "Modular/1.0");
+        _downloader = downloader;
         UpdateHistoryStats();
     }
 
@@ -181,6 +182,10 @@ public partial class DownloadQueueViewModel : ViewModelBase
             {
                 _downloadCts.Token.ThrowIfCancellationRequested();
 
+                // Items paused or removed while waiting in the queue are skipped.
+                if (item.State != DownloadItemState.Queued)
+                    continue;
+
                 await _downloadSemaphore.WaitAsync(_downloadCts.Token);
                 try
                 {
@@ -256,10 +261,19 @@ public partial class DownloadQueueViewModel : ViewModelBase
 
     private async Task DownloadItemAsync(DownloadItemModel item, CancellationToken ct)
     {
+        // Per-item token so a single item can be paused without stopping the queue.
+        using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        item.ItemCts = itemCts;
+        item.PauseRequested = false;
+        item.RemoveRequested = false;
+        var itemToken = itemCts.Token;
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             item.State = DownloadItemState.Downloading;
             item.StartTime = DateTime.UtcNow;
+            item.EndTime = null;
+            item.ErrorMessage = null;
         });
 
         StatusMessage = $"Downloading {item.DisplayName}...";
@@ -276,7 +290,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
                         item.Mod.ModId,
                         item.File.FileId,
                         item.GameDomain,
-                        ct);
+                        itemToken);
                 }
                 // GameBanana URLs are provided directly, no resolution needed
             }
@@ -309,58 +323,83 @@ public partial class DownloadQueueViewModel : ViewModelBase
             // Ensure directory exists
             FileUtils.EnsureDirectoryExists(modOutputDir);
 
-            // Download with progress reporting
-            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
+            // Identity must match the backends' so partial files from the CLI resume here too.
+            var fileId = item.File?.FileId ?? "0";
+            var isGameBanana = item.Mod.BackendId == "gamebanana";
+            var identity = isGameBanana
+                ? DownloadIdentity.GameBanana(item.Mod.ModId, fileId)
+                : DownloadIdentity.NexusMods(item.GameDomain ?? "unknown", item.Mod.ModId, fileId);
 
-            var totalBytes = response.Content.Headers.ContentLength ?? item.TotalBytes;
-            if (totalBytes > 0)
+            if (ResumableDownloader.GetPartialLength(outputPath) > 0)
+                StatusMessage = $"Resuming {item.DisplayName}...";
+
+            // NexusMods CDN links expire; allow the downloader to fetch a fresh one.
+            Func<CancellationToken, Task<string?>>? refreshUrl = null;
+            if (!isGameBanana && _nexusBackend != null && item.File != null)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => item.TotalBytes = totalBytes);
+                var nexus = _nexusBackend;
+                var modId = item.Mod.ModId;
+                var domain = item.GameDomain;
+                refreshUrl = token => nexus.ResolveDownloadUrlAsync(modId, fileId, domain, token);
             }
 
-            await using var contentStream = await response.Content.ReadAsStreamAsync(ct);
-            await using var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-
-            var buffer = new byte[81920];
-            long downloadedBytes = 0;
-            int bytesRead;
-            var lastProgressUpdate = DateTime.UtcNow;
-            var lastBytes = 0L;
-
-            while ((bytesRead = await contentStream.ReadAsync(buffer, ct)) > 0)
+            // Progress callback runs on the download thread; UI updates are posted.
+            var speedWindowStart = DateTime.UtcNow;
+            long? speedWindowBytes = null;
+            var progress = new SyncProgress<(long downloaded, long total)>(p =>
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-                downloadedBytes += bytesRead;
-
-                // Update progress every 100ms
                 var now = DateTime.UtcNow;
-                if ((now - lastProgressUpdate).TotalMilliseconds >= 100)
+                double? speed = null;
+                if (speedWindowBytes is not long windowBytes)
                 {
-                    var progress = totalBytes > 0 ? (downloadedBytes * 100.0 / totalBytes) : 0;
-                    var elapsed = (now - lastProgressUpdate).TotalSeconds;
-                    var speed = elapsed > 0 ? (downloadedBytes - lastBytes) / elapsed : 0;
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        item.Progress = progress;
-                        item.BytesDownloaded = downloadedBytes;
-                        item.SpeedBytesPerSecond = (long)speed;
-                    });
-
-                    lastProgressUpdate = now;
-                    lastBytes = downloadedBytes;
+                    speedWindowBytes = p.downloaded;
+                    speedWindowStart = now;
                 }
-            }
+                else if ((now - speedWindowStart).TotalSeconds >= 0.5)
+                {
+                    speed = Math.Max(0, (p.downloaded - windowBytes) / (now - speedWindowStart).TotalSeconds);
+                    speedWindowBytes = p.downloaded;
+                    speedWindowStart = now;
+                }
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    var total = p.total > 0 ? p.total : item.TotalBytes;
+                    item.BytesDownloaded = p.downloaded;
+                    if (total > 0)
+                    {
+                        item.TotalBytes = total;
+                        item.Progress = p.downloaded * 100.0 / total;
+                    }
+                    if (speed is double s)
+                        item.SpeedBytesPerSecond = s;
+                });
+            });
+
+            var result = await _downloader.DownloadAsync(
+                new ResumableDownloadRequest
+                {
+                    Url = url,
+                    DestinationPath = outputPath,
+                    Identity = identity,
+                    // GameBanana sizes are exact; NexusMods only provides size_kb.
+                    ExpectedSize = isGameBanana ? item.File?.SizeBytes : null,
+                    ExpectedMd5 = item.File?.Md5,
+                    VerifyMd5 = _settings?.VerifyDownloads ?? false,
+                    RefreshUrlAsync = refreshUrl
+                },
+                progress,
+                itemToken);
 
             // Final update
-            var finalSize = new FileInfo(outputPath).Length;
+            var finalSize = result.FileSize;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 item.State = DownloadItemState.Completed;
                 item.Progress = 100;
                 item.BytesDownloaded = finalSize;
                 item.TotalBytes = finalSize;
+                item.SpeedBytesPerSecond = 0;
                 item.EndTime = DateTime.UtcNow;
                 ActiveDownloads.Remove(item);
                 CompletedDownloads.Insert(0, item);
@@ -368,7 +407,9 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 QueuedCount = _pendingQueue.Count + ActiveDownloads.Count(d => d.State == DownloadItemState.Queued);
             });
 
-            StatusMessage = $"Downloaded {item.DisplayName} to {outputPath}";
+            StatusMessage = result.Resumed
+                ? $"Downloaded {item.DisplayName} to {outputPath} (resumed)"
+                : $"Downloaded {item.DisplayName} to {outputPath}";
 
             // Record success in history
             var duration = item.EndTime.HasValue
@@ -395,11 +436,12 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     FileId = recFileId,
                     Filename = item.File.FileName,
                     Filepath = outputPath,
-                    Url = url ?? "",
+                    Url = result.FinalUrl,
                     Md5Expected = item.File.Md5 ?? "",
+                    Md5Actual = result.Md5 ?? "",
                     FileSize = finalSize,
                     DownloadTime = DateTime.UtcNow,
-                    Status = DownloadStatus.Success
+                    Status = result.Md5Verified ? DownloadStatus.Verified : DownloadStatus.Success
                 };
                 _downloadDatabase.AddRecord(record);
                 _ = _downloadDatabase.SaveAsync();
@@ -411,11 +453,38 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 _domainsToReorganize.Add(item.GameDomain);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (item.RemoveRequested && !ct.IsCancellationRequested)
         {
+            // Removed by the user mid-transfer: drop the item, but keep the partial data so
+            // queueing the same file again resumes instead of starting over.
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 item.State = DownloadItemState.Cancelled;
+                item.SpeedBytesPerSecond = 0;
+                item.EndTime = DateTime.UtcNow;
+                ActiveDownloads.Remove(item);
+                QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
+            });
+            StatusMessage = $"Removed {item.DisplayName}";
+        }
+        catch (OperationCanceledException) when (item.PauseRequested && !ct.IsCancellationRequested)
+        {
+            // Paused by the user: partial data stays on disk; the queue moves on.
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                item.State = DownloadItemState.Paused;
+                item.SpeedBytesPerSecond = 0;
+                QueuedCount = _pendingQueue.Count + ActiveDownloads.Count(d => d.State == DownloadItemState.Queued);
+            });
+            StatusMessage = $"Paused {item.DisplayName}";
+        }
+        catch (OperationCanceledException)
+        {
+            // Partial data is kept, so a cancelled item can be resumed later.
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                item.State = DownloadItemState.Cancelled;
+                item.SpeedBytesPerSecond = 0;
                 item.EndTime = DateTime.UtcNow;
             });
             throw;
@@ -426,6 +495,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
             {
                 item.State = DownloadItemState.Failed;
                 item.ErrorMessage = ex.Message;
+                item.SpeedBytesPerSecond = 0;
                 item.EndTime = DateTime.UtcNow;
             });
             StatusMessage = $"Failed: {ex.Message}";
@@ -439,6 +509,65 @@ public partial class DownloadQueueViewModel : ViewModelBase
             _ = _historyService?.SaveAsync();
             UpdateHistoryStats();
         }
+        finally
+        {
+            item.ItemCts = null;
+        }
+    }
+
+    /// <summary>
+    /// Pauses a queued or downloading item. Downloaded bytes are kept for resuming.
+    /// </summary>
+    [RelayCommand]
+    private void PauseItem(DownloadItemModel? item)
+    {
+        if (item == null)
+            return;
+
+        if (item.State == DownloadItemState.Queued)
+        {
+            item.State = DownloadItemState.Paused;
+            QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
+            StatusMessage = $"Paused {item.DisplayName}";
+        }
+        else if (item.State == DownloadItemState.Downloading)
+        {
+            item.PauseRequested = true;
+            try
+            {
+                item.ItemCts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Transfer finished at the same moment.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resumes a paused, failed or cancelled item from its partial data.
+    /// </summary>
+    [RelayCommand]
+    private void ResumeItem(DownloadItemModel? item)
+    {
+        if (item == null || !item.CanResume)
+            return;
+
+        item.State = DownloadItemState.Queued;
+        item.ErrorMessage = null;
+        item.EndTime = null;
+        item.PauseRequested = false;
+        if (!ActiveDownloads.Contains(item))
+            ActiveDownloads.Add(item);
+
+        // A paused item may still be waiting in the queue; don't enqueue it twice.
+        if (!_pendingQueue.Contains(item))
+            _pendingQueue.Enqueue(item);
+        QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
+        StatusMessage = $"Resuming {item.DisplayName}...";
+
+        if (!IsDownloading)
+            _ = ProcessQueueAsync();
     }
 
     [RelayCommand]
@@ -474,15 +603,32 @@ public partial class DownloadQueueViewModel : ViewModelBase
     {
         if (item == null) return;
 
-        if (item.State == DownloadItemState.Completed || item.State == DownloadItemState.Failed)
+        if (CompletedDownloads.Remove(item))
         {
-            CompletedDownloads.Remove(item);
             CompletedCount = CompletedDownloads.Count;
         }
-        else if (item.State == DownloadItemState.Queued)
+        else if (item.State == DownloadItemState.Downloading)
         {
-            ActiveDownloads.Remove(item);
-            QueuedCount--;
+            // Cancel the transfer; the handler in DownloadItemAsync removes the item from the list.
+            item.RemoveRequested = true;
+            try
+            {
+                item.ItemCts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The transfer finished at the same moment, so remove the item directly.
+                ActiveDownloads.Remove(item);
+                QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
+            }
+        }
+        else if (ActiveDownloads.Remove(item))
+        {
+            // Mark removed queued items so the queue processor skips them.
+            // Any partial data stays on disk and is resumed if the file is queued again.
+            if (item.State == DownloadItemState.Queued)
+                item.State = DownloadItemState.Cancelled;
+            QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
         }
     }
 
