@@ -1,8 +1,12 @@
-# Modular: Game Modules + ordered staging/deployment pipeline (refined)
+# Modular: Game Modules + ordered staging/deployment pipeline (revision 3)
 
 > Revision 2 — refined with community install documentation for each supported
 > game type (see [Research findings](#research-findings) and [Sources](#sources)).
 > Changes from revision 1 are marked **[R2]**.
+>
+> Revision 3 — fixes four flaws found by checking revision 2 against the code
+> (changeset paths, snapshot restore, the pre-install conflict check, installer
+> backups) and adds a phased delivery order. Changes are marked **[R3]**.
 
 ## Problem
 
@@ -24,6 +28,10 @@ No new game support is added in this pass. The existing Cyberpunk 2077, FF7 Rema
 * Plugin installers are never registered into the `InstallerManager`.
 * `ModProfile.LoadOrder`, `ResolutionResult.InstallOrder` and `FileConflictIndex` are populated but never consumed.
 * **[R2]** `FF7RArchiveAnalyzer` routes `Engine.ini`/`Input.ini` to `<game>/Config/`. UE4 does not read user config from there. The real location is `Documents/My Games/FINAL FANTASY VII REMAKE/Saved/Config/WindowsNoEditor/`, so these mods currently install but have no effect. The `TargetRoot` design below fixes this.
+* **[R3]** `ModInstallationService.cs:177` stores `installResult.InstalledFiles` in the changeset, and `UninstallAsync` deletes exactly those paths. Once installs are redirected into staging, these paths point into `~/.config/Modular/staging/…`. A changeset-based uninstall would delete the staged copies and leave the deployed links in the game folder.
+* **[R3]** `SnapshotManager.RestoreSnapshotAsync` restores by diffing committed changesets, then calling `UninstallAsync` / `InstallAsync` once per mod. Under the new flow every install deploys, so a restore of N mods would purge and redeploy N times, and each intermediate deployment would be visible on disk.
+* **[R3]** Step 5 of `InstallAsync` (`ModInstallationService.cs:139`) registers a "conflict" whenever a destination already exists in the game folder. After deployment, every file Modular deployed exists there, so each reinstall or redeploy would report conflicts with itself.
+* **[R3]** The Cyberpunk, FF7R and HZD installers write `.modular.bak` backups, and LooseFile, BepInEx, UnrealPak and Steam write `.backup`, both next to their destination. With a staging target, the destination directory is empty, so this code never backs anything up. It must also not throw there.
 * **[R2]** `HZDModInstaller` scopes to AppID 1151640 (Complete Edition), which is correct. Nothing yet stops a *path*-detected Horizon Zero Dawn **Remastered** install (AppID 2561580) from being treated as HZD, and Remastered has a completely different mod layout (see below).
 
 ## Research findings
@@ -149,12 +157,15 @@ Steam sometimes resets launch options after updates, and a missing override is t
 
 * `StagingManager` gets real sessions backed by persistent `~/.config/Modular/staging/<gameKey>/<modId>/` directories. **[R2]** Each staged mod is laid out as `<rootName>/<relative path>` (`game/…`, `userconfig/…`), so non-game roots survive restaging.
 * Redirection is generic: the plan's `TargetDirectory` is rewritten to `stagingRoot/game/<relative(gameDir, plan.TargetDirectory)>`. That handles UnrealPak's absolute `~mods` target. Operations carrying a `TargetRoot` go to `stagingRoot/<TargetRoot>/…`.
+* **[R3]** Paths are normalised in one step, before anything else looks at them. Installers emit paths relative to `plan.TargetDirectory`. FF7R pak-only plans and UnrealPak set that to `…/Content/Paks/~mods`, so their raw routes are relative to `~mods`, not the game root. The stager prefixes `relative(gameDir, plan.TargetDirectory)` to produce `(root, pathRelativeToRoot)` pairs. `MapDeployPath`, `ValidateStaged`, `GetGeneratedPaths` matching and the planner only ever see these normalised pairs.
 * FOMOD's directory flattening is fixed. Staged files are recorded relative to their root.
+* **[R3]** Installer-level backups (`.modular.bak` / `.backup`) become intentionally inert under staging, because the target folder is always empty. Vanilla backups are owned solely by the `Deployer`. The installer code is left untouched this pass, with a follow-up to delete it once legacy direct installs are removed. A test runs every built-in installer against an empty staging target and asserts that it succeeds and creates no backup files.
 * **[R2]** `ValidateStaged` runs after staging. Errors abort the install before it registers or deploys, and warnings go into the install report.
 
 ### 5. Ordered deployment (`src/Modular.Core/Deployment/`)
 
-* New DB table (schema v5) `game_mod` with columns: game_key, mod_id, module_id, installer_id, staging_path, order_index, enabled, installed_at, **[R2]** source (`nexus`/`gamebanana`/`local`), source_file_id.
+* New DB table (schema v5) `game_mod` with columns: game_key, mod_id, module_id, installer_id, staging_path, order_index, enabled, installed_at, **[R2]** source (`nexus`/`gamebanana`/`local`), source_file_id, **[R3]** changeset_id.
+* **[R3]** The v4 → v5 migration also adds `managed_by` (`legacy` | `deployment`, default `legacy`) and `game_key` columns to the changeset table. Existing rows stay `legacy`.
 * Load order comes from, in priority order: `ModProfile.LoadOrder`, then the stored `order_index`, then install sequence. The rule "later wins" is documented as Modular's single user-facing rule.
 * `DeploymentPlanner`:
   * Applies `MapDeployPath` per file.
@@ -170,11 +181,23 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * **Completion.** Writes `staging/<gameKey>/deployment.json` (root, rel path, mod, identity, build id), then calls `WriteLoadOrderAsync`, **[R2]** then collects `GetLaunchRequirements` and runs permitted post-deploy actions.
   * **[R2]** Manifest files Modular writes (`modlist.txt`, later `plugins.txt`/`modsettings.lsx`) have their pre-existing version backed up and restored on full purge.
 * **[R2]** A generic proxy-DLL detector (`winmm`, `version`, `winhttp`, `dxgi`, `d3d11`, `dinput8`, `xinput1_3`, `dsound`) runs over deployed files next to a game executable. When the store is Steam on Linux, it adds a `WINEDLLOVERRIDES="<names>=n,b" %command%` hint to the report and to `modular deploy` output.
-* Legacy committed changesets keep working through the existing uninstall path, and restore now handles both backup suffixes.
+* **[R3] Changeset ownership:**
+  * A staged install still creates a changeset, for history and telemetry, but marks it `managed_by = deployment` with its `game_key`. Its operations JSON records staged paths relative to the staging root, labelled as such, so they are never mistaken for game paths.
+  * `UninstallAsync(changesetId)` branches on `managed_by`:
+    * `deployment`: remove the `game_mod` row, redeploy the game, then delete the staging folder. The staging folder is deleted only after the redeploy succeeds, so a failed deploy leaves a recoverable state.
+    * `legacy`: the existing path-deletion flow, which now also restores both backup suffixes.
+  * `uninstall --game <g> --mod <id>` and `uninstall <changesetId>` therefore end up in the same code for managed mods.
+* **[R3] Hardlink safety:** a deployed file shares its data with the staged copy, so any in-place write through the game path also modifies the staged file. No Modular code path may open a deployed path for writing. The legacy uninstall and snapshot code must either delete or replace-by-rename, never truncate or overwrite in place. Enforce this with a test that runs a legacy uninstall and a snapshot restore over a hardlinked deployment and asserts that the staged file is unchanged.
 
 ### 6. Service, CLI, and GUI wiring
 
 * `ModInstallationService.InstallAsync` runs: resolve game → module → select installer → stage → **validate** → register `game_mod` → deploy (unless `DryRun` or `--no-deploy`).
+* **[R3]** The step 5 pre-install conflict check is removed for staged installs. Overlaps between mods come from the `DeploymentPlanner`. For collisions with files Modular doesn't manage, the planner compares each target against `deployment.json`: an existing file that Modular did not deploy is reported as "will replace an unmanaged file (backed up)", not as a mod conflict. Legacy direct installs keep the old check.
+* **[R3] Snapshots:**
+  * Snapshots capture the `game_mod` state for the game: mod id, changeset id, order index, enabled, and a hash of the staging folder.
+  * Restore rewrites `game_mod` to that state in one transaction. Mods whose staging folder is missing are re-staged from their archive (`--no-deploy`), and mods not in the snapshot are removed. Then exactly **one** deploy runs.
+  * Legacy changesets in the snapshot keep the current changeset-diff restore.
+  * The auto-snapshot moves from after install to **after a successful deploy**, so `install --no-deploy` never takes one.
 * CLI:
   * `install` gains `--no-deploy`.
   * New `deploy --game <g> [--profile <json>]`, `order list|set --game <g>`, `modules list`.
@@ -198,11 +221,43 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * HZD: the prefix mapping is off by default. The Prefetch conflict produces a warning.
   * Deployer: an atomically replaced file (inode changed) ends up in `_overwrite/` and is not deleted. Generated paths survive purge. A `buildid` change skips the stale-backup restore.
   * The proxy-DLL detector emits `winmm,version=n,b` for a RED4ext-shaped deployment when the store is Steam+Linux.
+* **[R3]** Regression tests for the four flaws:
+  * **Uninstall:** a staged install followed by `uninstall <changesetId>` removes the deployed link from the game folder, restores the vanilla file, and only then deletes staging. A simulated deploy failure leaves staging intact.
+  * **Legacy changesets:** a legacy changeset (v4 row) still uninstalls through the old path and restores both `.backup` and `.modular.bak`.
+  * **Snapshot restore:** restoring a 3-mod snapshot over a different 2-mod state calls the deployer exactly once (counted via a fake), and the final files match the snapshot order. An install with `--no-deploy` takes no auto-snapshot.
+  * **Conflict check:** redeploying an unchanged set reports zero conflicts. A pre-existing unmanaged file is reported as "replaces unmanaged file" and is backed up.
+  * **Installer backups:** every built-in installer succeeds against an empty staging target and writes no backup files.
+  * **Hardlink safety:** a legacy uninstall or snapshot restore over a hardlinked deployment leaves the staged bytes unchanged.
+  * **Paths:** an FF7R pak-only zip and an UnrealPak zip produce `game/End/Content/Paks/~mods/…` normalised paths before `MapDeployPath` runs.
 * Fix up the existing `InstallerGameScopingTests` as needed.
 * `make build` (warnings are errors) and `make test`.
 * CLI smoke test against a temp fake game dir:
   * Install two overlapping archives, run `order set`, `deploy` and `uninstall`, and check file contents and link counts at each step.
   * **[R2]** Check the `modlist.txt` contents for a Cyberpunk-shaped fake dir.
+
+## Delivery phases **[R3]**
+
+Each phase builds and passes `make test` on its own and can merge independently.
+
+1. **Game resolution and modules.**
+   * SDK contracts, `GameModuleRegistry`, built-in modules (detection plus installers only; hooks stay default no-ops).
+   * `GameInstallationResolver` with its DB upserts.
+   * Passing the game id into `SelectInstallerAsync`.
+   * This alone fixes the missing-gameId scoping bug and makes auto-snapshots fire.
+2. **Staging.**
+   * `StagingManager` sessions, path normalisation, the FOMOD fix, and the `managed_by` changeset split with the v5 migration.
+   * The step 5 change, the installer-backup test, and the hardlink-safety rule.
+   * Installs are staged *and* copied straight into the game folder (a temporary single-mod deploy), so behaviour is unchanged for users until phase 3.
+3. **Ordered deployment.**
+   * `game_mod`, `DeploymentPlanner`, `Deployer`/`IFileLinker`, `deployment.json` and `_overwrite/`.
+   * Build-id-aware backups, and the new uninstall branch.
+   * Snapshot capture/restore of `game_mod` with a single deploy.
+   * CLI commands `deploy`, `order`, `modules` and `uninstall --game/--mod`, plus the GUI `GameId` wiring.
+4. **Per-game hooks.**
+   * Cyberpunk `modlist.txt`, REDmod launch requirements and validation.
+   * FF7R `userconfig` root and pak prefixing.
+   * HZD Remastered exclusion and the Prefetch warning.
+   * Generated paths and the proxy-DLL / `WINEDLLOVERRIDES` detector.
 
 ## Out of scope
 
