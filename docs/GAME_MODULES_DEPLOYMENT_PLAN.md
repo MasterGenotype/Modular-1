@@ -1,4 +1,4 @@
-# Modular: Game Modules + ordered staging/deployment pipeline (revision 3)
+# Modular: Game Modules + ordered staging/deployment pipeline (revision 3.1)
 
 > Revision 2 — refined with community install documentation for each supported
 > game type (see [Research findings](#research-findings) and [Sources](#sources)).
@@ -7,6 +7,8 @@
 > Revision 3 — fixes four flaws found by checking revision 2 against the code
 > (changeset paths, snapshot restore, the pre-install conflict check, installer
 > backups) and adds a phased delivery order. Changes are marked **[R3]**.
+> Revision 3.1 adds a choice of deployment method (hardlink, symbolic link or
+> copy). It is described in §5a and also marked **[R3]**.
 
 ## Problem
 
@@ -173,11 +175,11 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * **[R2]** Skips `GetGeneratedPaths()` matches for conflicts.
   * **[R2]** Compares against engine-level conflicts it can see cheaply (same archive/pak basename in the same folder after mapping) and notes them in the report.
 * `Deployer`:
-  * **Purge.** Removes only files whose recorded identity (inode + size + mtime, or a hash for copies) still matches `deployment.json`, and restores the vanilla originals.
+  * **Purge.** Removes only files whose recorded identity still matches `deployment.json`, and restores the vanilla originals. How identity is recorded depends on the deployment method (§5a).
     * **[R2]** A deployed file whose identity changed was edited in place or had its link broken by an atomic save. It is **moved into `staging/<gameKey>/_overwrite/<root>/…`** instead of being deleted, and reported, so user edits are never lost.
     * **[R2]** Files under generated paths are left alone.
   * **Vanilla backup.** Vanilla files are backed up once to `~/.config/Modular/backups/<gameKey>/<buildId>/`. **[R2]** If the game's `buildid` changed since the last deployment, the old backups are stale: purge does *not* restore them over updated game files. The current files are re-snapshotted, and the user gets a warning to verify game files.
-  * **Linking.** Staged files are hardlinked into each resolved root, falling back to copy on cross-device or permission errors. `IFileLinker` wraps libc `link()` on Unix and `CreateHardLinkW` on Windows. **[R2]** Roots in the Proton prefix are usually on the same device as the library, so hardlinks work there. Documents folders on Windows can be OneDrive-redirected, and copy fallback covers that case.
+  * **Placing files.** Staged files are placed into each resolved root using the configured deployment method (§5a), which defaults to hardlink. **[R2]** Roots in the Proton prefix are usually on the same device as the library, so hardlinks work there. Documents folders on Windows can be OneDrive-redirected, and the fallback covers that case.
   * **Completion.** Writes `staging/<gameKey>/deployment.json` (root, rel path, mod, identity, build id), then calls `WriteLoadOrderAsync`, **[R2]** then collects `GetLaunchRequirements` and runs permitted post-deploy actions.
   * **[R2]** Manifest files Modular writes (`modlist.txt`, later `plugins.txt`/`modsettings.lsx`) have their pre-existing version backed up and restored on full purge.
 * **[R2]** A generic proxy-DLL detector (`winmm`, `version`, `winhttp`, `dxgi`, `d3d11`, `dinput8`, `xinput1_3`, `dsound`) runs over deployed files next to a game executable. When the store is Steam on Linux, it adds a `WINEDLLOVERRIDES="<names>=n,b" %command%` hint to the report and to `modular deploy` output.
@@ -187,7 +189,42 @@ Steam sometimes resets launch options after updates, and a missing override is t
     * `deployment`: remove the `game_mod` row, redeploy the game, then delete the staging folder. The staging folder is deleted only after the redeploy succeeds, so a failed deploy leaves a recoverable state.
     * `legacy`: the existing path-deletion flow, which now also restores both backup suffixes.
   * `uninstall --game <g> --mod <id>` and `uninstall <changesetId>` therefore end up in the same code for managed mods.
-* **[R3] Hardlink safety:** a deployed file shares its data with the staged copy, so any in-place write through the game path also modifies the staged file. No Modular code path may open a deployed path for writing. The legacy uninstall and snapshot code must either delete or replace-by-rename, never truncate or overwrite in place. Enforce this with a test that runs a legacy uninstall and a snapshot restore over a hardlinked deployment and asserts that the staged file is unchanged.
+* **[R3] Link safety (hardlink and symlink methods):** a deployed file shares its data with the staged copy, so any in-place write through the game path also modifies the staged file. For a symlink, even deleting the target through a tool that follows links would destroy the staged copy. No Modular code path may open a deployed path for writing or follow a link when deleting. The legacy uninstall and snapshot code must either delete the link itself or replace it by rename, never truncate or overwrite in place. Enforce this with tests that run a legacy uninstall and a snapshot restore over hardlinked and symlinked deployments and assert that the staged file is unchanged.
+
+### 5a. Deployment method: hardlink, symbolic link or copy **[R3]**
+
+The deployer places files through an `IDeploymentStrategy` with three implementations. The user picks one; the planner, purge, `deployment.json` and `_overwrite/` logic are shared.
+
+| | **Hardlink** (default) | **Symbolic link** | **Copy** |
+|---|---|---|---|
+| Disk use | None extra | None extra | Full second copy of every deployed file |
+| Deploy speed | Fast | Fast | Slow for large mods (GB-scale pak/archive mods) |
+| Staging and game dir on different drives | ✗ fails, falls back | ✓ works | ✓ works |
+| Windows requirements | NTFS, same volume | Developer Mode or admin (`SeCreateSymbolicLinkPrivilege`) | None |
+| Linux / Proton | Same filesystem | Works; Wine follows host symlinks | Works everywhere |
+| Visible as "modded" in a file manager | No | Yes (link arrow, `ls -l` shows target) | No |
+| In-place edit through the game path | Changes the staged copy too | Changes the staged copy too | Staged copy untouched |
+| Atomic save (temp + rename) by an editor/tool | Link silently replaced by a regular file | Link replaced by a regular file | File replaced (same as any edit) |
+| Game/tool that rejects or re-resolves links | Not affected (indistinguishable from a normal file) | **Can break**: some games, anti-cheat and launchers canonicalize paths or refuse reparse points | Not affected |
+| Steam "Verify integrity" on an overridden vanilla file | Replaces our link with vanilla; staged copy safe | May write *through* the link, overwriting the staged file if Steam opens in place; treat as a known risk | Replaces our file with vanilla |
+| Staging folder deleted or moved | Game keeps working (data still referenced) | **Dangling links**: game sees missing files | Game keeps working |
+
+**Implementation per method:**
+* **Hardlink:** `link()` via P/Invoke on Unix and `CreateHardLinkW` on Windows (.NET 8 has no managed API). Identity recorded as device + inode + size + mtime. Drift means the inode changed (atomic save) or size/mtime changed (in-place edit).
+* **Symbolic link:** the managed `File.CreateSymbolicLink` (available since .NET 6). On Windows, the Developer Mode check runs first so the failure message is actionable. Links use **absolute** targets, because relative targets break when roots live in different trees (the Proton `documents` root vs. the game dir). Identity recorded as "is a symlink" + target path, checked with `lstat` / `FileSystemInfo.LinkTarget` without following the link. Drift means the path is no longer a link or points elsewhere. Purge deletes the link itself, never the target.
+* **Copy:** a plain file copy that preserves mtime. Identity recorded as size + mtime + content hash (xxHash64, computed while copying). Drift means the hash differs. Redeploy is **incremental**: a file whose target already matches the recorded hash and whose staged source is unchanged is left in place, so reordering a large mod list only rewrites files whose winner changed.
+
+**Choosing and falling back:**
+* Configuration, in order of precedence: `deploy --method hardlink|symlink|copy` for one run, then a per-game setting (`modular order` stores it alongside `game_mod` in a new `game_deploy_settings` row), then `deployment.method` in `config.json`, then the default `hardlink`.
+* The fallback is configurable per method: `deployment.fallback = copy | fail` (default `copy`). Hardlink falls back when the error is cross-device (`EXDEV` / `ERROR_NOT_SAME_DEVICE`) or permission denied. Symlink falls back when the error is missing privilege (`ERROR_PRIVILEGE_NOT_HELD`) or the filesystem doesn't support symlinks (FAT/exFAT SD cards, some network shares). Copy has no fallback. Each fallback is recorded per file in `deployment.json` (`"method": "copy", "requested": "hardlink"`) and summarised in the deploy report, so mixed deployments are visible and purge uses the right identity check for each file.
+* **Pre-flight probe:** before a deploy, the deployer tries the chosen method once per resolved root with a temp file and cleans up. When it fails, the report names the root (for example "`documents` is on a different drive; those files will be copied") before any game file is touched.
+* **Changing method** for a game forces a full purge, then a fresh deploy, because identity records aren't comparable across methods.
+* **[R3] Module constraints:** an optional `IGameModule.GetDeployConstraints()` hook (default: none) lets a module force `copy` for path globs where links are known to cause trouble, or mark `symlink` as unsupported for the whole game. No built-in module sets any constraint this pass: none has a verified link problem. The hook exists so a future anti-cheat-protected or path-canonicalizing game can opt out without core changes. Constraints override the user's choice file by file and are listed in the report.
+
+**Recommendation to document for users:**
+* **Hardlink:** the best default when staging and the game share a drive.
+* **Symlink:** when they can't share a drive and disk space matters. Needs Developer Mode on Windows.
+* **Copy:** for maximum compatibility, for games or tools that misbehave with links, or when the staging folder may be moved or deleted.
 
 ### 6. Service, CLI, and GUI wiring
 
@@ -200,7 +237,8 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * The auto-snapshot moves from after install to **after a successful deploy**, so `install --no-deploy` never takes one.
 * CLI:
   * `install` gains `--no-deploy`.
-  * New `deploy --game <g> [--profile <json>]`, `order list|set --game <g>`, `modules list`.
+  * New `deploy --game <g> [--profile <json>] [--method hardlink|symlink|copy]`, `order list|set --game <g>`, `modules list`.
+  * **[R3]** `config set deployment.method <m>` / `deployment.fallback <copy|fail>`, and `deploy --game <g> --method <m> --save` to persist a per-game method. `modular detect` prints which methods the pre-flight probe says will work for each resolved root.
   * `uninstall` gains `--game <g> --mod <id>`.
   * **[R2]** `deploy` and `install` print a "Launch requirements" panel: launch args, `WINEDLLOVERRIDES`, and pending tool actions such as REDmod deploy.
   * **[R2]** `order list` shows the effective engine order next to Modular's order (for example the reversed `modlist.txt` for Cyberpunk), so the translation is visible.
@@ -215,6 +253,13 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * Staging redirection for a Cyberpunk-shaped zip and an UnrealPak zip.
   * Planner last-writer-wins and conflict reporting.
   * Deployer: same inode for hardlinks, copy fallback via a fake linker, purge restores originals, redeploy after reorder flips the winning file.
+  * **[R3]** Deployment methods (the purge/redeploy/reorder tests run once per method as an xunit theory):
+    * **Symlink:** the link points at the absolute staged path. Purge deletes the link and leaves the staged file. A link replaced by a regular file (simulated atomic save) goes to `_overwrite/`. Symlink tests skip on Windows runners without the privilege.
+    * **Copy:** an in-place edit is detected by hash and moved to `_overwrite/`. An incremental redeploy after a reorder rewrites only the files whose winner changed (asserted via a counting fake file system).
+    * **Fallback:** a fake strategy throwing a cross-device error falls back to copy under `fallback = copy`, and aborts before touching the game dir under `fail`. `deployment.json` records per-file `method` / `requested`.
+    * **Pre-flight:** a failing probe for one root is reported before any file is placed.
+    * **Method change:** switching hardlink → copy triggers a full purge and redeploy, and no hardlinks remain (link count 1).
+    * **Module constraints:** a test-only module forcing `copy` for `*.dll` gets copies for DLLs and links for everything else.
 * **[R2]** Module-level tests:
   * Cyberpunk: `modlist.txt` is written in reverse Modular order and includes unmanaged archives. A nested `archive/pc/mod/sub/x.archive` is flagged. REDmod launch requirements include `-modded` and ordered `-mod=` args.
   * FF7R: `Config/Engine.ini` lands in the Proton `documents` root. Paks become `000_a_P.pak`, `001_b_P.pak`, and a reorder swaps the prefixes. `.utoc`/`.ucas` siblings are renamed with their pak. A non-`_P` pak gets a warning.
@@ -227,7 +272,7 @@ Steam sometimes resets launch options after updates, and a missing override is t
   * **Snapshot restore:** restoring a 3-mod snapshot over a different 2-mod state calls the deployer exactly once (counted via a fake), and the final files match the snapshot order. An install with `--no-deploy` takes no auto-snapshot.
   * **Conflict check:** redeploying an unchanged set reports zero conflicts. A pre-existing unmanaged file is reported as "replaces unmanaged file" and is backed up.
   * **Installer backups:** every built-in installer succeeds against an empty staging target and writes no backup files.
-  * **Hardlink safety:** a legacy uninstall or snapshot restore over a hardlinked deployment leaves the staged bytes unchanged.
+  * **Link safety:** a legacy uninstall or snapshot restore over a hardlinked *or symlinked* deployment leaves the staged bytes unchanged.
   * **Paths:** an FF7R pak-only zip and an UnrealPak zip produce `game/End/Content/Paks/~mods/…` normalised paths before `MapDeployPath` runs.
 * Fix up the existing `InstallerGameScopingTests` as needed.
 * `make build` (warnings are errors) and `make test`.
@@ -246,10 +291,11 @@ Each phase builds and passes `make test` on its own and can merge independently.
    * This alone fixes the missing-gameId scoping bug and makes auto-snapshots fire.
 2. **Staging.**
    * `StagingManager` sessions, path normalisation, the FOMOD fix, and the `managed_by` changeset split with the v5 migration.
-   * The step 5 change, the installer-backup test, and the hardlink-safety rule.
+   * The step 5 change, the installer-backup test, and the link-safety rule.
    * Installs are staged *and* copied straight into the game folder (a temporary single-mod deploy), so behaviour is unchanged for users until phase 3.
 3. **Ordered deployment.**
-   * `game_mod`, `DeploymentPlanner`, `Deployer`/`IFileLinker`, `deployment.json` and `_overwrite/`.
+   * `game_mod`, `DeploymentPlanner`, `Deployer`, `deployment.json` and `_overwrite/`.
+   * `IDeploymentStrategy` with hardlink, symlink and copy, plus the fallback, pre-flight probe, per-game method setting and `--method`. The constraints hook is added as a no-op.
    * Build-id-aware backups, and the new uninstall branch.
    * Snapshot capture/restore of `game_mod` with a single deploy.
    * CLI commands `deploy`, `order`, `modules` and `uninstall --game/--mod`, plus the GUI `GameId` wiring.
