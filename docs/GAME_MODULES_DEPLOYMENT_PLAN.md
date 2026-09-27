@@ -1,4 +1,4 @@
-# Modular: Game Modules + ordered staging/deployment pipeline (revision 3.1)
+# Modular: Game Modules + ordered staging/deployment pipeline (revision 4)
 
 > Revision 2 — refined with community install documentation for each supported
 > game type (see [Research findings](#research-findings) and [Sources](#sources)).
@@ -9,6 +9,13 @@
 > backups) and adds a phased delivery order. Changes are marked **[R3]**.
 > Revision 3.1 adds a choice of deployment method (hardlink, symbolic link or
 > copy). It is described in §5a and also marked **[R3]**.
+>
+> Revision 4 folds in an external cross-check of install targets against Nexus
+> Mods pages. It makes the destination a property of the **detected package
+> type**, not just the game (§2a), adds anchors so FF7 Remake never matches
+> FF7 Rebirth, protects "load-last" framework paks from order-prefixing, and
+> records verified route tables for the BG3 and FF7 Rebirth modules that are
+> still out of scope. Changes are marked **[R4]**.
 
 ## Problem
 
@@ -135,9 +142,10 @@ Steam sometimes resets launch options after updates, and a missing override is t
     * Generated paths: `r6/cache/**`, CET `mods/*/db.sqlite3`, `*.log`.
     * On Proton, RED4ext/CET loaders produce the override `winmm,version=n,b`.
   * **`FF7RemakeGameModule`**
-    * Anchors: `End/Binaries/Win64/ff7remake_.exe` and `End/Content/Paks`.
+    * Anchors: `End/Binaries/Win64/ff7remake_.exe` and `End/Content/Paks`. **[R4]** `End/Content/Paks` alone is **not** sufficient. FF7 Rebirth (AppID 2909400) shares the `End/` layout but has a different mod ecosystem (IoStore bundles, Reunion's `End/Mods`). Detection requires the Remake executable and rejects directories containing the Rebirth executable, so Rebirth falls through to `GenericGameModule` until it has its own module.
     * Adds a `userconfig` root at `documents/My Games/FINAL FANTASY VII REMAKE/Saved/Config/WindowsNoEditor`. `MapDeployPath` routes the analyzer's `Config/*.ini` routes there, which fixes the dead `Config/` bug without touching the analyzer.
     * **Pak order-prefixing moves in scope.** The research confirms that UE mounts alphabetically and the last mount wins, which matches Modular's rule. For paks under `~mods/`, `MapDeployPath` renames `<name>.pak` to `<NNN>_<name>.pak`, where NNN is the zero-padded order index. The `_P` suffix is kept, and `.utoc`/`.ucas`/`.sig` siblings sharing the stem are renamed together.
+    * **[R4] Load-last framework paks are exempt.** Loader paks rely on their own names to sort last (for example Rebirth's `ZGameInstanceLoader.pak`). Prefixing would move them into the ordered band and could break the loader. Modules declare these with a `PinnedLast` glob list: pinned paks keep their names and deploy after all numbered paks. The FF7 Remake list starts empty, the mechanism is generic, and a warning is emitted for any unprefixed `Z*`/`zz*` pak so the user can pin it.
     * `ValidateStaged` warns about a pak without the `_P` suffix and a pak outside `~mods`, and notes that 3DMigoto and DXVK require DX11.
     * On Proton, hooks produce overrides (`dxgi`, `xinput1_3`, `dinput8`, `d3d11` as present, `=n,b`).
   * **`HorizonZeroDawnGameModule`** (Complete Edition only, AppID 1151640)
@@ -146,6 +154,24 @@ Steam sometimes resets launch options after updates, and a missing override is t
     * `Patch_zzzzPrefetch.bin` is special-cased: the last writer still wins, but the conflict is reported as a warning ("regenerate prefetch").
   * **`GenericGameModule`**: fallback. The game root is the install dir, universal installers only, identity mapping. On Proton, proxy DLLs deployed next to any `.exe` produce override hints (see §5).
 * `InstallerManager.SelectInstallerAsync` builds its candidates from the resolved module's installers, the universal installers and the plugin installers. `ModInstallationService` passes the resolved game through, which fixes the missing-gameId bug.
+
+### 2a. Destination = game × package type **[R4]**
+
+A game module selects the *detector set*. The detected **package type** selects the destination. One game routinely needs several destinations:
+* FF7 Rebirth sends ordinary paks to `End/Content/Paks/~mods` and Reunion/Dresscode plugins to `End/Mods/<mod>`.
+* BG3 sends ordinary paks to AppData `Mods`, and Script Extender to `<game>/bin`.
+
+Routing is therefore resolved per file, in this order of precedence:
+
+1. **Declared structure.** When archive paths already start at a recognised game-relative root, the tree is deployed as-is from that root and never rearranged. For Cyberpunk those roots are `archive/`, `bin/`, `r6/`, `red4ext/`, `engine/`, `mods/`. Nexus authors for Cyberpunk, CET and RED4ext all say "extract into the game root". Any wrapper folder is stripped, which the analyzers' existing `StrippedPrefix` already does.
+2. **Package metadata.** Author- or loader-provided manifests outrank heuristics: REDmod `info.json`, FOMOD `ModuleConfig.xml`, and loader manifests such as Reunion plugin descriptors or BG3 native-loader configs. A `*.dll` alone never implies a destination, because in BG3 the required loader decides between `bin`, `bin/NativeMods` and AppData `Plugins`.
+3. **Loose-file fallback.** Extension rules apply only to files not placed by rule 1 or 2. For Cyberpunk: `*.archive`/`*.xl` go to `archive/pc/mod/`, `*.reds` to `r6/scripts/<mod>/`, TweakXL `*.yaml` to `r6/tweaks/<mod>/`, a folder with `init.lua` to `bin/x64/plugins/cyber_engine_tweaks/mods/<mod>/`, a RED4ext plugin DLL folder to `red4ext/plugins/<plugin>/`, and a folder with `info.json` to `mods/<mod>/`.
+
+**Contract changes:**
+* `FileOperation` gains `PackageType` (a string id such as `cp77.legacy_archive`, `ue.pak_bundle`, `bg3.pak`) and a `RouteSource` (`Declared` | `Metadata` | `Heuristic`). Together with `TargetRoot` these are recorded in the staged manifest and shown by `install --dry-run`, so a mis-route can be traced to the rule that caused it.
+* `IGameModule.GetPackageRoutes()` (default: empty) returns a declarative table of `PackageRoute(PackageType, Root, SubPath, Layout)`, where `Layout` is `Preserve` | `FlatFiles` | `FolderPerMod`. Future modules can then route by data through a generic table-driven installer, with no bespoke analyzer. The three existing modules keep their analyzers. Their `FileRoutes` already follow rules 1 → 3: `CyberpunkArchiveAnalyzer` anchors on `r6/scripts/`, `archive/pc/mod/` and `r6/tweaks/` before falling back to extension routing. They only need to label each route with its `PackageType` / `RouteSource`.
+* **Root tokens:** routes use `$GAME`, `$LOCALAPPDATA`, `$DOCUMENTS` and module-defined roots (such as `$USERCONFIG`). The resolver translates these, through the Proton prefix on Linux. A module never contains a Steam-library or prefix path.
+* **No invented folders:** `FlatFiles` layouts (BG3 `Mods/*.pak`, Cyberpunk `archive/pc/mod/*.archive`) must not get a `<modname>/` subfolder. `ValidateStaged` flags any extra folder level for these package types.
 
 ### 3. Game detection and target paths (`src/Modular.Core/GameDetection/GameInstallationResolver.cs`)
 
@@ -248,6 +274,14 @@ The deployer places files through an `IDeploymentStrategy` with three implementa
 
 * New xunit tests:
   * Registry resolution (slug / AppID / **[R2]** GameBanana id / path).
+  * **[R4]** Package-type routing:
+    * A structured Cyberpunk zip (`Wrapper/archive/…`, `Wrapper/bin/…`, `Wrapper/r6/…`, `Wrapper/red4ext/…`) deploys with its tree unchanged apart from the stripped wrapper, and every route is labelled `Declared`.
+    * A lone `.archive`, a lone `.reds`, a lone TweakXL `.yaml` and a bare CET folder with `init.lua` route to their fallback folders, labelled `Heuristic`.
+    * A REDmod folder with `info.json` routes to `mods/<mod>/`, labelled `Metadata`.
+    * A Rebirth-shaped directory does **not** match `FF7RemakeGameModule`.
+    * A `PinnedLast` pak keeps its name and sorts after every numbered pak.
+    * A test module using `GetPackageRoutes()` with `FlatFiles` rejects an invented `<modname>/` level.
+    * `$LOCALAPPDATA` resolves inside the Proton prefix on Linux and to `%LOCALAPPDATA%` on Windows.
   * Resolver with a fake Steam root (appmanifest with `buildid` + compatdata + walk-up from `bin/x64` and `End/Binaries/Win64`).
   * **[R2]** HZD Remastered-shaped directory does *not* match the HZD module.
   * Staging redirection for a Cyberpunk-shaped zip and an UnrealPak zip.
@@ -301,13 +335,35 @@ Each phase builds and passes `make test` on its own and can merge independently.
    * CLI commands `deploy`, `order`, `modules` and `uninstall --game/--mod`, plus the GUI `GameId` wiring.
 4. **Per-game hooks.**
    * Cyberpunk `modlist.txt`, REDmod launch requirements and validation.
-   * FF7R `userconfig` root and pak prefixing.
+   * FF7R `userconfig` root and pak prefixing, **[R4]** with the `PinnedLast` exemption and the Rebirth-rejecting anchor.
+   * **[R4]** `PackageType` / `RouteSource` labels on the three existing analyzers' routes, root tokens, the `GetPackageRoutes()` hook (empty for built-ins), and the `FlatFiles` extra-folder check.
    * HZD Remastered exclusion and the Prefetch warning.
    * Generated paths and the proxy-DLL / `WINEDLLOVERRIDES` detector.
 
+## Verified routes for future modules **[R4]**
+
+Recorded here so the SDK shape (§2a) is known to cover them. Both modules remain **out of scope** for this pass.
+
+**Baldur's Gate 3** (AppID 1086940). Load order lives in `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx`, written by `WriteLoadOrderAsync`.
+
+| Package type | Destination | Layout |
+|---|---|---|
+| `bg3.pak` (ordinary mod) | `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/Mods/` | `FlatFiles` (the `.pak` itself, no subfolder) |
+| `bg3.script_extender` (`DWrite.dll`) | `$GAME/bin/` | `Preserve` |
+| `bg3.native_loader` (Native Mod Loader) | `$GAME/bin/` | `Preserve` |
+| `bg3.native_mod` | `$GAME/bin/NativeMods/` **or** `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/Plugins/`, depending on the installed loader | Metadata-driven only, never inferred from `*.dll` |
+
+**FF7 Rebirth** (AppID 2909400):
+
+| Package type | Destination | Layout |
+|---|---|---|
+| `ue.pak_bundle` (`.pak` + `.ucas` + `.utoc`) | `$GAME/End/Content/Paks/~mods/` | `FlatFiles`; the trio is renamed together if order-prefixed |
+| `ff7rb.reunion_plugin` (Reunion / Dresscode and dependents) | `$GAME/End/Mods/<mod>/` | `FolderPerMod` |
+| `ff7rb.gameinstance_loader` (`ZGameInstanceLoader.pak`) | `$GAME/End/Content/Paks/~mods/` | `PinnedLast` |
+
 ## Out of scope
 
-* New game modules: UE generic, Bethesda (`plugins.txt`), BG3 (`modsettings.lsx`), HZD Remastered, BepInEx/MelonLoader as modules, Reloaded-II/GameBanana loader-managed games. **[R2]** The SDK roots (`localappdata`, `documents`), `TargetRoot` and `WriteLoadOrderAsync` are shaped to support these without contract changes.
+* New game modules: UE generic, Bethesda (`plugins.txt`), BG3 (`modsettings.lsx`; routes above), **[R4]** FF7 Rebirth (routes above), HZD Remastered, BepInEx/MelonLoader as modules, Reloaded-II/GameBanana loader-managed games. **[R2]** The SDK roots (`localappdata`, `documents`), `TargetRoot` and `WriteLoadOrderAsync` are shaped to support these without contract changes.
 * GUI load-order editor.
 * **[R2]** Running `redMod.exe` under Proton, and editing Steam launch options automatically. Both are reported, not automated.
 * **[R2]** GameBanana 1-Click (`/mmdl/{fileId}`) protocol handling (only the file id is stored now).
@@ -319,5 +375,7 @@ Each phase builds and passes `make test` on its own and can merge independently.
 * Unreal / FF7R: [Pak patching (UE modding guide)](https://buckminsterfullerene02.github.io/dev-guide/Basis/PakPatching.html), [How to install mods, FF7R Nexus](https://www.nexusmods.com/finalfantasy7remake/videos/299), [Aggressive Companions (Nexus, `_P` priority notes)](https://www.nexusmods.com/finalfantasy7remake/mods/418?tab=posts), [Item Level Gaming FF7R guide](https://itemlevel.net/how-to-install-mods-in-final-fantasy-7-remake-intergrade/)
 * Horizon Zero Dawn: [Better Quality Drops (Nexus, load order notes)](https://www.nexusmods.com/horizonzerodawn/mods/115?tab=posts), [Enhanced Focus (Nexus)](https://www.nexusmods.com/horizonzerodawn/mods/192?tab=posts), [Steam discussion on Packed_DX12](https://steamcommunity.com/app/1151640/discussions/0/3416556480585850033), [HZD Remastered Gameplay Tweaks (Nexus)](https://www.nexusmods.com/horizonzerodawnremastered/mods/19), [HZD Remastered Vortex extension](https://www.nexusmods.com/site/mods/1077)
 * Proton loaders: [BepInEx under Proton/Wine](https://docs.bepinex.dev/articles/advanced/proton_wine.html)
+* **[R4]** FF7 Rebirth: [Reunion Mod Loader (Nexus)](https://www.nexusmods.com/finalfantasy7rebirth/mods/1061?tab=posts), [Dresscode (Nexus)](https://www.nexusmods.com/finalfantasy7rebirth/mods/1062)
+* **[R4]** BG3 loaders: [BG3 Script Extender (Nexus)](https://www.nexusmods.com/baldursgate3/mods/2172), [Installing Script Extender (BG3 community wiki)](https://wiki.bg3.community/en/Tutorials/Mod-Use/How-to-install-Script-Extender), [Native Mod Loader (Nexus)](https://www.nexusmods.com/baldursgate3/mods/944)
 * Future modules: [BG3 mod types (community wiki)](https://wiki.bg3.community/en/Tutorials/Mod-Use/BG3-Mod-Types-and-how-to-install-them), [bg3.wiki Installing mods](https://bg3.wiki/wiki/Modding:Installing_mods), [Skyrim SE plugins.txt under Proton (Vortex on Linux gist)](https://gist.github.com/jameshibbard/62f039b6c8e9db4c9ef8e915a1b12f28)
 * GameBanana: [Reloaded-II FAQ](https://reloaded-project.github.io/Reloaded-II/FAQ/), [1-Click Mod Installers wiki](https://gamebanana.com/wikis/1999), [Granblue Relink installing mods](https://nenkai.github.io/relink-modding/modding/installing_mods/)
