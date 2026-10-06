@@ -89,9 +89,15 @@ public class FluentRequest : IRequest
     // Async execution
     public async Task<IResponse> AsResponseAsync()
     {
+        // Request filters run before the URL, headers and auth are captured, so changes they make
+        // (e.g. AuthenticationFilter adding a header) apply to the first attempt.
+        var filters = _client.Filters.GetOrdered().Concat(_filters).ToList();
+        foreach (var filter in filters)
+            filter.OnRequest(this);
+
         var url = BuildUrl();
-        var response = await _client.ExecuteAsync(this, url, _method, _headers, _body, _options, _retryConfig,
-            _authScheme, _authParameter, _filters, _cancellationToken);
+        var response = await _client.ExecuteAsync(url, _method, _headers, _body, _options, _retryConfig,
+            _authScheme, _authParameter, filters, _cancellationToken);
         return response;
     }
 

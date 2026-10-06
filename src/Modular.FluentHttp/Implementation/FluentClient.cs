@@ -88,9 +88,23 @@ public class FluentClient : IFluentClient
     public IFluentClient SetTimeout(TimeSpan timeout) { _httpClient.Timeout = timeout; return this; }
     public IFluentClient SetLogger(ILogger? logger) { _logger = logger; return this; }
 
-    internal async Task<IResponse> ExecuteAsync(FluentRequest request, string url, HttpMethod method,
+    internal async Task<IResponse> ExecuteAsync(string url, HttpMethod method,
         Dictionary<string, string> headers, RequestBody? body, RequestOptions options, IRetryConfig? retryConfig,
-        string? authScheme, string? authParameter, List<IHttpFilter> requestFilters, CancellationToken ct)
+        string? authScheme, string? authParameter, IReadOnlyList<IHttpFilter> filters, CancellationToken ct)
+    {
+        var response = await SendWithRetriesAsync(url, method, headers, body, options, retryConfig, authScheme, authParameter, ct);
+
+        // Response filters run once on the final response, outside the retry loop, so an exception
+        // thrown by a filter (e.g. ErrorFilter) isn't mistaken for a network failure and retried.
+        foreach (var filter in filters)
+            filter.OnResponse(response, !options.IgnoreHttpErrors);
+
+        return response;
+    }
+
+    private async Task<FluentResponse> SendWithRetriesAsync(string url, HttpMethod method,
+        Dictionary<string, string> headers, RequestBody? body, RequestOptions options, IRetryConfig? retryConfig,
+        string? authScheme, string? authParameter, CancellationToken ct)
     {
         var config = retryConfig ?? _retryConfig;
         var maxRetries = options.NoRetry ? 0 : config.MaxRetries;
@@ -123,11 +137,6 @@ public class FluentClient : IFluentClient
                 if (!string.IsNullOrEmpty(scheme) && !string.IsNullOrEmpty(param))
                     httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(scheme, param);
 
-                // Apply filters
-                var allFilters = Filters.GetOrdered().Concat(requestFilters).ToList();
-                foreach (var filter in allFilters)
-                    filter.OnRequest(request);
-
                 var stopwatch = Stopwatch.StartNew();
                 var response = await _httpClient.SendAsync(httpRequest, ct);
                 stopwatch.Stop();
@@ -136,10 +145,6 @@ public class FluentClient : IFluentClient
                 RateLimiter?.UpdateFromHeaders(response.Headers);
 
                 var fluentResponse = new FluentResponse(response, url, stopwatch.Elapsed);
-
-                // Apply response filters
-                foreach (var filter in allFilters)
-                    filter.OnResponse(fluentResponse, !options.IgnoreHttpErrors);
 
                 // Check for retry
                 if (!response.IsSuccessStatusCode && config.ShouldRetry((int)response.StatusCode, false) && attempt < maxRetries)
