@@ -158,7 +158,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 }
 
                 // Auto-rename for NexusMods if enabled
-                if (backend.Id == "nexusmods" && services.Settings.AutoRename && !settings.DryRun && !string.IsNullOrEmpty(gameDomain))
+                if (backend.Id == BackendIds.NexusMods && services.Settings.AutoRename && !settings.DryRun && !string.IsNullOrEmpty(gameDomain))
                 {
                     var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache,
                         services.LoggerFactory?.CreateLogger<RenameService>());

@@ -6,6 +6,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Utilities;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -61,7 +62,7 @@ public partial class GameBananaViewModel : ViewModelBase
         {
             ModId = "123456",
             Name = "Sample GameBanana Mod",
-            BackendId = "gamebanana",
+            BackendId = BackendIds.GameBanana,
             Author = "SampleAuthor"
         }) { Status = ModDownloadStatus.NotDownloaded });
     }

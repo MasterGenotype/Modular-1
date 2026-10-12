@@ -6,6 +6,7 @@ using Modular.Core.Downloads;
 using Modular.Core.Utilities;
 using Modular.FluentHttp.Implementation;
 using Modular.FluentHttp.Interfaces;
+using Modular.Sdk.Backends;
 
 namespace Modular.Core.Backends.GameBanana;
 
@@ -13,7 +14,7 @@ namespace Modular.Core.Backends.GameBanana;
 /// GameBanana backend implementation.
 /// Provides access to GameBanana API for downloading subscribed mods.
 /// </summary>
-public class GameBananaBackend : IModBackend
+public partial class GameBananaBackend : IModBackend, IRequirementsBackend
 {
     private const string BaseUrl = "https://gamebanana.com/apiv11";
     private const int DefaultPageSize = 15;
@@ -26,12 +27,13 @@ public class GameBananaBackend : IModBackend
     private readonly SemaphoreSlim _throttle = new(1, 1);
     private DateTime _lastRequest = DateTime.MinValue;
 
-    public string Id => "gamebanana";
+    public string Id => BackendIds.GameBanana;
     public string DisplayName => "GameBanana";
 
     // GameBanana doesn't have game domains, file categories, rate limiting,
-    // or MD5 verification - just basic download functionality
-    public BackendCapabilities Capabilities => BackendCapabilities.None;
+    // or MD5 verification
+    public BackendCapabilities Capabilities =>
+        BackendCapabilities.Requirements;
 
     public GameBananaBackend(
         AppSettings settings,
@@ -582,6 +584,92 @@ public class GameBananaBackend : IModBackend
 
         progress?.Report(DownloadProgress.Done(total));
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// GameBanana lets a submitter list requirements as free-form name and link pairs. A
+    /// link to another GameBanana mod is something this backend can download; any other
+    /// link, or none, is only a pointer for the user.
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<ModRequirement>>> GetRequirementsAsync(
+        IReadOnlyList<string> modIds,
+        string? gameDomain = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(modIds);
+
+        var result = new Dictionary<string, IReadOnlyList<ModRequirement>>(StringComparer.Ordinal);
+
+        foreach (var modId in modIds.Distinct())
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (!int.TryParse(modId, out _))
+                continue;
+
+            await ThrottleAsync();
+
+            using var response = await _client.GetAsync($"Mod/{modId}/ProfilePage")
+                .WithCancellation(ct)
+                .AsJsonAsync();
+
+            result[modId] = ParseRequirements(response.RootElement);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reads the <c>_aRequirements</c> list of a mod's profile page.
+    /// </summary>
+    internal static IReadOnlyList<ModRequirement> ParseRequirements(JsonElement profile)
+    {
+        var requirements = new List<ModRequirement>();
+
+        if (profile.ValueKind != JsonValueKind.Object ||
+            !profile.TryGetProperty("_aRequirements", out var list) ||
+            list.ValueKind != JsonValueKind.Array)
+        {
+            return requirements;
+        }
+
+        foreach (var pair in list.EnumerateArray())
+        {
+            if (pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() == 0)
+                continue;
+
+            var name = pair[0].ValueKind == JsonValueKind.String ? pair[0].GetString() : null;
+            var url = pair.GetArrayLength() > 1 && pair[1].ValueKind == JsonValueKind.String
+                ? pair[1].GetString()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            // Links are often protocol-relative: "//gamebanana.com/mods/598553".
+            if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("//", StringComparison.Ordinal))
+                url = "https:" + url;
+
+            var match = string.IsNullOrWhiteSpace(url) ? null : RequirementModLink().Match(url);
+            var isMod = match is { Success: true };
+
+            requirements.Add(new ModRequirement
+            {
+                ModId = isMod ? match!.Groups["id"].Value : string.Empty,
+                Name = name.Trim(),
+                SameGame = isMod,
+                IsExternal = !isMod,
+                Url = string.IsNullOrWhiteSpace(url) ? null : url
+            });
+        }
+
+        return requirements;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(
+        @"^https?://(www\.)?gamebanana\.com/mods/(?<id>\d+)/?$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex RequirementModLink();
 
     public async Task<BackendMod?> GetModInfoAsync(
         string modId,

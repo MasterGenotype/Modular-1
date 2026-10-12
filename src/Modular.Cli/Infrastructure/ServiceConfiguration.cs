@@ -14,6 +14,9 @@ using Modular.Core.Profiles;
 using Modular.Core.RateLimiting;
 using Modular.Core.Services;
 using Modular.Core.Telemetry;
+using Modular.Sdk.Backends;
+using Modular.Core.Installers;
+using Modular.Core.Metadata;
 
 namespace Modular.Cli.Infrastructure;
 
@@ -201,7 +204,7 @@ public sealed class RuntimeServices : IDisposable
     {
         var registry = new BackendRegistry();
 
-        if (Settings.EnabledBackends.Contains("nexusmods", StringComparer.OrdinalIgnoreCase))
+        if (Settings.EnabledBackends.Contains(BackendIds.NexusMods, StringComparer.OrdinalIgnoreCase))
         {
             registry.Register(new NexusModsBackend(
                 Settings,
@@ -212,7 +215,7 @@ public sealed class RuntimeServices : IDisposable
                 Downloader));
         }
 
-        if (Settings.EnabledBackends.Contains("gamebanana", StringComparer.OrdinalIgnoreCase))
+        if (Settings.EnabledBackends.Contains(BackendIds.GameBanana, StringComparer.OrdinalIgnoreCase))
         {
             registry.Register(new GameBananaBackend(
                 Settings,
@@ -224,13 +227,41 @@ public sealed class RuntimeServices : IDisposable
     }
 
     /// <summary>
+    /// Creates the installation service every command shares.
+    /// </summary>
+    /// <param name="database">The Modular database.</param>
+    /// <param name="pluginLoader">Loaded plugins, for commands that install or deploy.</param>
+    /// <remarks>
+    /// Built in one place so that every command plans a deployment the same way. A game
+    /// module may name deployed files after a mod's hub category; a command that left the
+    /// category source out would rename them on its next deployment.
+    /// </remarks>
+    public ModInstallationService CreateInstallationService(
+        ModularDatabase database, PluginLoader? pluginLoader = null) =>
+        new(
+            database,
+            Telemetry,
+            pluginLoader: pluginLoader,
+            settings: Settings,
+            categorySource: CreateCategorySource());
+
+    /// <summary>
+    /// Creates the source game modules ask for a mod's hub category, or <c>null</c> when
+    /// NexusMods is not enabled.
+    /// </summary>
+    public IModCategorySource? CreateCategorySource() =>
+        CreateBackendRegistry().Get(BackendIds.NexusMods) is NexusModsBackend nexus
+            ? new NexusModCategorySource(nexus, MetadataCache)
+            : null;
+
+    /// <summary>
     /// Creates an aggregate version provider with all enabled backend providers.
     /// </summary>
     public AggregateVersionProvider CreateVersionProvider(string defaultGameDomain = "")
     {
         var provider = new AggregateVersionProvider(LoggerFactory?.CreateLogger<AggregateVersionProvider>());
 
-        if (Settings.EnabledBackends.Contains("nexusmods", StringComparer.OrdinalIgnoreCase))
+        if (Settings.EnabledBackends.Contains(BackendIds.NexusMods, StringComparer.OrdinalIgnoreCase))
         {
             var nexusBackend = new NexusModsBackend(
                 Settings,
@@ -239,19 +270,19 @@ public sealed class RuntimeServices : IDisposable
                 MetadataCache,
                 LoggerFactory?.CreateLogger<NexusModsBackend>());
 
-            provider.Register("nexusmods", new NexusModsVersionProvider(
+            provider.Register(BackendIds.NexusMods, new NexusModsVersionProvider(
                 nexusBackend,
                 defaultGameDomain,
                 LoggerFactory?.CreateLogger<NexusModsVersionProvider>()));
         }
 
-        if (Settings.EnabledBackends.Contains("gamebanana", StringComparer.OrdinalIgnoreCase))
+        if (Settings.EnabledBackends.Contains(BackendIds.GameBanana, StringComparer.OrdinalIgnoreCase))
         {
             var gbBackend = new GameBananaBackend(
                 Settings,
                 LoggerFactory?.CreateLogger<GameBananaBackend>());
 
-            provider.Register("gamebanana", new GameBananaVersionProvider(
+            provider.Register(BackendIds.GameBanana, new GameBananaVersionProvider(
                 gbBackend,
                 LoggerFactory?.CreateLogger<GameBananaVersionProvider>()));
         }

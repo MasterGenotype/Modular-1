@@ -191,6 +191,9 @@ public class StagingManager
 
         plan.TargetDirectory = stagingRoot;
 
+        // Every destination now sits under the staging root, whatever root it names.
+        plan.RootDirectories = null;
+
         _logger?.LogDebug(
             "Redirected plan into {StagingRoot} (offset '{Offset}')",
             stagingRoot, redirection.PlanOffset);

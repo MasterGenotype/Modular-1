@@ -15,4 +15,7 @@ public static class GameIds
 
     /// <summary>Horizon Zero Dawn (Steam AppID 1151640).</summary>
     public const string HorizonZeroDawn = "horizonzerodawn";
+
+    /// <summary>Baldur's Gate 3 (Steam AppID 1086940).</summary>
+    public const string BaldursGate3 = "baldursgate3";
 }

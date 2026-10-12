@@ -13,11 +13,11 @@
         <vm:DownloadQueueViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,*">
         <!-- History Statistics -->
-        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 CornerRadius="8" Padding="15" Margin="0,0,0,15">
-            <Grid ColumnDefinitions="*,*,*,*">
+            <Grid ColumnDefinitions="*,*,*,*,Auto">
                 <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding TotalHistoryDownloads}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
                     <TextBlock Text="Total Downloads" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
@@ -36,11 +36,18 @@
                     <TextBlock Text="{Binding TotalBytesDownloadedFormatted}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
                     <TextBlock Text="Total Size" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
                 </StackPanel>
+                <Button Grid.Column="4" Command="{Binding ResetStatisticsCommand}" VerticalAlignment="Center"
+                        ToolTip.Tip="Clear the download history and reset these statistics">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="Restore" Width="14" Height="14"/>
+                        <TextBlock Text="Reset"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
         <!-- Active Downloads Header -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+        <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto" Margin="0,0,8,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                 <mi:MaterialIcon Kind="Download" Width="20" Height="20"/>
                 <TextBlock Text="Active Downloads" FontSize="18" FontWeight="SemiBold"/>
@@ -54,9 +61,10 @@
         </Grid>
 
         <!-- Active Downloads List -->
-        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="2" Grid.Column="0" Margin="0,0,8,0"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 CornerRadius="8" Padding="10" MinHeight="150" DragDrop.AllowDrop="True">
-            <ScrollViewer>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding ActiveDownloads}" x:Name="ActiveDownloadsList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:DownloadItemModel">
@@ -68,8 +76,10 @@
                                     <!-- File name and status -->
                                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                                         <StackPanel Grid.Column="0">
-                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"/>
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"
+                                                       TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="10,0" VerticalAlignment="Center">
                                             <mi:MaterialIcon Kind="DragHorizontalVariant" Width="14" Height="14" Opacity="0.4"
@@ -115,7 +125,7 @@
         </Border>
 
         <!-- Completed Downloads Header -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,20,0,10">
+        <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="8,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                 <mi:MaterialIcon Kind="CheckCircle" Width="20" Height="20"/>
                 <TextBlock Text="Completed" FontSize="18" FontWeight="SemiBold"/>
@@ -124,19 +134,23 @@
                     <TextBlock Text="{Binding CompletedCount}" FontSize="12"/>
                 </Border>
             </StackPanel>
-            <Button Grid.Column="1" Command="{Binding ClearCompletedCommand}" Content="Clear All"/>
+            <Button Grid.Column="1" Command="{Binding SendAllToInstallerCommand}" Content="Install All"
+                    IsEnabled="{Binding CompletedCount}" Margin="0,0,5,0"
+                    ToolTip.Tip="Send every completed download to the installer"/>
+            <Button Grid.Column="2" Command="{Binding ClearCompletedCommand}" Content="Clear All"/>
         </Grid>
 
         <!-- Completed Downloads List -->
-        <Border Grid.Row="4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="10">
-            <ScrollViewer>
+        <Border Grid.Row="2" Grid.Column="1" Margin="8,0,0,0"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="10" MinHeight="150">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding CompletedDownloads}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:DownloadItemModel">
                             <Border Margin="0,0,0,5" Padding="15" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
                                     CornerRadius="6">
-                                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
                                     <!-- Status icon -->
                                     <Panel Grid.Column="0" Margin="0,0,15,0">
                                         <mi:MaterialIcon Kind="CheckCircle" Foreground="Green" Width="24" Height="24"
@@ -149,21 +163,50 @@
 
                                     <!-- File info -->
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"
+                                                   TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="Red"
+                                                   TextWrapping="Wrap"
                                                    IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                     </StackPanel>
 
-                                    <!-- Size -->
-                                    <TextBlock Grid.Column="2" Text="{Binding ProgressText}" VerticalAlignment="Center"
-                                               Margin="10,0" Opacity="0.7"/>
-
-                                    <!-- Remove button -->
-                                    <Button Grid.Column="3" Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).RemoveItemCommand}"
-                                            CommandParameter="{Binding}" Padding="5" Background="Transparent">
+                                    <!-- Remove from list -->
+                                    <Button Grid.Column="2" VerticalAlignment="Top"
+                                            Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).RemoveItemCommand}"
+                                            CommandParameter="{Binding}" Padding="5" Background="Transparent"
+                                            ToolTip.Tip="Remove from list (keeps the file)">
                                         <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
                                     </Button>
+
+                                    <!-- Size and file operations -->
+                                    <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto"
+                                          Margin="0,8,0,0">
+                                        <TextBlock Grid.Column="0" Text="{Binding ProgressText}" FontSize="12"
+                                                   VerticalAlignment="Center" Opacity="0.7"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5"
+                                                    IsVisible="{Binding HasFile}">
+                                            <Button Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).SendToInstallerCommand}"
+                                                    CommandParameter="{Binding}" Padding="8,4"
+                                                    ToolTip.Tip="Send to the installer for the selected game">
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <mi:MaterialIcon Kind="PackageDown" Width="14" Height="14"/>
+                                                    <TextBlock Text="Install" FontSize="12"/>
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).OpenContainingFolderCommand}"
+                                                    CommandParameter="{Binding}" Padding="6,4"
+                                                    ToolTip.Tip="Open containing folder">
+                                                <mi:MaterialIcon Kind="FolderOpen" Width="14" Height="14"/>
+                                            </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].((vm:DownloadQueueViewModel)DataContext).DeleteFileCommand}"
+                                                    CommandParameter="{Binding}" Padding="6,4"
+                                                    ToolTip.Tip="Delete the downloaded file">
+                                                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                             </Border>
                         </DataTemplate>

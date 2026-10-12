@@ -87,11 +87,11 @@ public class NexusModsVersionProvider : IModVersionProvider
         return parts.Length switch
         {
             // "nexusmods:gameDomain:modId"
-            3 when parts[0].Equals("nexusmods", StringComparison.OrdinalIgnoreCase)
+            3 when parts[0].Equals(BackendIds.NexusMods, StringComparison.OrdinalIgnoreCase)
                 => (parts[1], parts[2]),
 
             // "nexusmods:modId"
-            2 when parts[0].Equals("nexusmods", StringComparison.OrdinalIgnoreCase)
+            2 when parts[0].Equals(BackendIds.NexusMods, StringComparison.OrdinalIgnoreCase)
                 => (_defaultGameDomain, parts[1]),
 
             // bare modId

@@ -51,7 +51,7 @@ public sealed class InteractiveCommand : AsyncCommand
                     await RunBackendDownloadAsync(backend, services, gameDomain);
 
                     // Auto-rename for NexusMods if enabled
-                    if (backend.Id == "nexusmods" && services.Settings.AutoRename && !string.IsNullOrEmpty(gameDomain))
+                    if (backend.Id == BackendIds.NexusMods && services.Settings.AutoRename && !string.IsNullOrEmpty(gameDomain))
                     {
                         var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache, null);
                         LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");

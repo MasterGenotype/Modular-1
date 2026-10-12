@@ -52,4 +52,9 @@ public enum BackendCapabilities
     /// If set, the search command and GUI search are available.
     /// </summary>
     Search = 1 << 6,
+
+    /// <summary>
+    /// Backend lists which other mods a mod requires via <see cref="IRequirementsBackend"/>.
+    /// </summary>
+    Requirements = 1 << 7,
 }

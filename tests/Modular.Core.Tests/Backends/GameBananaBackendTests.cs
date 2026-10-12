@@ -26,12 +26,12 @@ public class GameBananaBackendTests
     }
 
     [Fact]
-    public void Capabilities_IsNone()
+    public void Capabilities_IsRequirementsOnly()
     {
         var backend = CreateBackend();
 
-        // GameBanana has no special capabilities
-        Assert.Equal(BackendCapabilities.None, backend.Capabilities);
+        // GameBanana lists a mod's requirements and nothing more
+        Assert.Equal(BackendCapabilities.Requirements, backend.Capabilities);
         Assert.False(backend.Capabilities.HasFlag(BackendCapabilities.GameDomains));
         Assert.False(backend.Capabilities.HasFlag(BackendCapabilities.FileCategories));
         Assert.False(backend.Capabilities.HasFlag(BackendCapabilities.Md5Verification));
@@ -270,5 +270,41 @@ public class GameBananaModelsTests
         Assert.Null(record.Submitter);
         Assert.Null(record.Game);
         Assert.Null(record.DateModifiedTimestamp);
+    }
+
+    [Fact]
+    public void ParseRequirements_SplitsGameBananaModsFromOtherLinks()
+    {
+        // The shape the profile page returns, including a protocol-relative link.
+        using var profile = System.Text.Json.JsonDocument.Parse("""
+            {"_aRequirements":[
+              ["codename","//gamebanana.com/mods/598553"],
+              ["A wiki page","https://example.test/wiki"],
+              ["win 10 or 11",""],
+              ["",""]
+            ]}
+            """);
+
+        var requirements = GameBananaBackend.ParseRequirements(profile.RootElement);
+
+        Assert.Equal(3, requirements.Count);
+
+        Assert.Equal("598553", requirements[0].ModId);
+        Assert.False(requirements[0].IsExternal);
+        Assert.Equal("https://gamebanana.com/mods/598553", requirements[0].Url);
+
+        Assert.True(requirements[1].IsExternal);
+        Assert.Equal("https://example.test/wiki", requirements[1].Url);
+
+        Assert.True(requirements[2].IsExternal);
+        Assert.Null(requirements[2].Url);
+    }
+
+    [Fact]
+    public void ParseRequirements_AProfileWithNone_IsEmpty()
+    {
+        using var profile = System.Text.Json.JsonDocument.Parse("""{"_aRequirements":null}""");
+
+        Assert.Empty(GameBananaBackend.ParseRequirements(profile.RootElement));
     }
 }

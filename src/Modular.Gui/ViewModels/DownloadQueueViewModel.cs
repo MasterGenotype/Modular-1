@@ -16,6 +16,8 @@ using Modular.Core.Utilities;
 using Modular.Gui.Messages;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
+using Modular.Core.Dependencies.Conventions;
 
 namespace Modular.Gui.ViewModels;
 
@@ -30,6 +32,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     private readonly AppSettings? _settings;
     private readonly DownloadHistoryService? _historyService;
     private readonly DownloadDatabase? _downloadDatabase;
+    private readonly IDialogService? _dialogService;
     private readonly ResumableDownloader _downloader;
     private readonly ConcurrentQueue<DownloadItemModel> _pendingQueue = new();
     private readonly SemaphoreSlim _downloadSemaphore = new(1, 1); // Single concurrent download
@@ -78,7 +81,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
         {
             ModId = "1",
             Name = "Sample Mod",
-            BackendId = "nexusmods"
+            BackendId = BackendIds.NexusMods
         })
         {
             State = DownloadItemState.Downloading,
@@ -97,8 +100,10 @@ public partial class DownloadQueueViewModel : ViewModelBase
         AppSettings settings,
         DownloadHistoryService historyService,
         DownloadDatabase downloadDatabase,
-        ResumableDownloader downloader)
+        ResumableDownloader downloader,
+        IDialogService dialogService)
     {
+        _dialogService = dialogService;
         _nexusBackend = nexusBackend;
         _gameBananaBackend = gameBananaBackend;
         _renameService = renameService;
@@ -135,9 +140,9 @@ public partial class DownloadQueueViewModel : ViewModelBase
     /// <summary>
     /// Adds a mod to the download queue.
     /// </summary>
-    public async Task EnqueueAsync(BackendMod mod, BackendModFile file)
+    public async Task EnqueueAsync(BackendMod mod, BackendModFile file, bool addToInstaller = false)
     {
-        var item = new DownloadItemModel(mod, file);
+        var item = new DownloadItemModel(mod, file) { AddToInstaller = addToInstaller };
         _pendingQueue.Enqueue(item);
 
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -156,11 +161,12 @@ public partial class DownloadQueueViewModel : ViewModelBase
     /// <summary>
     /// Adds multiple items to the download queue.
     /// </summary>
-    public async Task EnqueueManyAsync(IEnumerable<(BackendMod mod, BackendModFile file)> items)
+    public async Task EnqueueManyAsync(
+        IEnumerable<(BackendMod mod, BackendModFile file)> items, bool addToInstaller = false)
     {
         foreach (var (mod, file) in items)
         {
-            await EnqueueAsync(mod, file);
+            await EnqueueAsync(mod, file, addToInstaller);
         }
     }
 
@@ -208,6 +214,9 @@ public partial class DownloadQueueViewModel : ViewModelBase
             
             // Auto-reorganize downloaded mods for NexusMods
             await ReorganizeDownloadedModsAsync();
+
+            // After reorganizing, so the installer is given where the files ended up.
+            SendFetchedToInstaller();
 
             // Notify listeners that the download batch is complete
             WeakReferenceMessenger.Default.Send(new DownloadBatchCompletedMessage());
@@ -284,7 +293,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
             var url = item.File?.DirectDownloadUrl;
             if (string.IsNullOrEmpty(url) && item.File != null)
             {
-                if (item.Mod.BackendId == "nexusmods" && _nexusBackend != null)
+                if (item.Mod.BackendId == BackendIds.NexusMods && _nexusBackend != null)
                 {
                     url = await _nexusBackend.ResolveDownloadUrlAsync(
                         item.Mod.ModId,
@@ -306,7 +315,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 "Games", "Mods-Lists");
 
             string modOutputDir;
-            if (item.Mod.BackendId == "gamebanana")
+            if (item.Mod.BackendId == BackendIds.GameBanana)
             {
                 var gbDir = _settings?.GameBananaDownloadDir ?? "gamebanana";
                 modOutputDir = Path.Combine(outputDir, gbDir, FileUtils.SanitizeDirectoryName(item.Mod.Name));
@@ -325,7 +334,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
 
             // Identity must match the backends' so partial files from the CLI resume here too.
             var fileId = item.File?.FileId ?? "0";
-            var isGameBanana = item.Mod.BackendId == "gamebanana";
+            var isGameBanana = item.Mod.BackendId == BackendIds.GameBanana;
             var identity = isGameBanana
                 ? DownloadIdentity.GameBanana(item.Mod.ModId, fileId)
                 : DownloadIdentity.NexusMods(item.GameDomain ?? "unknown", item.Mod.ModId, fileId);
@@ -401,6 +410,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 item.TotalBytes = finalSize;
                 item.SpeedBytesPerSecond = 0;
                 item.EndTime = DateTime.UtcNow;
+                item.FilePath = outputPath;
                 ActiveDownloads.Remove(item);
                 CompletedDownloads.Insert(0, item);
                 CompletedCount = CompletedDownloads.Count;
@@ -447,8 +457,19 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 _ = _downloadDatabase.SaveAsync();
             }
             
+            // Leave a record beside the file of where it came from. A file name only
+            // identifies a NexusMods download, and not even that once it is renamed.
+            if (item.File != null && !string.IsNullOrEmpty(item.Mod.BackendId))
+            {
+                DependencyConventions.WriteDownloadRecord(outputPath, new DeclaredSource(
+                    item.Mod.BackendId,
+                    item.Mod.ModId,
+                    item.Mod.BackendId == BackendIds.NexusMods ? item.GameDomain : null,
+                    item.File.FileId));
+            }
+
             // Track domain for reorganization (NexusMods only - GameBanana already uses mod names)
-            if (item.Mod.BackendId == "nexusmods" && !string.IsNullOrEmpty(item.GameDomain))
+            if (item.Mod.BackendId == BackendIds.NexusMods && !string.IsNullOrEmpty(item.GameDomain))
             {
                 _domainsToReorganize.Add(item.GameDomain);
             }
@@ -629,6 +650,185 @@ public partial class DownloadQueueViewModel : ViewModelBase
             if (item.State == DownloadItemState.Queued)
                 item.State = DownloadItemState.Cancelled;
             QueuedCount = _pendingQueue.Count(i => i.State == DownloadItemState.Queued);
+        }
+    }
+
+    /// <summary>
+    /// Clears the download history, resetting the statistics shown above the queue.
+    /// </summary>
+    [RelayCommand]
+    private async Task ResetStatisticsAsync()
+    {
+        if (_historyService == null) return;
+
+        if (_dialogService != null && !await _dialogService.ShowConfirmationAsync(
+                "Reset Download Statistics",
+                "Clear the download history and reset all statistics to zero? Downloaded files are not affected."))
+            return;
+
+        _historyService.Clear();
+        await _historyService.SaveAsync();
+        UpdateHistoryStats();
+        StatusMessage = "Download statistics reset";
+    }
+
+    /// <summary>
+    /// Sends a completed download to the mod installer.
+    /// </summary>
+    [RelayCommand]
+    private void SendToInstaller(DownloadItemModel? item)
+    {
+        if (item == null) return;
+
+        var path = ResolveFilePath(item);
+        if (path == null)
+        {
+            StatusMessage = $"File for {item.DisplayName} is no longer on disk";
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new SendToInstallerMessage([path]));
+    }
+
+    /// <summary>
+    /// Sends every completed download still on disk to the mod installer.
+    /// </summary>
+    [RelayCommand]
+    private void SendAllToInstaller()
+    {
+        var paths = CompletedDownloads
+            .Select(ResolveFilePath)
+            .OfType<string>()
+            .ToList();
+
+        if (paths.Count == 0)
+        {
+            StatusMessage = "No completed downloads to install";
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new SendToInstallerMessage(paths));
+    }
+
+    // Adds downloads that were fetched to be installed to the installer's list.
+    private void SendFetchedToInstaller()
+    {
+        var fetched = CompletedDownloads.Where(i => i.AddToInstaller).ToList();
+        if (fetched.Count == 0)
+            return;
+
+        foreach (var item in fetched)
+            item.AddToInstaller = false;
+
+        var paths = fetched.Select(ResolveFilePath).OfType<string>().ToList();
+        if (paths.Count > 0)
+            WeakReferenceMessenger.Default.Send(new SendToInstallerMessage(paths, navigate: false));
+    }
+
+    /// <summary>
+    /// Opens the folder containing a completed download.
+    /// </summary>
+    [RelayCommand]
+    private void OpenContainingFolder(DownloadItemModel? item)
+    {
+        if (item == null) return;
+
+        var folder = Path.GetDirectoryName(ResolveFilePath(item));
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+        {
+            StatusMessage = $"Folder for {item.DisplayName} is no longer on disk";
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = folder,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not open folder: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Deletes a completed download from disk and removes it from the list.
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteFileAsync(DownloadItemModel? item)
+    {
+        if (item == null) return;
+
+        var path = ResolveFilePath(item);
+        if (path != null)
+        {
+            if (_dialogService != null && !await _dialogService.ShowConfirmationAsync(
+                    "Delete Downloaded File",
+                    $"Permanently delete this file?\n\n{path}"))
+                return;
+
+            try
+            {
+                File.Delete(path);
+                File.Delete(path + DependencyConventions.DownloadRecordSuffix);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                StatusMessage = $"Could not delete {item.DisplayName}: {ex.Message}";
+                return;
+            }
+
+            // Forget the download so the Library and update checks stop counting it.
+            if (_downloadDatabase != null && item.File != null &&
+                int.TryParse(item.Mod.ModId, out var modId) &&
+                int.TryParse(item.File.FileId, out var fileId) &&
+                _downloadDatabase.RemoveRecord(item.GameDomain ?? "", modId, fileId))
+            {
+                await _downloadDatabase.SaveAsync();
+            }
+
+            StatusMessage = $"Deleted {item.DisplayName}";
+        }
+
+        item.FilePath = null;
+        RemoveItem(item);
+    }
+
+    /// <summary>
+    /// Finds a completed download on disk, following it if reorganization moved its folder.
+    /// </summary>
+    private string? ResolveFilePath(DownloadItemModel item)
+    {
+        var path = item.FilePath;
+        if (item.State != DownloadItemState.Completed || string.IsNullOrEmpty(path))
+            return null;
+        if (File.Exists(path))
+            return path;
+
+        // Reorganizing after a batch renames NexusMods mod folders, so look for the file by name.
+        var modsDir = _settings?.ModsDirectory;
+        if (string.IsNullOrEmpty(modsDir) || string.IsNullOrEmpty(item.GameDomain))
+            return null;
+
+        var domainDir = Path.Combine(modsDir, item.GameDomain);
+        if (!Directory.Exists(domainDir))
+            return null;
+
+        try
+        {
+            var moved = Directory
+                .EnumerateFiles(domainDir, Path.GetFileName(path), SearchOption.AllDirectories)
+                .FirstOrDefault(f => item.TotalBytes <= 0 || new FileInfo(f).Length == item.TotalBytes);
+            if (moved != null)
+                item.FilePath = moved;
+            return moved;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

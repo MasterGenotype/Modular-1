@@ -1,0 +1,532 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Xml;
+using System.Xml.Linq;
+
+namespace Modular.Core.Installers.BaldursGate3;
+
+/// <summary>
+/// A pak Modular deployed, as the load order needs to know it.
+/// </summary>
+/// <param name="Module">The module the pak contains.</param>
+/// <param name="Tier">The band the pak belongs in.</param>
+/// <param name="OrderIndex">Modular's own position for the mod, breaking ties in a band.</param>
+public sealed record BG3ManagedPak(BG3ModuleRef Module, BG3LoadTier Tier, int OrderIndex);
+
+/// <summary>
+/// What an update to <c>modsettings.lsx</c> did.
+/// </summary>
+public sealed record BG3ModSettingsResult
+{
+    /// <summary>Whether the file was written. False when it was already as it should be.</summary>
+    public bool Written { get; init; }
+
+    /// <summary>Names of the modules in the load order, first loaded to last.</summary>
+    public IReadOnlyList<string> Order { get; init; } = [];
+
+    /// <summary>Names of modules added to the order.</summary>
+    public IReadOnlyList<string> Added { get; init; } = [];
+
+    /// <summary>Names of modules removed from the order.</summary>
+    public IReadOnlyList<string> Removed { get; init; } = [];
+
+    /// <summary>Names of modules moved so that they load after what they depend on.</summary>
+    public IReadOnlyList<string> Moved { get; init; } = [];
+
+    /// <summary>Things that could not be put right, as messages fit to show.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
+/// <summary>
+/// Maintains <c>modsettings.lsx</c>, the file that tells Baldur's Gate 3 which mods to
+/// load and in what order.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The list in that file is the load order: position is everything, file names are
+/// nothing. It is also shared. The game's own mod manager writes it, and so does any
+/// other mod manager in use, so Modular edits it rather than owning it.
+/// </para>
+/// <para>
+/// The rules are deliberately conservative. An entry Modular did not add is never
+/// removed and keeps its position. Modular's own mods are appended, and kept in order
+/// among themselves by band and then by Modular's order, except that a mod something
+/// already listed depends on is put just above it. An existing entry is moved only when the list as found already had it
+/// above something it depends on. Which entries are Modular's is
+/// remembered in a small file beside <c>modsettings.lsx</c>, so that uninstalling a mod
+/// removes its entry and nobody else's.
+/// </para>
+/// </remarks>
+public static class BG3ModSettings
+{
+    /// <summary>File name of the load-order file.</summary>
+    public const string FileName = "modsettings.lsx";
+
+    /// <summary>The profile folder holding the file, relative to the game's user data folder.</summary>
+    public const string ProfileFolder = "PlayerProfiles/Public";
+
+    /// <summary>UUID of the base campaign, which is always first in the order.</summary>
+    public const string GustavXUuid = "cb555efe-2d9e-131f-8195-a89329d218ea";
+
+    private const string OwnershipFileName = "modsettings.modular.json";
+    private const string BackupSuffix = ".modular.bak";
+    private const string OriginalSuffix = ".modular.orig";
+
+    private static readonly BG3ModuleRef GustavX =
+        new(GustavXUuid, "GustavX", "GustavX", 0, string.Empty, BG3ModuleRef.DefaultVersion64);
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Brings the load order in line with what is installed.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    /// <param name="installed">
+    /// Every module with a pak in the user <c>Mods</c> folder, whoever put it there. Used
+    /// to tell an uninstalled mod from a present one, and for dependencies.
+    /// </param>
+    /// <param name="managed">The paks Modular currently has deployed.</param>
+    /// <param name="mayWrite">
+    /// Asked only when the file needs changing; returning false refuses the write. Lets a
+    /// caller hold off while the game is running without blocking a no-op.
+    /// </param>
+    /// <returns>What changed.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A change was needed and <paramref name="mayWrite"/> refused it.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The existing file is not a <c>modsettings.lsx</c> this code understands. It is left
+    /// untouched: guessing would risk the user's whole load order.
+    /// </exception>
+    public static BG3ModSettingsResult Update(
+        string modSettingsPath,
+        IReadOnlyList<BG3PakMeta> installed,
+        IReadOnlyList<BG3ManagedPak> managed,
+        Func<bool>? mayWrite = null)
+    {
+        ArgumentNullException.ThrowIfNull(modSettingsPath);
+        ArgumentNullException.ThrowIfNull(installed);
+        ArgumentNullException.ThrowIfNull(managed);
+
+        var exists = File.Exists(modSettingsPath);
+        var originalText = exists ? File.ReadAllText(modSettingsPath) : null;
+        var document = originalText != null ? Parse(originalText) : CreateEmpty();
+        var modsChildren = FindModsChildren(document);
+
+        var entries = modsChildren.Elements("node")
+            .Where(n => HasId(n, "ModuleShortDesc"))
+            .Select(n => new Entry(ReadAttribute(n, "UUID").ToLowerInvariant(), ReadAttribute(n, "Name"), n))
+            .Where(e => e.Uuid.Length > 0)
+            .DistinctBy(e => e.Uuid)
+            .ToList();
+
+        var before = entries.Select(e => e.Uuid).ToList();
+        var installedByUuid = installed
+            .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var ownershipPath = Path.Combine(
+            Path.GetDirectoryName(modSettingsPath) ?? string.Empty, OwnershipFileName);
+        var previouslyOwned = ReadOwnership(ownershipPath);
+        var managedUuids = managed
+            .Select(m => m.Module.Uuid)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // An entry goes only if Modular added it, no longer deploys it, and its pak is
+        // really gone. Anything else in the list is someone else's to remove.
+        var removed = entries
+            .Where(e => previouslyOwned.Contains(e.Uuid) &&
+                        !managedUuids.Contains(e.Uuid) &&
+                        !installedByUuid.ContainsKey(e.Uuid))
+            .ToList();
+        entries.RemoveAll(removed.Contains);
+
+        // The base campaign leads the list; the game expects to find it there.
+        var gustav = entries.FirstOrDefault(e => e.Uuid == GustavXUuid);
+        if (gustav == null)
+            entries.Insert(0, new Entry(GustavXUuid, GustavX.Name, CreateNode(GustavX)));
+        else if (entries[0] != gustav)
+        {
+            entries.Remove(gustav);
+            entries.Insert(0, gustav);
+        }
+
+        var present = entries.Select(e => e.Uuid).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = new List<Entry>();
+
+        foreach (var pak in managed
+                     .OrderBy(m => m.Tier.Rank)
+                     .ThenBy(m => m.OrderIndex)
+                     .ThenBy(m => m.Module.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!present.Add(pak.Module.Uuid))
+                continue;
+
+            var entry = new Entry(pak.Module.Uuid, pak.Module.Name, CreateNode(pak.Module));
+
+            // A mod that something already listed depends on goes in just above it, so
+            // that nothing already in the list has to move. Otherwise it goes last.
+            var firstDependent = entries.FindIndex(1, e =>
+                installedByUuid.TryGetValue(e.Uuid, out var meta) &&
+                meta.ModDependencies.Any(d => d.Uuid == pak.Module.Uuid));
+
+            if (firstDependent > 0)
+                entries.Insert(firstDependent, entry);
+            else
+                entries.Add(entry);
+
+            added.Add(entry);
+        }
+
+        // Entries Modular added are Modular's to order. They are put in band order among
+        // themselves, using only the positions they already hold, so a mod installed
+        // earlier does not stay ahead of one that belongs before it and nobody else's
+        // entry shifts.
+        var mine = previouslyOwned
+            .Where(managedUuids.Contains)
+            .Concat(added.Select(e => e.Uuid))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        SortOwnedInPlace(entries, mine, managed, installedByUuid);
+
+        var warnings = new List<string>();
+        var moved = PutDependenciesFirst(entries, installedByUuid, warnings);
+
+        // Only for Modular's own mods: a gap in someone else's is theirs to report, and
+        // would otherwise be repeated on every deployment.
+        foreach (var entry in entries.Where(e => managedUuids.Contains(e.Uuid)))
+        {
+            if (!installedByUuid.TryGetValue(entry.Uuid, out var meta))
+                continue;
+
+            foreach (var dependency in meta.ModDependencies.Where(d => !present.Contains(d.Uuid)))
+            {
+                warnings.Add(
+                    $"'{entry.Name}' needs '{Display(dependency)}', which is not in the load order.");
+            }
+        }
+
+        var after = entries.Select(e => e.Uuid).ToList();
+        var result = new BG3ModSettingsResult
+        {
+            Order = entries.Select(e => e.Name).ToList(),
+            Added = added.Select(e => e.Name).ToList(),
+            Removed = removed.Select(e => e.Name).ToList(),
+            Moved = moved,
+            Warnings = warnings
+        };
+
+        // Only entries Modular added count as its own. A mod it deploys that the game had
+        // already listed stays the game's entry, to be neither moved nor removed.
+        var owned = mine.Order(StringComparer.Ordinal).ToList();
+
+        if (exists && before.SequenceEqual(after))
+        {
+            WriteOwnership(ownershipPath, owned, previouslyOwned);
+            return result;
+        }
+
+        if (mayWrite != null && !mayWrite())
+        {
+            throw new InvalidOperationException(
+                $"{FileName} needs updating but may not be written right now");
+        }
+
+        modsChildren.ReplaceNodes(entries.Select(e => e.Node));
+        MirrorModOrder(document, after);
+
+        var text = Serialize(document, originalText);
+
+        if (originalText != null)
+        {
+            // The first file ever replaced is kept for good; the latest one is kept too,
+            // so a single bad write is always one copy away from undone.
+            var original = modSettingsPath + OriginalSuffix;
+            if (!File.Exists(original))
+                File.Copy(modSettingsPath, original);
+
+            File.Copy(modSettingsPath, modSettingsPath + BackupSuffix, overwrite: true);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(modSettingsPath)!);
+        WriteAtomically(modSettingsPath, text);
+        WriteOwnership(ownershipPath, owned, previouslyOwned);
+
+        return result with { Written = true };
+    }
+
+    /// <summary>
+    /// Whether Modular has ever added an entry to the load order beside this path.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    public static bool HasOwnershipRecord(string modSettingsPath) =>
+        File.Exists(Path.Combine(
+            Path.GetDirectoryName(modSettingsPath) ?? string.Empty, OwnershipFileName));
+
+    /// <summary>
+    /// Reads the load order as it stands.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    /// <returns>
+    /// Module names, first loaded to last; empty when the file is missing or unreadable.
+    /// </returns>
+    public static IReadOnlyList<string> ReadOrder(string modSettingsPath)
+    {
+        try
+        {
+            if (!File.Exists(modSettingsPath))
+                return [];
+
+            return FindModsChildren(Parse(File.ReadAllText(modSettingsPath)))
+                .Elements("node")
+                .Where(n => HasId(n, "ModuleShortDesc"))
+                .Select(n => ReadAttribute(n, "Name"))
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return [];
+        }
+    }
+
+    private static void SortOwnedInPlace(
+        List<Entry> entries,
+        HashSet<string> mine,
+        IReadOnlyList<BG3ManagedPak> managed,
+        Dictionary<string, BG3PakMeta> installedByUuid)
+    {
+        var rank = managed
+            .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        // A mod something listed depends on was placed for that reason and stays there.
+        var dependedOn = entries
+            .Where(e => installedByUuid.ContainsKey(e.Uuid))
+            .SelectMany(e => installedByUuid[e.Uuid].ModDependencies.Select(d => d.Uuid))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var slots = Enumerable.Range(0, entries.Count)
+            .Where(i => mine.Contains(entries[i].Uuid) &&
+                        rank.ContainsKey(entries[i].Uuid) &&
+                        !dependedOn.Contains(entries[i].Uuid))
+            .ToList();
+
+        var ordered = slots
+            .Select(i => entries[i])
+            .OrderBy(e => rank[e.Uuid].Tier.Rank)
+            .ThenBy(e => rank[e.Uuid].OrderIndex)
+            .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (var i = 0; i < slots.Count; i++)
+            entries[slots[i]] = ordered[i];
+    }
+
+    // Moves any mod that sits above something it depends on to just below it. Nothing
+    // else moves, so an order that was already valid comes back exactly as it went in.
+    private static List<string> PutDependenciesFirst(
+        List<Entry> entries,
+        Dictionary<string, BG3PakMeta> installedByUuid,
+        List<string> warnings)
+    {
+        var moved = new List<string>();
+
+        // Each pass fixes at least one mod for good unless dependencies form a loop, so a
+        // loop is the only way to run out of passes.
+        var passesLeft = entries.Count * entries.Count + 1;
+
+        for (var i = 1; i < entries.Count; i++)
+        {
+            if (!installedByUuid.TryGetValue(entries[i].Uuid, out var meta))
+                continue;
+
+            var last = meta.ModDependencies
+                .Select(d => entries.FindIndex(e => e.Uuid == d.Uuid))
+                .DefaultIfEmpty(-1)
+                .Max();
+
+            if (last <= i)
+                continue;
+
+            if (--passesLeft <= 0)
+            {
+                warnings.Add(
+                    $"'{entries[i].Name}' is part of a dependency loop, so its position was left alone.");
+                break;
+            }
+
+            var entry = entries[i];
+            entries.RemoveAt(i);
+            entries.Insert(last, entry);
+
+            if (!moved.Contains(entry.Name))
+                moved.Add(entry.Name);
+
+            // Whatever slid into this slot has not been looked at yet.
+            i--;
+        }
+
+        return moved;
+    }
+
+    private static XDocument Parse(string text)
+    {
+        try
+        {
+            return XDocument.Parse(text);
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidDataException($"{FileName} is not valid XML: {ex.Message}", ex);
+        }
+    }
+
+    private static XDocument CreateEmpty() =>
+        new(new XElement("save",
+            new XElement("version",
+                new XAttribute("major", "4"),
+                new XAttribute("minor", "8"),
+                new XAttribute("revision", "0"),
+                new XAttribute("build", "100")),
+            new XElement("region",
+                new XAttribute("id", "ModuleSettings"),
+                new XElement("node",
+                    new XAttribute("id", "root"),
+                    new XElement("children",
+                        new XElement("node",
+                            new XAttribute("id", "Mods"),
+                            new XElement("children")))))));
+
+    private static XElement FindModsChildren(XDocument document)
+    {
+        var mods = document.Descendants("node").FirstOrDefault(n => HasId(n, "Mods"))
+            ?? throw new InvalidDataException($"{FileName} has no Mods list.");
+
+        var children = mods.Element("children");
+        if (children == null)
+        {
+            children = new XElement("children");
+            mods.Add(children);
+        }
+
+        return children;
+    }
+
+    // Game versions before the single Mods list kept a second list, ModOrder, holding
+    // just the UUIDs. When a file has one it is kept in step; it is never introduced.
+    private static void MirrorModOrder(XDocument document, IReadOnlyList<string> uuids)
+    {
+        var modOrder = document.Descendants("node").FirstOrDefault(n => HasId(n, "ModOrder"));
+        if (modOrder == null)
+            return;
+
+        var children = modOrder.Element("children");
+        if (children == null)
+        {
+            children = new XElement("children");
+            modOrder.Add(children);
+        }
+
+        children.ReplaceNodes(uuids.Select(uuid =>
+            new XElement("node",
+                new XAttribute("id", "Module"),
+                Attribute("UUID", "FixedString", uuid))));
+    }
+
+    // The attribute set and order the game itself writes.
+    private static XElement CreateNode(BG3ModuleRef module) =>
+        new("node",
+            new XAttribute("id", "ModuleShortDesc"),
+            Attribute("Folder", "LSString", module.Folder),
+            Attribute("MD5", "LSString", module.Md5),
+            Attribute("Name", "LSString", module.Name),
+            Attribute("PublishHandle", "uint64", module.PublishHandle.ToString(CultureInfo.InvariantCulture)),
+            Attribute("UUID", "guid", module.Uuid),
+            Attribute("Version64", "int64", module.Version64.ToString(CultureInfo.InvariantCulture)));
+
+    private static XElement Attribute(string id, string type, string value) =>
+        new("attribute",
+            new XAttribute("id", id),
+            new XAttribute("type", type),
+            new XAttribute("value", value));
+
+    private static bool HasId(XElement node, string id) =>
+        string.Equals((string?)node.Attribute("id"), id, StringComparison.Ordinal);
+
+    private static string ReadAttribute(XElement node, string id) =>
+        (string?)node.Elements("attribute")
+            .FirstOrDefault(a => HasId(a, id))?
+            .Attribute("value") ?? string.Empty;
+
+    private static string Display(BG3ModuleRef module) =>
+        string.IsNullOrEmpty(module.Name) ? module.Uuid : module.Name;
+
+    private static string Serialize(XDocument document, string? originalText)
+    {
+        var settings = new XmlWriterSettings
+        {
+            Indent = true,
+            IndentChars = "    ",
+            OmitXmlDeclaration = true,
+
+            // Whatever the file used before; the game writes it either way.
+            NewLineChars = originalText?.Contains("\r\n", StringComparison.Ordinal) == true ? "\r\n" : "\n"
+        };
+
+        var body = new StringBuilder();
+        using (var writer = XmlWriter.Create(body, settings))
+            document.Root!.Save(writer);
+
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + settings.NewLineChars +
+               body + settings.NewLineChars;
+    }
+
+    // Written beside the target and moved over it, so the game never finds half a file.
+    private static void WriteAtomically(string path, string text)
+    {
+        var temporary = path + ".modular.tmp";
+        File.WriteAllText(temporary, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    private static HashSet<string> ReadOwnership(string path)
+    {
+        var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            if (File.Exists(path) &&
+                JsonSerializer.Deserialize<Ownership>(File.ReadAllText(path)) is { Managed: { } uuids })
+            {
+                owned.UnionWith(uuids);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Without the record nothing is treated as Modular's, which only means an
+            // old entry is left for the user to remove.
+        }
+
+        return owned;
+    }
+
+    private static void WriteOwnership(string path, List<string> owned, HashSet<string> previous)
+    {
+        if (owned.Count == 0 && previous.Count == 0)
+            return;
+
+        if (previous.SetEquals(owned) && File.Exists(path))
+            return;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(new Ownership { Managed = owned }, JsonOptions));
+    }
+
+    private sealed record Entry(string Uuid, string Name, XElement Node);
+
+    private sealed class Ownership
+    {
+        public List<string> Managed { get; set; } = [];
+    }
+}

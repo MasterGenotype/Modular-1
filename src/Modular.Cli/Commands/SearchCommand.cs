@@ -38,10 +38,10 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
 
         [CommandOption("--backend|-b")]
         [Description("Backend to search (default: nexusmods)")]
-        public string Backend { get; init; } = "nexusmods";
+        public string Backend { get; init; } = BackendIds.NexusMods;
 
         [CommandOption("--adult")]
-        [Description("Include adult content in results")]
+        [Description("Show only adult content; without it, only non-adult content is shown")]
         public bool Adult { get; init; }
 
         [CommandOption("--no-fuzzy")]

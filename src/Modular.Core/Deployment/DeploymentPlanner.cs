@@ -78,7 +78,11 @@ public sealed class DeploymentPlanner
                     mod.OrderIndex,
                     mods.Count,
                     mod.ModId,
-                    staged.PackageType));
+                    staged.PackageType,
+                    Path.Combine(
+                        mod.StagingPath,
+                        staged.RootName,
+                        staged.RelativePath.Replace('/', Path.DirectorySeparatorChar))));
 
                 var rootName = string.IsNullOrEmpty(target.RootName)
                     ? staged.RootName

@@ -7,6 +7,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -70,7 +71,7 @@ public partial class ModListViewModel : ViewModelBase
         {
             ModId = "1",
             Name = "Sample Mod",
-            BackendId = "nexusmods",
+            BackendId = BackendIds.NexusMods,
             GameDomain = "skyrimspecialedition"
         }) { Status = ModDownloadStatus.Downloaded });
     }

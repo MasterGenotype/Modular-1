@@ -658,7 +658,7 @@ public sealed class Deployer : IDeployer
         }
         catch (Exception ex)
         {
-            result.Warnings.Add($"Could not write the load-order manifest: {ex.Message}");
+            result.Warnings.Add($"Load order: {ex.Message}");
             _logger?.LogWarning(ex, "WriteLoadOrderAsync failed for {ModuleId}", module.ModuleId);
         }
     }
@@ -684,9 +684,10 @@ public sealed class Deployer : IDeployer
         // A proxy DLL next to a game executable only loads under Proton with a
         // native-first override, and a missing override is the most common cause of
         // "installed but nothing happened".
+        //
+        // A module's own overrides are kept either way: it may know of a proxy that was
+        // installed by other means, which a scan of this deployment cannot see.
         var detected = ProxyDllDetector.Detect(installation, plan);
-        if (detected.Count == 0)
-            return;
 
         result.WineDllOverrides = detected
             .Concat(result.LaunchRequirements.WineDllOverrides)

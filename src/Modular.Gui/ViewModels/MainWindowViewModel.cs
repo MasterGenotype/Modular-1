@@ -8,6 +8,7 @@ using Modular.Core.Configuration;
 using Modular.Core.RateLimiting;
 using Modular.Gui.Messages;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -113,6 +114,53 @@ public partial class MainWindowViewModel : ViewModelBase
             });
         });
 
+        // Queue downloads requested by views that do not own the queue
+        WeakReferenceMessenger.Default.Register<EnqueueDownloadsMessage>(this, (r, m) =>
+        {
+            Dispatcher.UIThread.Post(async () =>
+            {
+                if (DownloadQueueViewModel == null) return;
+
+                try
+                {
+                    await DownloadQueueViewModel.EnqueueManyAsync(m.Items, m.AddToInstaller);
+                    StatusText = $"Queued {m.Items.Count} file(s) for download";
+                }
+                catch (Exception ex)
+                {
+                    StatusText = $"Error queueing downloads: {ex.Message}";
+                }
+            });
+        });
+
+        // Hand downloaded archives to the installer and show it
+        WeakReferenceMessenger.Default.Register<SendToInstallerMessage>(this, (r, m) =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                var installVm = ModManagerViewModel?.InstallViewModel;
+                if (ModManagerViewModel == null || installVm == null) return;
+
+                var added = 0;
+                foreach (var path in m.ArchivePaths)
+                {
+                    if (installVm.ArchivePaths.Contains(path)) continue;
+                    installVm.ArchivePaths.Add(path);
+                    added++;
+                }
+
+                if (m.Navigate)
+                {
+                    ModManagerViewModel.SelectedTabIndex = 0;
+                    NavigateTo("Mod Manager");
+                }
+
+                StatusText = added > 0
+                    ? $"Added {added} archive(s) to the installer"
+                    : "Archive(s) already in the installer";
+            });
+        });
+
         // Clear search selections after all downloads in a batch complete
         WeakReferenceMessenger.Default.Register<DownloadBatchCompletedMessage>(this, (r, m) =>
         {
@@ -159,7 +207,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var errors = new List<string>();
 
         // Check NexusMods configuration
-        var nexus = _backendRegistry.Get("nexusmods");
+        var nexus = _backendRegistry.Get(BackendIds.NexusMods);
         if (nexus != null)
         {
             errors.AddRange(nexus.ValidateConfiguration());
@@ -291,7 +339,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
             StatusText = $"Fetching files for {selected.Count} mod(s)...";
 
-            var backend = _backendRegistry?.Get("nexusmods") as Modular.Core.Backends.NexusMods.NexusModsBackend;
+            var backend = _backendRegistry?.Get(BackendIds.NexusMods) as Modular.Core.Backends.NexusMods.NexusModsBackend;
             if (backend == null)
             {
                 StatusText = "Backend not available";
@@ -347,7 +395,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
             StatusText = $"Fetching files for {selected.Count} mod(s)...";
 
-            var nexus = _backendRegistry?.Get("nexusmods") as Modular.Core.Backends.NexusMods.NexusModsBackend;
+            var nexus = _backendRegistry?.Get(BackendIds.NexusMods) as Modular.Core.Backends.NexusMods.NexusModsBackend;
             if (nexus == null) { StatusText = "NexusMods backend not available"; return; }
 
             var itemsToQueue = new List<(Modular.Sdk.Backends.Common.BackendMod mod, Modular.Sdk.Backends.Common.BackendModFile file)>();
@@ -406,7 +454,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         StatusText = $"Fetching files for {selected.Count} mod(s)...";
 
-        var backend = _backendRegistry?.Get("gamebanana") as Modular.Core.Backends.GameBanana.GameBananaBackend;
+        var backend = _backendRegistry?.Get(BackendIds.GameBanana) as Modular.Core.Backends.GameBanana.GameBananaBackend;
         if (backend == null)
         {
             StatusText = "Backend not available";

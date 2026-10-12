@@ -1,6 +1,8 @@
 using Modular.Core.Utilities;
 using Modular.Sdk.Archives;
 using SharpCompress.Archives;
+using SharpCompress.Common;
+using SharpCompress.Readers;
 
 namespace Modular.Core.Archives;
 
@@ -12,6 +14,14 @@ public class SharpCompressArchiveReader : IArchiveReader
     private readonly IArchive _archive;
     private readonly List<ArchiveEntry> _entries;
     private readonly Dictionary<string, IArchiveEntry> _sharpEntryMap;
+
+    // Opening one entry of a solid archive decompresses everything packed before it, so
+    // extracting entry by entry costs the whole archive again for every file. A forward
+    // reader decompresses once; it is kept across calls and only restarted when a caller
+    // asks for an entry it has already gone past.
+    private readonly bool _sequential;
+    private readonly HashSet<string> _passedKeys = new();
+    private IReader? _forwardReader;
 
     public SharpCompressArchiveReader(string archivePath)
     {
@@ -39,6 +49,8 @@ public class SharpCompressArchiveReader : IArchiveReader
             if (!string.IsNullOrEmpty(key))
                 _sharpEntryMap[key] = entry;
         }
+
+        _sequential = _archive.IsSolid || _archive.Type == ArchiveType.SevenZip;
     }
 
     public IReadOnlyList<ArchiveEntry> Entries => _entries;
@@ -63,9 +75,48 @@ public class SharpCompressArchiveReader : IArchiveReader
         if (File.Exists(destinationPath) && !overwrite)
             throw new IOException($"File already exists: {destinationPath}");
 
-        await using var sourceStream = sharpEntry.OpenEntryStream();
         await using var destStream = File.Create(destinationPath);
+
+        if (_sequential && TryAdvanceTo(entry.FullName))
+        {
+            await using var forwardStream = _forwardReader!.OpenEntryStream();
+            await forwardStream.CopyToAsync(destStream, ct);
+            return;
+        }
+
+        await using var sourceStream = sharpEntry.OpenEntryStream();
         await sourceStream.CopyToAsync(destStream, ct);
+    }
+
+    /// <summary>
+    /// Moves the forward reader onto the entry with the given key.
+    /// </summary>
+    /// <returns>False if the forward pass does not yield that entry.</returns>
+    private bool TryAdvanceTo(string key)
+    {
+        if (_forwardReader == null || _passedKeys.Contains(key))
+            ResetForwardReader();
+
+        _forwardReader ??= _archive.ExtractAllEntries();
+
+        while (_forwardReader.MoveToNextEntry())
+        {
+            var current = _forwardReader.Entry.Key ?? string.Empty;
+            _passedKeys.Add(current);
+
+            if (!_forwardReader.Entry.IsDirectory && current == key)
+                return true;
+        }
+
+        ResetForwardReader();
+        return false;
+    }
+
+    private void ResetForwardReader()
+    {
+        _forwardReader?.Dispose();
+        _forwardReader = null;
+        _passedKeys.Clear();
     }
 
     public async Task ExtractAllAsync(string destinationDirectory, bool overwrite = false, CancellationToken ct = default)
@@ -95,6 +146,7 @@ public class SharpCompressArchiveReader : IArchiveReader
 
     public void Dispose()
     {
+        _forwardReader?.Dispose();
         _archive.Dispose();
     }
 }

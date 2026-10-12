@@ -11,6 +11,7 @@ public partial class DownloadItemModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPause))]
     [NotifyPropertyChangedFor(nameof(CanResume))]
+    [NotifyPropertyChangedFor(nameof(HasFile))]
     private DownloadItemState _state = DownloadItemState.Queued;
 
     [ObservableProperty]
@@ -38,6 +39,18 @@ public partial class DownloadItemModel : ObservableObject
     private DateTime? _endTime;
 
     /// <summary>
+    /// Where the finished download was written. Null until the download completes.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFile))]
+    private string? _filePath;
+
+    /// <summary>
+    /// Whether the item has a downloaded file that file operations can act on.
+    /// </summary>
+    public bool HasFile => State == DownloadItemState.Completed && !string.IsNullOrEmpty(FilePath);
+
+    /// <summary>
     /// Unique identifier for this download item.
     /// </summary>
     public string Id { get; } = Guid.NewGuid().ToString();
@@ -57,6 +70,12 @@ public partial class DownloadItemModel : ObservableObject
     /// removal from a pause or a batch cancellation.
     /// </summary>
     public bool RemoveRequested { get; set; }
+
+    /// <summary>
+    /// Set for a file fetched to be installed, such as a missing dependency: once it has
+    /// downloaded it is added to the installer's list.
+    /// </summary>
+    public bool AddToInstaller { get; set; }
 
     /// <summary>
     /// Whether the item can currently be paused.

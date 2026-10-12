@@ -81,7 +81,7 @@ public class GameBananaVersionProvider : IModVersionProvider
 
         return parts.Length switch
         {
-            2 when parts[0].Equals("gamebanana", StringComparison.OrdinalIgnoreCase)
+            2 when parts[0].Equals(BackendIds.GameBanana, StringComparison.OrdinalIgnoreCase)
                 => parts[1],
 
             1 => parts[0],

@@ -8,6 +8,8 @@ using Modular.Core.Backends.NexusMods;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Metadata;
+using Modular.Core.Dependencies;
 using Modular.Core.Authentication;
 using Modular.Core.Diagnostics;
 using Modular.Core.Downloads;
@@ -171,6 +173,11 @@ sealed class Program
             return registry;
         });
 
+        services.AddSingleton<IModCategorySource>(sp => new NexusModCategorySource(
+            sp.GetRequiredService<NexusModsBackend>(),
+            sp.GetRequiredService<ModMetadataCache>(),
+            sp.GetService<ILogger<NexusModCategorySource>>()));
+
         // Other core services
         services.AddSingleton<IRenameService, RenameService>();
         services.AddSingleton(sp =>
@@ -237,7 +244,19 @@ sealed class Program
             pluginLoader?.LoadAllPlugins();
 
             return new ModInstallationService(
-                db, telemetry, snapshotManager, logger, pluginLoader);
+                db, telemetry, snapshotManager, logger, pluginLoader,
+                settings: sp.GetRequiredService<AppSettings>(),
+                categorySource: sp.GetRequiredService<IModCategorySource>());
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var installService = sp.GetRequiredService<ModInstallationService>();
+            var backends = sp.GetRequiredService<BackendRegistry>();
+            var logger = sp.GetService<ILogger<MissingDependencyService>>();
+            return new MissingDependencyService(
+                backends.GetAll(), installService.ResolveGameAsync, settings.ModsDirectory, logger);
         });
 
         // Profiles

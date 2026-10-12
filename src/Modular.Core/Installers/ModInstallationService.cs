@@ -6,6 +6,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Dependencies;
 using Modular.Core.Deployment;
 using Modular.Core.GameDetection;
+using Modular.Core.Metadata;
 using Modular.Core.Modules;
 using Modular.Core.Plugins;
 using Modular.Core.Snapshots;
@@ -33,6 +34,7 @@ public class ModInstallationService
     private readonly SnapshotManager? _snapshotManager;
     private readonly GameModuleRegistry _moduleRegistry;
     private readonly GameInstallationResolver _gameResolver;
+    private readonly IModCategorySource? _categorySource;
     private readonly DeploymentService _deployment;
     private readonly ILogger<ModInstallationService>? _logger;
 
@@ -62,6 +64,10 @@ public class ModInstallationService
     /// <param name="deployment">
     /// Deployment service; a default one wired to this database is created when omitted.
     /// </param>
+    /// <param name="categorySource">
+    /// Mod hub categories. Looked up when a mod is installed, so that game modules which
+    /// order mods by kind have the answer when they plan a deployment.
+    /// </param>
     public ModInstallationService(
         ModularDatabase database,
         TelemetryService? telemetry = null,
@@ -72,7 +78,8 @@ public class ModInstallationService
         GameInstallationResolver? gameResolver = null,
         string? stagingBasePath = null,
         AppSettings? settings = null,
-        DeploymentService? deployment = null)
+        DeploymentService? deployment = null,
+        IModCategorySource? categorySource = null)
     {
         _database = database;
         _telemetry = telemetry;
@@ -94,7 +101,9 @@ public class ModInstallationService
         _archiveInventory = new ArchiveInventoryService(database);
         _conflictIndex = new FileConflictIndex();
 
-        _moduleRegistry = moduleRegistry ?? new GameModuleRegistry(archiveReaderFactory);
+        _categorySource = categorySource;
+        _moduleRegistry = moduleRegistry
+            ?? new GameModuleRegistry(archiveReaderFactory, categories: categorySource);
         _gameResolver = gameResolver ?? new GameInstallationResolver(
             registry: _moduleRegistry, database: database);
 
@@ -252,8 +261,50 @@ public class ModInstallationService
                 ModPaths = modPaths
             };
 
+            foreach (var (choiceId, optionId) in options.Selections)
+                context.Selections[choiceId] = optionId;
+
             var plan = await _installerManager.CreateInstallPlanAsync(
                 archivePath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+
+            // Step 4b: Settle anything the archive leaves to the user.
+            //
+            // The plan already assumes a default for each choice, so an install with
+            // nobody to ask still goes ahead; the assumption is reported, not hidden.
+            var open = plan.Choices.Where(c => !c.IsResolved).ToList();
+            if (open.Count > 0 && !options.DryRun)
+            {
+                if (options.ChoiceResolver != null)
+                {
+                    var answers = await options.ChoiceResolver(plan.Choices, ct);
+                    if (answers == null)
+                    {
+                        result.Cancelled = true;
+                        result.Error = "Installation cancelled";
+                        await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.RolledBack, ct: ct);
+                        return result;
+                    }
+
+                    foreach (var (choiceId, optionId) in answers)
+                        context.Selections[choiceId] = optionId;
+
+                    plan = await _installerManager.CreateInstallPlanAsync(
+                        archivePath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+                }
+
+                foreach (var choice in plan.Choices.Where(c => !c.IsResolved))
+                {
+                    var assumed = choice.Options.FirstOrDefault(o => o.Id == choice.SelectedOptionId);
+                    result.Warnings.Add(
+                        $"{choice.Title} Nothing was chosen, so '{assumed?.Label ?? choice.SelectedOptionId}' " +
+                        $"was installed out of {choice.Options.Count} options.");
+                }
+            }
+
+            result.Choices = plan.Choices;
+
+            // Step 4c: Learn the mod's category while there is time to ask.
+            await WarmCategoryAsync(archivePath, module, ct);
 
             if (options.DryRun)
             {
@@ -831,6 +882,61 @@ public class ModInstallationService
         return await _gameResolver.ResolveAsync(gameKey, persist: false, ct);
     }
 
+    // Asks the mod hub what kind of mod an archive is, when the archive can be traced to
+    // one. Only ever an aid to ordering, so nothing here can fail an install.
+    private async Task WarmCategoryAsync(string archivePath, IGameModule? module, CancellationToken ct)
+    {
+        if (_categorySource == null || module == null)
+            return;
+
+        var modId = NexusFileName.ParseModId(archivePath);
+        var gameDomain = module.GameIds.FirstOrDefault(id => id.Length > 0 && !id.All(char.IsDigit));
+
+        if (modId == null || gameDomain == null)
+            return;
+
+        try
+        {
+            await _categorySource.WarmAsync(gameDomain, [modId], ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogDebug(ex, "Category lookup failed for {Archive}", archivePath);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the game an installed changeset belongs to, and the module that owns it.
+    /// </summary>
+    /// <param name="changeset">An installed changeset.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The installation and its module, or <c>null</c> when the game can no longer be found.
+    /// </returns>
+    public async Task<(GameInstallation Installation, IGameModule Module)?> ResolveGameAsync(
+        ChangesetRecord changeset, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(changeset);
+
+        GameInstallation? installation = null;
+
+        if (!string.IsNullOrEmpty(changeset.GameKey))
+        {
+            installation = await ResolveInstallationForKeyAsync(
+                changeset.GameKey, changeset.TargetDirectory, ct);
+        }
+        else if (!string.IsNullOrEmpty(changeset.TargetDirectory) &&
+                 Directory.Exists(changeset.TargetDirectory))
+        {
+            installation = await _gameResolver.ResolveAsync(
+                changeset.TargetDirectory, persist: false, ct);
+        }
+
+        return installation == null
+            ? null
+            : (installation, _gameResolver.GetModule(installation));
+    }
+
     /// <summary>
     /// Lists all committed (installed) changesets, optionally filtered by target directory.
     /// </summary>
@@ -1083,6 +1189,20 @@ public class ModInstallationOptions
     /// <summary>Where the mod came from: <c>nexus</c>, <c>gamebanana</c> or <c>local</c>.</summary>
     public string Source { get; set; } = "local";
 
+    /// <summary>
+    /// Answers to the choices an archive offers, as choice id to option id, for a caller
+    /// that already knows them.
+    /// </summary>
+    public Dictionary<string, string> Selections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Asks the user to settle the choices an archive offers. Given every choice, with
+    /// the installer's default marked on each; returns choice id to option id, or
+    /// <c>null</c> to cancel the install. When absent, the defaults are installed and
+    /// reported as warnings.
+    /// </summary>
+    public Func<IReadOnlyList<InstallChoice>, CancellationToken, Task<IReadOnlyDictionary<string, string>?>>? ChoiceResolver { get; set; }
+
     /// <summary>Backend file id, stored so an update or 1-Click flow can find it again.</summary>
     public string? SourceFileId { get; set; }
 }
@@ -1131,6 +1251,9 @@ public class ModInstallationResult
 
     /// <summary>Non-fatal findings worth showing the user.</summary>
     public List<string> Warnings { get; set; } = new();
+
+    /// <summary>The choices the archive offered, each marked with what was installed.</summary>
+    public List<InstallChoice> Choices { get; set; } = new();
     public List<string> InstalledFiles { get; set; } = new();
     public List<string> BackedUpFiles { get; set; } = new();
     public List<string> PlannedOperations { get; set; } = new();

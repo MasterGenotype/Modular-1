@@ -116,6 +116,46 @@ public interface IGameModule
         IReadOnlyList<DeployedMod> mods) => null;
 
     /// <summary>
+    /// Finds dependencies that mods in the game's mod folders declare but nothing satisfies.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>
+    /// One entry per declaring mod and missing dependency. Empty for engines whose mods
+    /// carry no dependency metadata.
+    /// </returns>
+    /// <remarks>
+    /// Reads what is on disk, so it covers mods Modular did not install as well. It only
+    /// names what is missing: the engine's identifier is not one any mod site knows, so
+    /// finding a download is the caller's job.
+    /// </remarks>
+    IReadOnlyList<UnmetDependency> FindUnmetDependencies(GameInstallation installation) =>
+        Array.Empty<UnmetDependency>();
+
+    /// <summary>
+    /// Finds mods in the game's mod folders that declare they conflict with another mod
+    /// that is also present.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>One entry per declared conflict; empty when the engine has no such metadata.</returns>
+    IReadOnlyList<DeclaredConflict> FindDeclaredConflicts(GameInstallation installation) =>
+        Array.Empty<DeclaredConflict>();
+
+    /// <summary>
+    /// Names the mods present in the game's mod folders, whoever installed them.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>
+    /// Mod names as the mods' own metadata gives them; empty when the engine's mods do not
+    /// carry names.
+    /// </returns>
+    /// <remarks>
+    /// Lets a requirement be recognised as met when the mod was installed by another
+    /// manager, which leaves nothing in Modular's own records.
+    /// </remarks>
+    IReadOnlyList<string> ListPresentModNames(GameInstallation installation) =>
+        Array.Empty<string>();
+
+    /// <summary>
     /// Checks a staged mod's layout before it is deployed.
     /// </summary>
     /// <param name="installation">The resolved installation.</param>

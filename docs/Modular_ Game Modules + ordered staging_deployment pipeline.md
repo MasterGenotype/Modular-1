@@ -61,7 +61,7 @@ Engine load-order rules per game:
     * Mechanism: filename prefixes.
 * **HZD Remastered**: there is no `Packed_DX12` workflow. Mods are root-level DLL loaders (`winhttp.dll` + `mod_config.ini`).
 * **Bethesda (future)**: `plugins.txt` in `%LOCALAPPDATA%/<Game>/`, where a `*` prefix means enabled. Last wins. It is a manifest file outside the game dir.
-* **BG3 (future)**: paks live in `%LOCALAPPDATA%/Larian Studios/Baldur's Gate 3/Mods`, and order is set in `PlayerProfiles/Public/modsettings.lsx`. It is a manifest file outside the game dir.
+* **BG3**: paks live in `%LOCALAPPDATA%/Larian Studios/Baldur's Gate 3/Mods`, and order is set in `PlayerProfiles/Public/modsettings.lsx`. It is a manifest file outside the game dir.
 **Consequence:** Modular keeps one user-facing rule, "later in the order list wins." Each module then translates that list into the engine's own mechanism in `WriteLoadOrderAsync` / `MapDeployPath`. For Cyberpunk that means writing `modlist.txt` in **reverse**, because the first archive loaded wins.
 ### Runtime-generated and tool-modified files
 Some files in the game directory are written by the game or by mod tooling after deployment:
@@ -333,12 +333,16 @@ Each phase builds and passes `make test` on its own and can merge independently.
     * HZD Remastered exclusion and the Prefetch warning.
     * Generated paths and the proxy-DLL / `WINEDLLOVERRIDES` detector.
 ## Verified routes for future modules **[R4]**
-Recorded so the §2a SDK shape is known to cover them. Both modules remain **out of scope** for this pass.
-**Baldur's Gate 3** (AppID 1086940). Load order lives in `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx`, written by `WriteLoadOrderAsync`.
-* `bg3.pak` (ordinary mod) → `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/Mods/`, layout `FlatFiles` (the `.pak` itself, no subfolder).
-* `bg3.script_extender` (`DWrite.dll`) → `$GAME/bin/`, layout `Preserve`.
-* `bg3.native_loader` (Native Mod Loader) → `$GAME/bin/`, layout `Preserve`.
-* `bg3.native_mod` → `$GAME/bin/NativeMods/` **or** `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/Plugins/`, depending on the installed loader. Metadata-driven only, never inferred from `*.dll`.
+Recorded so the §2a SDK shape is known to cover them. Baldur's Gate 3 has since been implemented; FF7 Rebirth remains **out of scope**.
+**Baldur's Gate 3** (AppID 1086940). **Implemented** (`BaldursGate3GameModule`). Load order lives in `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/modsettings.lsx`, written by `WriteLoadOrderAsync` through `BG3ModSettings`. The game ignores pak file names; list position is the order.
+* `bg3.pak` (ordinary mod) → `$LOCALAPPDATA/Larian Studios/Baldur's Gate 3/Mods/`, layout `FlatFiles` (the `.pak` itself, no subfolder). Deployed with a `<band>-<order>_` prefix that mirrors the load order for a person browsing the folder and has no effect on the game.
+* `bg3.loose_data` (loose override) → `$GAME/Data/…`, layout `Preserve`. A loose file overrides the same path in every pak whatever the load order, which `ValidateStaged` reports.
+* `bg3.script_extender` (`DWrite.dll`, `ScriptExtenderSettings.json`) → `$GAME/bin/`, wherever they sit in the archive. Needs the `dwrite` Wine DLL override under Proton.
+* `bg3.native` (anything an archive places under `bin/`, such as the Native Mod Loader and `bin/NativeMods/`) → `$GAME/bin/…`, layout `Preserve`. Only from an explicit `bin/` path, never inferred from `*.dll`.
+* Bands (framework, interface, race, class, gameplay, item, appearance, patch) come from the mod's NexusMods category when known and otherwise from what the pak packs. File and archive names are never consulted.
+* `modsettings.lsx` is shared with the game's own mod manager. Entries Modular did not add are never removed or reordered, except to put a mod after something it depends on. Modular's entries are tracked in `modsettings.modular.json` beside it; the previous file is kept as `modsettings.lsx.modular.bak` and the first one ever replaced as `.modular.orig`. Nothing is written while the game is running.
+* An archive holding the same pak in several folders ("Option A", "Option B") is an `InstallChoice`; one option is installed.
+* Not implemented: the `Plugins/` location some native loaders use under `$LOCALAPPDATA`.
 **FF7 Rebirth** (AppID 2909400):
 * `ue.pak_bundle` (`.pak` + `.ucas` + `.utoc`) → `$GAME/End/Content/Paks/~mods/`, layout `FlatFiles`; the trio is renamed together when order-prefixed.
 * `ff7rb.reunion_plugin` (Reunion / Dresscode and dependents) → `$GAME/End/Mods/<mod>/`, layout `FolderPerMod`.

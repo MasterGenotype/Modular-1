@@ -150,6 +150,18 @@ public abstract class GameModuleBase : IGameModule
         IReadOnlyList<DeployedMod> mods) => null;
 
     /// <inheritdoc />
+    public virtual IReadOnlyList<UnmetDependency> FindUnmetDependencies(
+        GameInstallation installation) => Array.Empty<UnmetDependency>();
+
+    /// <inheritdoc />
+    public virtual IReadOnlyList<DeclaredConflict> FindDeclaredConflicts(
+        GameInstallation installation) => Array.Empty<DeclaredConflict>();
+
+    /// <inheritdoc />
+    public virtual IReadOnlyList<string> ListPresentModNames(
+        GameInstallation installation) => Array.Empty<string>();
+
+    /// <inheritdoc />
     public virtual IReadOnlyList<ModDiagnostic> ValidateStaged(
         GameInstallation installation,
         StagedMod stagedMod) => Array.Empty<ModDiagnostic>();

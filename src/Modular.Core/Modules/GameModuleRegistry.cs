@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Archives;
+using Modular.Core.Metadata;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Modules;
 
@@ -26,9 +27,13 @@ public sealed class GameModuleRegistry
     /// </summary>
     /// <param name="archiveReaderFactory">Shared archive reader factory handed to each module.</param>
     /// <param name="logger">Optional logger.</param>
+    /// <param name="categories">
+    /// Mod hub categories, for modules that order mods by what kind of mod they are.
+    /// </param>
     public GameModuleRegistry(
         IArchiveReaderFactory? archiveReaderFactory = null,
-        ILogger<GameModuleRegistry>? logger = null)
+        ILogger<GameModuleRegistry>? logger = null,
+        IModCategorySource? categories = null)
     {
         _logger = logger;
 
@@ -37,6 +42,7 @@ public sealed class GameModuleRegistry
         Register(new CyberpunkGameModule(factory));
         Register(new FF7RemakeGameModule(factory));
         Register(new HorizonZeroDawnGameModule(factory));
+        Register(new BaldursGate3GameModule(factory, categories));
     }
 
     /// <summary>

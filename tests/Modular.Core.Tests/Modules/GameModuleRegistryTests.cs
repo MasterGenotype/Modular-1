@@ -23,13 +23,14 @@ public sealed class GameModuleRegistryTests : IDisposable
         var registry = new GameModuleRegistry();
 
         registry.Modules.Select(m => m.ModuleId)
-            .Should().BeEquivalentTo(["cyberpunk2077", "ff7remake", "horizonzerodawn"]);
+            .Should().BeEquivalentTo(["cyberpunk2077", "ff7remake", "horizonzerodawn", "baldursgate3"]);
     }
 
     [Theory]
     [InlineData(GameIds.Cyberpunk2077, "cyberpunk2077")]
     [InlineData(GameIds.FinalFantasy7Remake, "ff7remake")]
     [InlineData(GameIds.HorizonZeroDawn, "horizonzerodawn")]
+    [InlineData(GameIds.BaldursGate3, "baldursgate3")]
     public void ResolveByGameId_Slug_FindsModule(string slug, string expectedModuleId)
     {
         new GameModuleRegistry().ResolveByGameId(slug)!.ModuleId.Should().Be(expectedModuleId);

@@ -65,8 +65,8 @@ public class InstallerGameScopingTests
     {
         var manager = new InstallerManager();
 
-        // All 8 built-in installers should be registered
-        manager.GetInstallers().Should().HaveCount(8);
+        // All 9 built-in installers should be registered
+        manager.GetInstallers().Should().HaveCount(9);
 
         // With no gameId, game-specific installers are not pre-filtered
         // (they may still return CanHandle=false from content analysis)

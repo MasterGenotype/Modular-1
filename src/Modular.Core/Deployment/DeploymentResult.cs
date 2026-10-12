@@ -111,7 +111,8 @@ public static class ProxyDllDetector
     /// </summary>
     public static IReadOnlyList<string> KnownProxyNames { get; } =
     [
-        "winmm", "version", "winhttp", "dxgi", "d3d11", "dinput8", "xinput1_3", "dsound"
+        "winmm", "version", "winhttp", "dxgi", "d3d11", "dinput8", "xinput1_3", "dsound",
+        "dwrite"
     ];
 
     /// <summary>

@@ -41,7 +41,7 @@ public sealed class OrderListCommand : AsyncCommand<OrderListCommand.Settings>
 
         try
         {
-            var installService = new ModInstallationService(db, services.Telemetry, settings: services.Settings);
+            var installService = services.CreateInstallationService(db);
             var installation = await installService.Deployment.ResolveInstallationAsync(settings.Game);
 
             if (installation == null)
@@ -192,7 +192,7 @@ public sealed class OrderSetCommand : AsyncCommand<OrderSetCommand.Settings>
 
         try
         {
-            var installService = new ModInstallationService(db, services.Telemetry, settings: services.Settings);
+            var installService = services.CreateInstallationService(db);
             var installation = await installService.Deployment.ResolveInstallationAsync(settings.Game, cts.Token);
 
             if (installation == null)

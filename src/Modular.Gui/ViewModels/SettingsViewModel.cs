@@ -11,6 +11,7 @@ using Modular.Core.Diagnostics;
 using Modular.Core.Telemetry;
 using Modular.Gui.Messages;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -47,7 +48,7 @@ public partial class SettingsViewModel : ViewModelBase
     private string _gameBananaGameIds = string.Empty;
 
     [ObservableProperty]
-    private string _gameBananaDownloadDir = "gamebanana";
+    private string _gameBananaDownloadDir = BackendIds.GameBanana;
 
     // Backend settings
     [ObservableProperty]
@@ -201,8 +202,8 @@ public partial class SettingsViewModel : ViewModelBase
         GameBananaDownloadDir = _settings.GameBananaDownloadDir ?? "gamebanana";
 
         // Backends
-        NexusModsBackendEnabled = _settings.EnabledBackends.Contains("nexusmods");
-        GameBananaBackendEnabled = _settings.EnabledBackends.Contains("gamebanana");
+        NexusModsBackendEnabled = _settings.EnabledBackends.Contains(BackendIds.NexusMods);
+        GameBananaBackendEnabled = _settings.EnabledBackends.Contains(BackendIds.GameBanana);
 
         // Downloads
         ModsDirectory = _settings.ModsDirectory ?? string.Empty;
@@ -392,8 +393,8 @@ public partial class SettingsViewModel : ViewModelBase
     private List<string> BuildEnabledBackends()
     {
         var backends = new List<string>();
-        if (NexusModsBackendEnabled) backends.Add("nexusmods");
-        if (GameBananaBackendEnabled) backends.Add("gamebanana");
+        if (NexusModsBackendEnabled) backends.Add(BackendIds.NexusMods);
+        if (GameBananaBackendEnabled) backends.Add(BackendIds.GameBanana);
         return backends;
     }
 

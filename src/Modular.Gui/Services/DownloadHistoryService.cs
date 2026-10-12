@@ -67,6 +67,17 @@ public class DownloadHistoryService
     }
 
     /// <summary>
+    /// Removes every entry, resetting the statistics to zero.
+    /// </summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _history.Clear();
+        }
+    }
+
+    /// <summary>
     /// Loads history from disk.
     /// </summary>
     public async Task LoadAsync()

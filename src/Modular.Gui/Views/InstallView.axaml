@@ -184,6 +184,15 @@
                         </TextBlock.Text>
                     </TextBlock>
                     <ProgressBar Value="{Binding InstallProgress}" Minimum="0" Maximum="100"/>
+                    <Button Command="{Binding AbortInstallCommand}"
+                            HorizontalAlignment="Right"
+                            Padding="15,8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <mi:MaterialIcon Kind="Cancel" Width="18" Height="18"/>
+                            <TextBlock Text="Abort Installation" IsVisible="{Binding !IsAborting}"/>
+                            <TextBlock Text="Aborting..." IsVisible="{Binding IsAborting}"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </StackPanel>
 
@@ -193,14 +202,17 @@
                     IsVisible="{Binding InstallResults.Count}">
                 <StackPanel Spacing="5">
                     <TextBlock Text="Results" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                    <ItemsControl ItemsSource="{Binding InstallResults}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" FontSize="12" FontFamily="Consolas" Opacity="0.8"
-                                           TextWrapping="Wrap"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding InstallResults}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontSize="12" FontFamily="Consolas" Opacity="0.8"
+                                               TextWrapping="Wrap"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
 

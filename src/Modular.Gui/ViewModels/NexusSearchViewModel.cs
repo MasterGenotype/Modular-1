@@ -39,7 +39,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     private ModSortOrder _sortOrder = ModSortOrder.Relevance;
 
     [ObservableProperty]
-    private bool _includeAdultContent;
+    private bool _adultContentOnly;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -205,7 +205,7 @@ public partial class NexusSearchViewModel : ViewModelBase
             ModId = "1234",
             Name = "Sample Search Result",
             Author = "TestAuthor",
-            BackendId = "nexusmods",
+            BackendId = BackendIds.NexusMods,
             GameDomain = "skyrimspecialedition",
             EndorsementCount = 1500,
             DownloadCount = 50000
@@ -322,7 +322,7 @@ public partial class NexusSearchViewModel : ViewModelBase
                 SortBy = SortOrder,
                 Page = CurrentPage,
                 PageSize = 20,
-                AdultContent = IncludeAdultContent
+                AdultContent = AdultContentOnly
             });
 
             // Re-rank results by fuzzy match score when search terms are present,
@@ -378,7 +378,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     {
         if (!HasNextPage) return;
         CurrentPage++;
-        await ExecuteSearchAsync();
+        await SearchNexusModsAsync();
     }
 
     [RelayCommand]
@@ -386,7 +386,7 @@ public partial class NexusSearchViewModel : ViewModelBase
     {
         if (CurrentPage <= 1) return;
         CurrentPage--;
-        await ExecuteSearchAsync();
+        await SearchNexusModsAsync();
     }
 
     [RelayCommand]

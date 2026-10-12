@@ -140,6 +140,21 @@ public static class PackageTypes
     /// <summary>A Horizon Zero Dawn loose asset or loader file.</summary>
     public const string HzdLooseFile = "hzd.loose_file";
 
+    /// <summary>A Baldur's Gate 3 <c>.pak</c> mod, which lives in the user <c>Mods</c> folder.</summary>
+    public const string Bg3Pak = "bg3.pak";
+
+    /// <summary>A Baldur's Gate 3 loose override file beneath the install's <c>Data</c> folder.</summary>
+    public const string Bg3LooseData = "bg3.loose_data";
+
+    /// <summary>A Baldur's Gate 3 native loader file beside the executable (Script Extender, NativeMods).</summary>
+    public const string Bg3Native = "bg3.native";
+
+    /// <summary>
+    /// Baldur's Gate 3 Script Extender: <c>DWrite.dll</c> and its settings, which go beside
+    /// the game executable in <c>bin/</c>.
+    /// </summary>
+    public const string Bg3ScriptExtender = "bg3.script_extender";
+
     /// <summary>Anything the analyzer could not classify.</summary>
     public const string Unknown = "unknown";
 }

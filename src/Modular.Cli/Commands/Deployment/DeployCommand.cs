@@ -83,10 +83,7 @@ public sealed class DeployCommand : AsyncCommand<DeployCommand.Settings>
             var pluginLoader = new PluginLoader();
             pluginLoader.LoadAllPlugins();
 
-            var installService = new ModInstallationService(
-                db, services.Telemetry,
-                pluginLoader: pluginLoader,
-                settings: services.Settings);
+            var installService = services.CreateInstallationService(db, pluginLoader);
 
             var installation = await installService.Deployment
                 .ResolveInstallationAsync(settings.Game, cts.Token);

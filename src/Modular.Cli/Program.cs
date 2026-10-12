@@ -185,6 +185,12 @@ class Program
                 .WithExample("installed")
                 .WithExample("installed", "--game", "730");
 
+            config.AddCommand<DependenciesCommand>("dependencies")
+                .WithAlias("deps")
+                .WithDescription("List what installed mods need and do not have")
+                .WithExample("dependencies")
+                .WithExample("dependencies", "--game", "1086940");
+
             // Game detection commands
             config.AddCommand<DetectCommand>("detect")
                 .WithDescription("Resolve a game and show its module, engine and deployment roots")

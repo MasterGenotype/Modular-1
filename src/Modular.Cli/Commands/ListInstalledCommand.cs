@@ -38,7 +38,7 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
             var db = new ModularDatabase(dbPath);
             await db.InitializeAsync();
 
-            var installService = new ModInstallationService(db, services.Telemetry);
+            var installService = services.CreateInstallationService(db);
 
             // Resolve game directory if specified
             string? targetDir = null;

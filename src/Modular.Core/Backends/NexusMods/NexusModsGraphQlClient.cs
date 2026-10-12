@@ -86,7 +86,65 @@ internal class NexusModsGraphQlClient
         }
         """;
 
+    // Looks mods up by (game id, mod id). The "mods" search query cannot do this: it
+    // rejects a modId filter without a game id, and treats several ids as "all of them".
+    private const string ModsByIdsQuery = """
+        query ModsByIds($ids: [CompositeIdInput!]!) {
+          legacyMods(ids: $ids) {
+            nodes {
+              modId
+              name
+              summary
+              author
+              version
+              category
+              modCategory { categoryId }
+              endorsements
+              downloads
+              createdAt
+              updatedAt
+              pictureUrl
+              adultContent
+              game { domainName }
+            }
+          }
+        }
+        """;
+
+    private const string RequirementsQuery = """
+        query ModRequirements($ids: [CompositeIdInput!]!, $count: Int) {
+          legacyMods(ids: $ids) {
+            nodes {
+              modId
+              modRequirements {
+                nexusRequirements(count: $count) {
+                  nodes { modId modName gameId url notes externalRequirement }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    private const string GameIdQuery = """
+        query GameId($domainName: String) {
+          game(domainName: $domainName) { id }
+        }
+        """;
+
     private const int MaxModsPerQuery = 20;
+
+    // The API prices a query at roughly mods x requirements x fields and refuses anything
+    // over 10,000, so a full batch of mods leaves room for about this many each. That is
+    // still more than a mod page realistically lists.
+    private const int MaxRequirementsPerMod = 40;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private readonly Dictionary<string, int> _gameIds = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IFluentClient _client;
     private readonly string _apiKey;
@@ -120,10 +178,10 @@ internal class NexusModsGraphQlClient
             filter["nameStemmed"] = new[] { new { value = query.Terms!.Trim(), op = "MATCHES" } };
         }
 
-        // Include adult content when requested
-        if (query.AdultContent)
+        // The site returns adult and non-adult mods together unless told which to keep.
+        if (query.AdultContent is { } adultOnly)
         {
-            filter["adultContent"] = new[] { new { value = true, op = "EQUALS" } };
+            filter["adultContent"] = new[] { new { value = adultOnly, op = "EQUALS" } };
         }
 
         var requestBody = new
@@ -141,30 +199,10 @@ internal class NexusModsGraphQlClient
         _logger?.LogDebug("Searching NexusMods GraphQL: terms={Terms}, game={Game}, page={Page}, adult={Adult}",
             query.Terms, query.GameDomain, query.Page, query.AdultContent);
 
-        var json = await _client.PostAsync(GraphQlUrl)
-            .WithHeader("apikey", _apiKey)
-            .WithHeader("accept", "application/json")
-            .WithJsonBody(requestBody)
-            .AsStringAsync();
-
-        _logger?.LogDebug("GraphQL response: {Response}", json.Length > 500 ? json[..500] : json);
-
-        var response = JsonSerializer.Deserialize<NexusGraphQlResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
-        if (response?.Errors is { Count: > 0 })
-        {
-            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
-            _logger?.LogWarning("GraphQL returned errors: {Errors}", errorMessages);
-            throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
-        }
-
-        var modsResult = response?.Data?.Mods;
+        var modsResult = (await PostAsync<NexusGraphQlData>(requestBody, ct))?.Mods;
         if (modsResult == null)
         {
-            _logger?.LogWarning("GraphQL search returned no data. Response: {Response}", json);
+            _logger?.LogWarning("GraphQL search returned no data");
             return new ModSearchResult
             {
                 Mods = [],
@@ -198,7 +236,7 @@ internal class NexusModsGraphQlClient
             ModId = node.ModId.ToString(),
             Name = node.Name,
             GameDomain = domain,
-            BackendId = "nexusmods",
+            BackendId = BackendIds.NexusMods,
             CategoryId = node.ModCategory?.CategoryId,
             Summary = node.Summary,
             Author = node.Author,
@@ -213,57 +251,140 @@ internal class NexusModsGraphQlClient
     }
 
     /// <summary>
-    /// Fetches mod metadata for multiple mod IDs in a single GraphQL request.
-    /// Returns up to <see cref="MaxModsPerQuery"/> mods per call.
+    /// Fetches mod metadata for the given mod IDs, <see cref="MaxModsPerQuery"/> per request.
     /// </summary>
     public async Task<List<NexusGraphQlMod>> FetchModsByIdsAsync(
         string gameDomain, IReadOnlyList<int> modIds, CancellationToken ct = default)
     {
         if (modIds.Count == 0) return [];
 
-        var filter = new Dictionary<string, object>
-        {
-            ["gameDomainName"] = new[] { new { value = gameDomain } },
-            ["modId"] = modIds.Select(id => new { value = id }).ToArray()
-        };
+        var gameId = await ResolveGameIdAsync(gameDomain, ct);
+        var results = new List<NexusGraphQlMod>();
 
-        var requestBody = new
+        for (var i = 0; i < modIds.Count; i += MaxModsPerQuery)
         {
-            query = ModsQuery,
-            variables = new
+            ct.ThrowIfCancellationRequested();
+
+            var chunk = modIds.Skip(i).Take(MaxModsPerQuery).ToList();
+
+            _logger?.LogDebug("GraphQL batch fetch: {Count} mod(s) for {Game}", chunk.Count, gameDomain);
+
+            var data = await PostAsync<NexusGraphQlData>(
+                new
+                {
+                    query = ModsByIdsQuery,
+                    variables = new { ids = BuildIds(gameId, chunk) }
+                },
+                ct);
+
+            results.AddRange(data?.LegacyMods?.Nodes ?? []);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Fetches the requirements the authors of the given mods have listed.
+    /// </summary>
+    /// <param name="gameId">Numeric NexusMods game id the mods belong to.</param>
+    /// <param name="modIds">Mod ids to look up.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// Requirements keyed by the requiring mod's id. Mods the site does not know are absent.
+    /// </returns>
+    public async Task<Dictionary<int, List<NexusGraphQlRequirement>>> FetchRequirementsAsync(
+        int gameId, IReadOnlyList<int> modIds, CancellationToken ct = default)
+    {
+        var result = new Dictionary<int, List<NexusGraphQlRequirement>>();
+
+        for (var i = 0; i < modIds.Count; i += MaxModsPerQuery)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chunk = modIds.Skip(i).Take(MaxModsPerQuery).ToList();
+
+            _logger?.LogDebug("GraphQL requirements fetch: {Count} mod(s) for game {Game}", chunk.Count, gameId);
+
+            var data = await PostAsync<NexusGraphQlData>(
+                new
+                {
+                    query = RequirementsQuery,
+                    variables = new { ids = BuildIds(gameId, chunk), count = MaxRequirementsPerMod }
+                },
+                ct);
+
+            foreach (var mod in data?.LegacyMods?.Nodes ?? [])
+                result[mod.ModId] = mod.ModRequirements?.NexusRequirements?.Nodes ?? [];
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves a game domain name (e.g. "baldursgate3") to its numeric NexusMods game ID.
+    /// Results are cached per domain.
+    /// </summary>
+    public async Task<int> ResolveGameIdAsync(string gameDomain, CancellationToken ct = default)
+    {
+        if (_gameIds.TryGetValue(gameDomain, out var cached))
+            return cached;
+
+        var data = await PostAsync<NexusGraphQlData>(
+            new
             {
-                filter,
-                count = Math.Min(modIds.Count, MaxModsPerQuery),
-                offset = 0
-            }
-        };
+                query = GameIdQuery,
+                variables = new { domainName = gameDomain }
+            },
+            ct);
 
-        _logger?.LogDebug("GraphQL batch fetch: {Count} mod(s) for {Game}", modIds.Count, gameDomain);
+        var id = data?.Game?.Id
+            ?? throw new InvalidOperationException($"Could not resolve game ID for domain '{gameDomain}'");
 
+        _gameIds[gameDomain] = id;
+        return id;
+    }
+
+    private static object[] BuildIds(int gameId, IEnumerable<int> modIds) =>
+        modIds.Select(modId => (object)new { gameId, modId }).ToArray();
+
+    // Every query goes through here, so each one is cancellable and reports API errors
+    // the same way.
+    private async Task<TData?> PostAsync<TData>(object requestBody, CancellationToken ct)
+        where TData : class
+    {
         var json = await _client.PostAsync(GraphQlUrl)
             .WithHeader("apikey", _apiKey)
             .WithHeader("accept", "application/json")
             .WithJsonBody(requestBody)
+            .WithCancellation(ct)
             .AsStringAsync();
 
-        var response = JsonSerializer.Deserialize<NexusGraphQlResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        _logger?.LogDebug("GraphQL response: {Response}", json.Length > 500 ? json[..500] : json);
+
+        return ParseResponse<TData>(json, _logger);
+    }
+
+    /// <summary>
+    /// Parses a GraphQL response body, turning reported errors into an exception.
+    /// </summary>
+    internal static TData? ParseResponse<TData>(string json, ILogger? logger = null)
+        where TData : class
+    {
+        var response = JsonSerializer.Deserialize<NexusGraphQlResponse<TData>>(json, JsonOptions);
 
         if (response?.Errors is { Count: > 0 })
         {
             var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
-            _logger?.LogWarning("GraphQL batch fetch errors: {Errors}", errorMessages);
+            logger?.LogWarning("GraphQL returned errors: {Errors}", errorMessages);
             throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
         }
 
-        return response?.Data?.Mods?.Nodes ?? [];
+        return response?.Data;
     }
 
     /// <summary>
-    /// Fetches mod metadata for a large number of mod IDs, automatically batching
-    /// into groups of <see cref="MaxModsPerQuery"/> and pacing requests.
+    /// Fetches mod metadata for a large number of mod IDs, pausing between requests of
+    /// <see cref="MaxModsPerQuery"/> so a long list does not exhaust the rate limit.
     /// </summary>
     public async Task<List<NexusGraphQlMod>> FetchModsByIdsBatchedAsync(
         string gameDomain, IReadOnlyList<int> modIds, TimeSpan pacingDelay, CancellationToken ct = default)
@@ -322,30 +443,10 @@ internal class NexusModsGraphQlClient
         _logger?.LogDebug("Searching NexusMods collections: gameId={GameId}, game={Game}, count={Count}, offset={Offset}",
             gameId, gameDomain, count, offset);
 
-        var json = await _client.PostAsync(GraphQlUrl)
-            .WithHeader("apikey", _apiKey)
-            .WithHeader("accept", "application/json")
-            .WithJsonBody(requestBody)
-            .AsStringAsync();
-
-        _logger?.LogDebug("GraphQL collection response: {Response}", json.Length > 1000 ? json[..1000] : json);
-
-        var response = JsonSerializer.Deserialize<NexusGraphQlCollectionResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
-        if (response?.Errors is { Count: > 0 })
-        {
-            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
-            _logger?.LogWarning("GraphQL collection search errors: {Errors}", errorMessages);
-            throw new InvalidOperationException($"NexusMods API error: {errorMessages}");
-        }
-
-        var result = response?.Data?.Collections;
+        var result = (await PostAsync<NexusGraphQlCollectionData>(requestBody, ct))?.Collections;
         if (result == null)
         {
-            _logger?.LogWarning("GraphQL collection search returned no data. Response: {Response}", json);
+            _logger?.LogWarning("GraphQL collection search returned no data");
             return ([], 0);
         }
 
@@ -381,21 +482,10 @@ internal class NexusModsGraphQlClient
 
         _logger?.LogDebug("Fetching NexusMods collection details: slug={Slug}, game={Game}", slug, gameDomain);
 
-        var json = await _client.PostAsync(GraphQlUrl)
-            .WithHeader("apikey", _apiKey)
-            .WithHeader("accept", "application/json")
-            .WithJsonBody(requestBody)
-            .AsStringAsync();
-
-        var response = JsonSerializer.Deserialize<NexusGraphQlCollectionDetailResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
-        var collection = response?.Data?.Collection;
+        var collection = (await PostAsync<NexusGraphQlCollectionDetailData>(requestBody, ct))?.Collection;
         if (collection == null)
         {
-            _logger?.LogWarning("GraphQL collection detail returned no data. Response: {Response}", json);
+            _logger?.LogWarning("GraphQL collection detail returned no data");
             return null;
         }
 

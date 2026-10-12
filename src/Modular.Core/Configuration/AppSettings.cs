@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Modular.Sdk.Backends;
 
 namespace Modular.Core.Configuration;
 
@@ -51,7 +52,7 @@ public class AppSettings
     /// Backends not in this list will not be registered at startup.
     /// </summary>
     [JsonPropertyName("enabled_backends")]
-    public List<string> EnabledBackends { get; set; } = ["nexusmods", "gamebanana"];
+    public List<string> EnabledBackends { get; set; } = [BackendIds.NexusMods, BackendIds.GameBanana];
 
     /// <summary>
     /// Base directory for storing downloaded mods.

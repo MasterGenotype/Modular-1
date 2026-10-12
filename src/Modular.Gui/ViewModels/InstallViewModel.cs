@@ -46,6 +46,12 @@ public partial class InstallViewModel : ViewModelBase
     private bool _isInstalling;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AbortInstallCommand))]
+    private bool _isAborting;
+
+    private CancellationTokenSource? _installCts;
+
+    [ObservableProperty]
     private double _installProgress;
 
     [ObservableProperty]
@@ -414,6 +420,7 @@ public partial class InstallViewModel : ViewModelBase
         }
 
         IsInstalling = true;
+        IsAborting = false;
         InstallProgress = 0;
         InstallResults.Clear();
         TotalArchives = pathsToInstall.Count;
@@ -421,6 +428,10 @@ public partial class InstallViewModel : ViewModelBase
 
         var succeeded = 0;
         var failed = 0;
+        var aborted = false;
+
+        using var cts = new CancellationTokenSource();
+        _installCts = cts;
 
         try
         {
@@ -450,7 +461,8 @@ public partial class InstallViewModel : ViewModelBase
                         System.Globalization.CultureInfo.InvariantCulture),
                     AllowOverwrite = AllowOverwrite,
                     CreateBackups = CreateBackups,
-                    DryRun = DryRun
+                    DryRun = DryRun,
+                    ChoiceResolver = AskInstallChoicesAsync
                 };
 
                 var progress = new Progress<InstallProgress>(p =>
@@ -462,7 +474,16 @@ public partial class InstallViewModel : ViewModelBase
                 });
 
                 var result = await _installService.InstallAsync(
-                    archivePath, TargetDirectory, options, progress);
+                    archivePath, TargetDirectory, options, progress, cts.Token);
+
+                // Mods installed before the abort stay installed; only the one in flight
+                // and those still queued are dropped.
+                if (cts.IsCancellationRequested && !result.Success)
+                {
+                    InstallResults.Add($"Aborted: {fileName}");
+                    aborted = true;
+                    break;
+                }
 
                 if (result.Success)
                 {
@@ -511,9 +532,20 @@ public partial class InstallViewModel : ViewModelBase
                 }
             }
 
-            StatusMessage = DryRun
-                ? $"Dry run complete: {succeeded} previewed, {failed} failed"
-                : $"Batch complete: {succeeded} installed, {failed} failed";
+            aborted |= cts.IsCancellationRequested && CurrentArchiveIndex < TotalArchives;
+
+            if (aborted)
+            {
+                var skipped = TotalArchives - succeeded - failed;
+                StatusMessage =
+                    $"Installation aborted: {succeeded} installed, {failed} failed, {skipped} not installed";
+            }
+            else
+            {
+                StatusMessage = DryRun
+                    ? $"Dry run complete: {succeeded} previewed, {failed} failed"
+                    : $"Batch complete: {succeeded} installed, {failed} failed";
+            }
         }
         catch (Exception ex)
         {
@@ -525,10 +557,24 @@ public partial class InstallViewModel : ViewModelBase
         }
         finally
         {
+            _installCts = null;
             IsInstalling = false;
+            IsAborting = false;
             InstallProgress = 100;
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanAbortInstall))]
+    private void AbortInstall()
+    {
+        if (_installCts == null) return;
+
+        IsAborting = true;
+        StatusMessage = "Aborting installation...";
+        _installCts.Cancel();
+    }
+
+    private bool CanAbortInstall() => !IsAborting;
 
     private static string FormatFileSize(long bytes)
     {
@@ -542,4 +588,35 @@ public partial class InstallViewModel : ViewModelBase
         }
         return $"{size:F1} {suffixes[i]}";
     }
+    // Asks which alternative to install when an archive offers several, such as the same
+    // pak in an "Option A" and an "Option B" folder. Cancelling any question cancels the
+    // install, since there is no telling which one was wanted.
+    private async Task<IReadOnlyDictionary<string, string>?> AskInstallChoicesAsync(
+        IReadOnlyList<InstallChoice> choices, CancellationToken ct)
+    {
+        if (_dialogService == null)
+            return new Dictionary<string, string>();
+
+        var answers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var choice in choices.Where(c => !c.IsResolved))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // The install runs off the UI thread once it starts doing I/O.
+            var index = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                _dialogService.ShowListPickerAsync(
+                    "Choose Version",
+                    choice.Title + " The archive contains more than one, and only one can be installed.",
+                    choice.Options.Select(o => $"{o.Label} ({o.FileCount} file(s))").ToList()));
+
+            if (index < 0 || index >= choice.Options.Count)
+                return null;
+
+            answers[choice.Id] = choice.Options[index].Id;
+        }
+
+        return answers;
+    }
+
 }

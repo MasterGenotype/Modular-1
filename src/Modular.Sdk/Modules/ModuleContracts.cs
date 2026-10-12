@@ -110,13 +110,18 @@ public readonly record struct PackageRoute(
 /// <param name="EnabledModCount">Number of enabled mods, so prefixes can be zero-padded consistently.</param>
 /// <param name="ModId">Identifier of the mod that staged this file.</param>
 /// <param name="PackageType">Package type label from the install plan, when known.</param>
+/// <param name="StagedFilePath">
+/// Absolute path of the staged file, for a module that has to look inside it to decide
+/// where it goes. Null when the caller has no file to point at.
+/// </param>
 public readonly record struct DeployPathContext(
     string RootName,
     string RelativePath,
     int OrderIndex,
     int EnabledModCount,
     string ModId,
-    string? PackageType = null);
+    string? PackageType = null,
+    string? StagedFilePath = null);
 
 /// <summary>
 /// Output of <see cref="IGameModule.MapDeployPath"/>: the root and path a staged
@@ -206,6 +211,36 @@ public readonly record struct EngineOrderDescription(
     string Rule,
     IReadOnlyList<string> Entries,
     string? Mechanism = null);
+
+/// <summary>
+/// A dependency a mod on disk declares in its own metadata, for which nothing is installed.
+/// </summary>
+/// <param name="RequiredBy">Name of the mod that declares the dependency.</param>
+/// <param name="RequiredByFile">
+/// File name of the mod that declares it, as it sits in the game's mod folder. Lets the
+/// gap be traced back to the mod Modular installed; <c>null</c> when there is no single file.
+/// </param>
+/// <param name="Name">Name of the missing mod, as the declaring mod spells it.</param>
+/// <param name="Identifier">The engine's own identifier for the missing mod.</param>
+public sealed record UnmetDependency(
+    string RequiredBy,
+    string? RequiredByFile,
+    string Name,
+    string Identifier);
+
+/// <summary>
+/// Two mods on disk of which one declares, in its own metadata, that it cannot be loaded
+/// with the other.
+/// </summary>
+/// <param name="DeclaredBy">Name of the mod that declares the conflict.</param>
+/// <param name="DeclaredByFile">File name of that mod, when there is a single file.</param>
+/// <param name="ConflictsWith">Name of the mod it conflicts with, which is also present.</param>
+/// <param name="Identifier">The engine's own identifier for the conflicting mod.</param>
+public sealed record DeclaredConflict(
+    string DeclaredBy,
+    string? DeclaredByFile,
+    string ConflictsWith,
+    string Identifier);
 
 /// <summary>
 /// Severity of a <see cref="ModDiagnostic"/>.

@@ -165,14 +165,17 @@
                     IsVisible="{Binding InstallResults.Count}">
                 <StackPanel Spacing="5">
                     <TextBlock Text="Results" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                    <ItemsControl ItemsSource="{Binding InstallResults}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" FontSize="12" FontFamily="Consolas" Opacity="0.8"
-                                           TextWrapping="Wrap"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding InstallResults}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontSize="12" FontFamily="Consolas" Opacity="0.8"
+                                               TextWrapping="Wrap"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
 

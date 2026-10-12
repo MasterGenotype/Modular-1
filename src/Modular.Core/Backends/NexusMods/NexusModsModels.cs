@@ -3,12 +3,13 @@ using System.Text.Json.Serialization;
 namespace Modular.Core.Backends.NexusMods;
 
 /// <summary>
-/// GraphQL response wrapper for mod search queries.
+/// The envelope every GraphQL response arrives in.
 /// </summary>
-internal record NexusGraphQlResponse
+/// <typeparam name="TData">Shape of the <c>data</c> member for the query that was sent.</typeparam>
+internal record NexusGraphQlResponse<TData>
 {
     [JsonPropertyName("data")]
-    public NexusGraphQlData? Data { get; init; }
+    public TData? Data { get; init; }
 
     [JsonPropertyName("errors")]
     public List<NexusGraphQlError>? Errors { get; init; }
@@ -27,6 +28,18 @@ internal record NexusGraphQlData
 {
     [JsonPropertyName("mods")]
     public NexusGraphQlModsResult? Mods { get; init; }
+
+    [JsonPropertyName("legacyMods")]
+    public NexusGraphQlModsResult? LegacyMods { get; init; }
+
+    [JsonPropertyName("game")]
+    public NexusGraphQlGameId? Game { get; init; }
+}
+
+internal record NexusGraphQlGameId
+{
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
 }
 
 internal record NexusGraphQlModsResult
@@ -81,6 +94,46 @@ internal record NexusGraphQlMod
 
     [JsonPropertyName("game")]
     public NexusGraphQlGame? Game { get; init; }
+
+    [JsonPropertyName("modRequirements")]
+    public NexusGraphQlModRequirements? ModRequirements { get; init; }
+}
+
+internal record NexusGraphQlModRequirements
+{
+    [JsonPropertyName("nexusRequirements")]
+    public NexusGraphQlRequirementPage? NexusRequirements { get; init; }
+}
+
+internal record NexusGraphQlRequirementPage
+{
+    [JsonPropertyName("nodes")]
+    public List<NexusGraphQlRequirement> Nodes { get; init; } = [];
+}
+
+/// <summary>
+/// One requirement an author listed. The API sends the ids as strings, and "0" for a
+/// requirement that lives off the site.
+/// </summary>
+internal record NexusGraphQlRequirement
+{
+    [JsonPropertyName("modId")]
+    public string? ModId { get; init; }
+
+    [JsonPropertyName("modName")]
+    public string? ModName { get; init; }
+
+    [JsonPropertyName("gameId")]
+    public string? GameId { get; init; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+
+    [JsonPropertyName("notes")]
+    public string? Notes { get; init; }
+
+    [JsonPropertyName("externalRequirement")]
+    public bool ExternalRequirement { get; init; }
 }
 
 internal record NexusGraphQlModCategory
@@ -96,18 +149,6 @@ internal record NexusGraphQlGame
 }
 
 // --- GraphQL collection models ---
-
-/// <summary>
-/// GraphQL response wrapper for collection search queries.
-/// </summary>
-internal record NexusGraphQlCollectionResponse
-{
-    [JsonPropertyName("data")]
-    public NexusGraphQlCollectionData? Data { get; init; }
-
-    [JsonPropertyName("errors")]
-    public List<NexusGraphQlError>? Errors { get; init; }
-}
 
 internal record NexusGraphQlCollectionData
 {
@@ -227,12 +268,6 @@ internal record NexusGraphQlModRef
 }
 
 // --- GraphQL collection detail response ---
-
-internal record NexusGraphQlCollectionDetailResponse
-{
-    [JsonPropertyName("data")]
-    public NexusGraphQlCollectionDetailData? Data { get; init; }
-}
 
 internal record NexusGraphQlCollectionDetailData
 {

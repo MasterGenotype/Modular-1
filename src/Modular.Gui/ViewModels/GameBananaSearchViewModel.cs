@@ -6,6 +6,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Utilities;
 using Modular.Gui.Models;
 using Modular.Sdk.Backends.Common;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -53,7 +54,7 @@ public partial class GameBananaSearchViewModel : ViewModelBase
             ModId = "999",
             Name = "Sample GameBanana Search Result",
             Author = "TestAuthor",
-            BackendId = "gamebanana",
+            BackendId = BackendIds.GameBanana,
             GameDomain = "Sample Game"
         }));
     }

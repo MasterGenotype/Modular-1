@@ -34,7 +34,7 @@ public sealed class CollectionCreateCommand : AsyncCommand<CollectionCreateComma
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -197,7 +197,7 @@ public sealed class CollectionAddCommand : AsyncCommand<CollectionAddCommand.Set
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -247,7 +247,7 @@ public sealed class CollectionRemoveCommand : AsyncCommand<CollectionRemoveComma
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -298,7 +298,7 @@ public sealed class CollectionDownloadCommand : AsyncCommand<CollectionDownloadC
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -356,7 +356,7 @@ public sealed class CollectionVerifyCommand : AsyncCommand<CollectionVerifyComma
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend, metadataCache: services.MetadataCache);
 
@@ -422,7 +422,7 @@ public sealed class CollectionExportCommand : AsyncCommand<CollectionExportComma
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -462,7 +462,7 @@ public sealed class CollectionImportCommand : AsyncCommand<CollectionImportComma
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 
@@ -500,7 +500,7 @@ public sealed class CollectionCheckUpdatesCommand : AsyncCommand<CollectionCheck
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
-            var backend = registry.Get("nexusmods")!;
+            var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
             var service = new ModCollectionService(repo, backend);
 

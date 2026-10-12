@@ -40,8 +40,11 @@ public record ModSearchQuery
     /// <summary>Results per page (max 20 recommended for rate limits).</summary>
     public int PageSize { get; init; } = 20;
 
-    /// <summary>Whether to include adult content in results.</summary>
-    public bool AdultContent { get; init; } = false;
+    /// <summary>
+    /// Which side of the adult-content line to show: <c>true</c> for only mods marked as
+    /// adult, <c>false</c> for only mods that are not, <c>null</c> for both.
+    /// </summary>
+    public bool? AdultContent { get; init; } = false;
 }
 
 /// <summary>

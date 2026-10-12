@@ -49,8 +49,7 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
             var db = new ModularDatabase(dbPath);
             await db.InitializeAsync();
 
-            var installService = new ModInstallationService(
-                db, services.Telemetry, settings: services.Settings);
+            var installService = services.CreateInstallationService(db);
 
             ModUninstallResult result;
 

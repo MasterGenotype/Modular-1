@@ -4,6 +4,7 @@ using Modular.Cli.UI;
 using Modular.Core.Backends.NexusMods;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using Modular.Sdk.Backends;
 
 namespace Modular.Cli.Commands;
 
@@ -42,7 +43,7 @@ public sealed class BrowseCommand : AsyncCommand<BrowseCommand.Settings>
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
 
-            var backend = registry.Get("nexusmods") as NexusModsBackend;
+            var backend = registry.Get(BackendIds.NexusMods) as NexusModsBackend;
             if (backend == null)
             {
                 LiveProgressDisplay.ShowError("NexusMods backend is not configured.");

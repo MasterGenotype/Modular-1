@@ -115,6 +115,7 @@ public class CyberpunkModInstaller : IModInstaller
             InstallerId = InstallerId,
             SourcePath = archivePath,
             TargetDirectory = context.GameDirectory,
+            RootDirectories = context.ModPaths?.Roots,
             Operations = new List<FileOperation>(),
             Options = new Dictionary<string, object>
             {
@@ -186,100 +187,12 @@ public class CyberpunkModInstaller : IModInstaller
     /// Executes the install plan, extracting each file to its computed destination.
     /// Critical files (DLLs, loaders) get automatic backups.
     /// </summary>
-    public async Task<InstallResult> InstallAsync(
+    public Task<InstallResult> InstallAsync(
         InstallPlan plan,
         IProgress<InstallProgress>? progress = null,
-        CancellationToken ct = default)
-    {
-        var result = new InstallResult { Success = false };
-        var installedFiles = new List<string>();
-        var backedUpFiles = new List<string>();
-
-        try
-        {
-            using var reader = _archiveReaderFactory.Open(plan.SourcePath)
-                ?? throw new InvalidOperationException($"Unable to open archive: {plan.SourcePath}");
-
-            int filesProcessed = 0;
-            long bytesProcessed = 0;
-
-            foreach (var operation in plan.Operations)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var entry = reader.Entries.FirstOrDefault(e => e.FullName == operation.SourcePath);
-                if (entry == null)
-                    continue;
-
-                string destPath;
-                try
-                {
-                    destPath = PathSanitizer.SanitizeEntryPath(
-                        operation.DestinationPath, plan.TargetDirectory);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    _logger?.LogWarning(
-                        "Skipping unsafe entry: {Source} — {Reason}",
-                        operation.SourcePath, ex.Message);
-                    continue;
-                }
-
-                // Create directory structure
-                var destDir = Path.GetDirectoryName(destPath);
-                if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
-                    Directory.CreateDirectory(destDir);
-
-                // Backup existing files (always for critical, optional for others)
-                if (File.Exists(destPath) && operation.IsCritical)
-                {
-                    var backupPath = destPath + ".modular.bak";
-                    File.Copy(destPath, backupPath, overwrite: true);
-                    backedUpFiles.Add(backupPath);
-                    _logger?.LogDebug("Backed up critical file: {Path}", destPath);
-                }
-
-                // Extract
-                await reader.ExtractEntryAsync(entry, destPath, overwrite: true, ct);
-                installedFiles.Add(operation.DestinationPath); // store relative path
-
-                filesProcessed++;
-                bytesProcessed += operation.SizeBytes;
-
-                progress?.Report(new InstallProgress
-                {
-                    CurrentOperation = BuildProgressLabel(plan),
-                    CurrentFile = operation.DestinationPath,
-                    FilesProcessed = filesProcessed,
-                    TotalFiles = plan.Operations.Count,
-                    BytesProcessed = bytesProcessed,
-                    TotalBytes = plan.TotalBytes
-                });
-            }
-
-            result.Success = true;
-            result.InstalledFiles = installedFiles;
-            result.BackedUpFiles = backedUpFiles;
-            result.Manifest = new InstallManifest
-            {
-                InstallerId = InstallerId,
-                Files = installedFiles,
-                Backups = backedUpFiles.ToDictionary(f => f, f => f)
-            };
-
-            _logger?.LogInformation(
-                "Cyberpunk install complete: {Count} files to {Dir}",
-                installedFiles.Count, plan.TargetDirectory);
-        }
-        catch (Exception ex)
-        {
-            result.Success = false;
-            result.Error = ex.Message;
-            _logger?.LogError(ex, "Cyberpunk installation failed for {Archive}", plan.SourcePath);
-        }
-
-        return result;
-    }
+        CancellationToken ct = default) =>
+        ArchivePlanExecutor.ExecuteAsync(
+            _archiveReaderFactory, plan, InstallerId, BuildProgressLabel(plan), _logger, progress, ct);
 
     // ── Private helpers ──────────────────────────────────────────────────
 

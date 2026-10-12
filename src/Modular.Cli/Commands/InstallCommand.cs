@@ -45,6 +45,11 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
         [Description("Stage and register the mod without placing files in the game")]
         public bool NoDeploy { get; init; }
 
+        /// <summary>Answers to the choices an archive offers.</summary>
+        [CommandOption("--option <OPTION>")]
+        [Description("Version to install when the archive offers several (e.g. \"Option A\"); repeatable")]
+        public string[] Options { get; init; } = [];
+
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
         public bool Verbose { get; init; }
@@ -107,10 +112,7 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             var pluginLoader = new PluginLoader();
             pluginLoader.LoadAllPlugins();
 
-            var installService = new ModInstallationService(
-                db, services.Telemetry,
-                pluginLoader: pluginLoader,
-                settings: services.Settings);
+            var installService = services.CreateInstallationService(db, pluginLoader);
 
             var options = new ModInstallationOptions
             {
@@ -128,6 +130,17 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             if (settings.DryRun)
                 AnsiConsole.MarkupLine("[yellow]DRY RUN — no files will be modified[/]");
             AnsiConsole.WriteLine();
+
+            // Settle what the archive leaves to the user before the spinner starts: a
+            // prompt cannot be shown while it is running.
+            if (!settings.DryRun &&
+                !await ResolveChoicesAsync(installService, archivePath, targetDirectory, options, settings, cts.Token))
+            {
+                AnsiConsole.MarkupLine("[yellow]Installation cancelled.[/]");
+                await db.DisposeAsync();
+                services.Dispose();
+                return 1;
+            }
 
             // Execute installation with progress
             ModInstallationResult? result = null;
@@ -216,5 +229,63 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                 AnsiConsole.WriteException(ex);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Finds out whether the archive offers alternatives and settles each one, from
+    /// <c>--option</c> or by asking.
+    /// </summary>
+    /// <returns>False when an <c>--option</c> matched nothing, so the install should stop.</returns>
+    private static async Task<bool> ResolveChoicesAsync(
+        ModInstallationService installService,
+        string archivePath,
+        string targetDirectory,
+        ModInstallationOptions options,
+        Settings settings,
+        CancellationToken ct)
+    {
+        // A dry run plans the install and reports its choices without touching anything.
+        var preview = await installService.InstallAsync(
+            archivePath,
+            targetDirectory,
+            new ModInstallationOptions
+            {
+                ModId = options.ModId,
+                GameId = options.GameId,
+                AllowOverwrite = options.AllowOverwrite,
+                DryRun = true
+            },
+            ct: ct);
+
+        foreach (var choice in preview.Choices)
+        {
+            var wanted = choice.Options.FirstOrDefault(o => settings.Options.Any(given =>
+                string.Equals(given, o.Label, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(given, o.Id, StringComparison.OrdinalIgnoreCase)));
+
+            if (wanted == null && settings.Options.Length > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[red]{Markup.Escape(choice.Title)}[/] None of the --option values match. Available: " +
+                    Markup.Escape(string.Join(", ", choice.Options.Select(o => o.Label))));
+                return false;
+            }
+
+            if (wanted == null && AnsiConsole.Profile.Capabilities.Interactive)
+            {
+                wanted = AnsiConsole.Prompt(
+                    new SelectionPrompt<InstallChoiceOption>()
+                        .Title(Markup.Escape(choice.Title))
+                        .UseConverter(o => Markup.Escape($"{o.Label} ({o.FileCount} file(s))"))
+                        .AddChoices(choice.Options));
+            }
+
+            // With nobody to ask and nothing given, the installer's default stands and
+            // the install report says so.
+            if (wanted != null)
+                options.Selections[choice.Id] = wanted.Id;
+        }
+
+        return true;
     }
 }

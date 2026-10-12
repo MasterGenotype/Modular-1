@@ -1,3 +1,5 @@
+using Modular.Sdk.Backends;
+
 namespace Modular.Sdk.Collections;
 
 /// <summary>
@@ -19,7 +21,7 @@ public class ModCollection
     public required string GameId { get; set; }
 
     /// <summary>Backend ID the mods belong to (default: "nexusmods").</summary>
-    public string BackendId { get; init; } = "nexusmods";
+    public string BackendId { get; init; } = BackendIds.NexusMods;
 
     /// <summary>Schema version for forward compatibility.</summary>
     public string SchemaVersion { get; init; } = "1.0";

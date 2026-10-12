@@ -18,7 +18,7 @@ namespace Modular.Core.Backends.NexusMods;
 /// Provides access to NexusMods API for downloading tracked mods,
 /// full-text search via the v2 GraphQL API, and discovery feeds.
 /// </summary>
-public class NexusModsBackend : IModBackend, ISearchableBackend
+public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBackend
 {
     private const string BaseUrl = "https://api.nexusmods.com";
 
@@ -33,7 +33,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
     // Cache of tracked mods to avoid repeated API calls
     private HashSet<(string domain, int modId)>? _trackedModsCache;
 
-    public string Id => "nexusmods";
+    public string Id => BackendIds.NexusMods;
     public string DisplayName => "NexusMods";
 
     public BackendCapabilities Capabilities =>
@@ -43,7 +43,8 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
         BackendCapabilities.RateLimited |
         BackendCapabilities.Authentication |
         BackendCapabilities.ModCategories |
-        BackendCapabilities.Search;
+        BackendCapabilities.Search |
+        BackendCapabilities.Requirements;
 
     public NexusModsBackend(
         AppSettings settings,
@@ -561,26 +562,71 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
     /// Resolves a game domain name (e.g. "baldursgate3") to its numeric NexusMods game ID.
     /// Results are cached per domain.
     /// </summary>
-    public async Task<int> ResolveGameIdAsync(string gameDomain, CancellationToken ct = default)
+    public Task<int> ResolveGameIdAsync(string gameDomain, CancellationToken ct = default) =>
+        _graphQlClient.ResolveGameIdAsync(gameDomain, ct);
+
+    // --- Requirements ---
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<ModRequirement>>> GetRequirementsAsync(
+        IReadOnlyList<string> modIds,
+        string? gameDomain = null,
+        CancellationToken ct = default)
     {
-        if (_gameIdCache.TryGetValue(gameDomain, out var cached))
-            return cached;
+        ArgumentNullException.ThrowIfNull(modIds);
 
-        var response = await _client.GetAsync($"v1/games/{gameDomain}.json")
-            .WithHeader("apikey", _settings.NexusApiKey)
-            .WithHeader("accept", "application/json")
-            .AsJsonAsync();
+        if (string.IsNullOrEmpty(gameDomain))
+            throw new ArgumentException("Game domain is required for NexusMods", nameof(gameDomain));
 
-        if (response.RootElement.TryGetProperty("id", out var idProp))
+        var numericIds = modIds
+            .Select(id => int.TryParse(id, out var parsed) ? parsed : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+
+        var result = new Dictionary<string, IReadOnlyList<ModRequirement>>(StringComparer.Ordinal);
+        if (numericIds.Count == 0)
+            return result;
+
+        var gameId = await ResolveGameIdAsync(gameDomain, ct);
+        var fetched = await _graphQlClient.FetchRequirementsAsync(gameId, numericIds, ct);
+
+        foreach (var (modId, requirements) in fetched)
         {
-            var id = idProp.GetInt32();
-            _gameIdCache[gameDomain] = id;
-            return id;
+            result[modId.ToString(System.Globalization.CultureInfo.InvariantCulture)] =
+                requirements.Select(r => MapRequirement(r, gameId, gameDomain)).ToList();
         }
 
-        throw new InvalidOperationException($"Could not resolve game ID for domain '{gameDomain}'");
+        return result;
     }
-    private readonly Dictionary<string, int> _gameIdCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Maps a requirement as the API sends it onto the backend-neutral shape.
+    /// </summary>
+    internal static ModRequirement MapRequirement(
+        NexusGraphQlRequirement requirement, int gameId, string gameDomain)
+    {
+        // An off-site requirement comes back with mod id "0" as well as the flag.
+        _ = int.TryParse(requirement.ModId, out var modId);
+        _ = int.TryParse(requirement.GameId, out var requirementGameId);
+
+        var isExternal = requirement.ExternalRequirement || modId <= 0;
+        var sameGame = !isExternal && requirementGameId == gameId;
+
+        var url = !string.IsNullOrWhiteSpace(requirement.Url)
+            ? requirement.Url
+            : sameGame ? $"https://www.nexusmods.com/{gameDomain}/mods/{modId}" : null;
+
+        return new ModRequirement
+        {
+            ModId = isExternal ? string.Empty : modId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Name = string.IsNullOrWhiteSpace(requirement.ModName) ? $"Mod {modId}" : requirement.ModName,
+            SameGame = sameGame,
+            IsExternal = isExternal,
+            Url = url,
+            Notes = string.IsNullOrWhiteSpace(requirement.Notes) ? null : requirement.Notes
+        };
+    }
 
     // --- Collections ---
 
@@ -756,7 +802,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend
             ModId = mod.ModId.ToString(),
             Name = mod.Name,
             GameDomain = gameDomain,
-            BackendId = "nexusmods",
+            BackendId = BackendIds.NexusMods,
             CategoryId = mod.CategoryId,
             Summary = mod.Summary,
             Author = mod.Author,

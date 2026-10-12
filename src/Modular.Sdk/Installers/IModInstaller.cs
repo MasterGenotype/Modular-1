@@ -130,6 +130,51 @@ public class InstallContext
     /// a non-game root such as Documents without knowing about Proton prefixes.
     /// </summary>
     public GameModPaths? ModPaths { get; set; }
+
+    /// <summary>
+    /// The user's answers to the archive's <see cref="InstallPlan.Choices"/>, as choice id
+    /// to option id. A choice with no entry falls back to the installer's default.
+    /// </summary>
+    public Dictionary<string, string> Selections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// One decision an archive leaves to the user: which of several alternatives to install.
+/// </summary>
+public class InstallChoice
+{
+    /// <summary>Stable identifier of the choice, used as the key in a selection.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>What is being chosen, in words fit to show.</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>The alternatives.</summary>
+    public List<InstallChoiceOption> Options { get; set; } = new();
+
+    /// <summary>The option the plan was built with.</summary>
+    public string SelectedOptionId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether <see cref="SelectedOptionId"/> was given by the caller, as opposed to being
+    /// the installer's default.
+    /// </summary>
+    public bool IsResolved { get; set; }
+}
+
+/// <summary>
+/// One alternative of an <see cref="InstallChoice"/>.
+/// </summary>
+public class InstallChoiceOption
+{
+    /// <summary>Stable identifier of the option within its choice.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>Name of the option, in words fit to show.</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>How many of the archive's files the option installs.</summary>
+    public int FileCount { get; set; }
 }
 
 /// <summary>
@@ -171,6 +216,26 @@ public class InstallPlan
     /// Installation options (for installers like FOMOD).
     /// </summary>
     public Dictionary<string, object>? Options { get; set; }
+
+    /// <summary>
+    /// Absolute directories of the named roots operations may target through
+    /// <see cref="FileOperation.TargetRoot"/>, for a plan installed straight into the game.
+    /// Null once the plan has been redirected into staging, where every destination is
+    /// already relative to <see cref="TargetDirectory"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? RootDirectories { get; set; }
+
+    /// <summary>
+    /// Alternatives the archive offers, of which one is installed per choice. Empty for
+    /// an archive with nothing to choose between.
+    /// </summary>
+    /// <remarks>
+    /// The plan's operations already reflect a selection for every choice: the one given
+    /// in <see cref="InstallContext.Selections"/>, or else the option marked
+    /// <see cref="InstallChoice.SelectedOptionId"/>. A caller that can ask the user does
+    /// so and analyzes again with the answers.
+    /// </remarks>
+    public List<InstallChoice> Choices { get; set; } = new();
 }
 
 /// <summary>
