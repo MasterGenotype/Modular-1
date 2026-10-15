@@ -247,6 +247,52 @@ public sealed class TotkMergeService
         Directory.CreateDirectory(MergedOutputFolder);
     }
 
+    // ── Deploy / export ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Exposes the merge output to the emulator as one mod folder (see
+    /// <see cref="TotkDeployer"/>), at <paramref name="target"/> or the configured
+    /// emulator's TotK mod folder.
+    /// </summary>
+    public TotkDeployResult Deploy(string? target = null) =>
+        TotkDeployer.Deploy(MergedOutputFolder, target ?? TotkDeployer.ResolveTarget(_settings), _logger);
+
+    /// <summary>
+    /// rc1 <c>MergeActions.ExportToSdCard</c>: merges with IPS patches written to
+    /// <c>&lt;drive&gt;/atmosphere/exefs_patches/TKMM</c>, then, once
+    /// <paramref name="confirmClear"/> agrees, deletes <c>romfs</c>, <c>romfslite</c>,
+    /// <c>exefs</c> and <c>romfs_metadata.bin</c> from
+    /// <c>&lt;drive&gt;/atmosphere/contents/0100F2C0115B6000</c> and copies the merge output
+    /// there.
+    /// </summary>
+    /// <returns>False when the clear was declined (the merge and IPS patches are done).</returns>
+    /// <exception cref="DirectoryNotFoundException">The drive has no <c>atmosphere</c> folder.</exception>
+    public async ValueTask<bool> ExportToSdCardAsync(
+        string drive,
+        Func<string, CancellationToken, Task<bool>> confirmClear,
+        TkProfile? profile = null,
+        IProgress<TotkProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (!Directory.Exists(Path.Combine(drive, "atmosphere")))
+        {
+            throw new DirectoryNotFoundException(
+                $"'{drive}' is not suitable: make sure atmosphere is installed on the SD card.");
+        }
+
+        var output = Path.Combine(drive, "atmosphere", "contents", TotkTitle.TitleIdValue);
+        var ipsOutputPath = Path.Combine(drive, "atmosphere", "exefs_patches", TotkTitle.ModFolderName);
+        await MergeAsync(profile, ipsOutputPath, progress: progress, ct: ct);
+
+        if (!await confirmClear(output, ct))
+            return false;
+
+        progress?.Report(new TotkProgress("Exporting", output));
+        TotkDirectoryHelper.DeleteTargetsFromDirectory(output, ["romfs", "romfslite", "exefs", "romfs_metadata.bin"], recursive: true);
+        TotkDirectoryHelper.Copy(MergedOutputFolder, output, overwrite: true);
+        return true;
+    }
+
     // ── Profiles and mods ──────────────────────────────────────────────────
 
     /// <summary>The selected profile.</summary>

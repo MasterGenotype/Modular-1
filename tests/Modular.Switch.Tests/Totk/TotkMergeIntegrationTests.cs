@@ -30,6 +30,7 @@ public sealed class TotkIntegrationFactAttribute : FactAttribute
 /// <c>TOTK_BASE_GAME</c> (base game .xci/.nsp), and an update from <c>TOTK_UPDATE</c>
 /// (update .nsp) or <c>TOTK_NAND</c> (emulator NAND folder with the update installed).
 /// </remarks>
+[Collection(TkSharpCollection.Name)]
 public sealed class TotkMergeIntegrationTests : IDisposable
 {
     private const string MalsCanonical = "Mals/USen.Product.sarc";
@@ -92,6 +93,31 @@ public sealed class TotkMergeIntegrationTests : IDisposable
             $"ResourceSizeTable.Product.{gameVersion}.rsizetable.zs");
         File.Exists(restbl).Should().BeTrue("the merger regenerates the RESTBL");
         new FileInfo(restbl).LastWriteTimeUtc.Should().BeAfter(DateTime.UtcNow.AddMinutes(-10));
+    }
+
+    [TotkIntegrationFact]
+    public async Task ExportToSdCard_ReplacesTheGamesMergeTargets_AfterConfirming()
+    {
+        var settings = new TotkSettings
+        {
+            KeysFolderPath = Environment.GetEnvironmentVariable("TOTK_KEYS_DIR"),
+            PackagedBaseGamePaths = [Environment.GetEnvironmentVariable("TOTK_BASE_GAME")!],
+            PackagedUpdatePaths = EnvList("TOTK_UPDATE"),
+            NandFolderPaths = EnvList("TOTK_NAND"),
+            MergeOutput = _temp.Combine("merged")
+        };
+        var service = new TotkMergeService(settings, new TotkPaths(_temp.Combine("totk")));
+        var drive = _temp.Combine("sd");
+        var stale = _temp.File("sd/atmosphere/contents/0100F2C0115B6000/romfs/stale.bin");
+        var userFile = _temp.File("sd/atmosphere/contents/0100F2C0115B6000/user.txt", "keep");
+
+        var exported = await service.ExportToSdCardAsync(drive, (_, _) => Task.FromResult(true));
+
+        exported.Should().BeTrue();
+        File.Exists(stale).Should().BeFalse();
+        File.ReadAllText(userFile).Should().Be("keep");
+        Directory.EnumerateFiles(Path.Combine(drive, "atmosphere", "contents", "0100F2C0115B6000", "romfs", "Mals"))
+            .Should().NotBeEmpty("the \"Mods Enabled\" title text is always merged");
     }
 
     private void WriteMod(ITkRom rom, string name, byte[] vanillaMals, string messageFile, string key, string text)
