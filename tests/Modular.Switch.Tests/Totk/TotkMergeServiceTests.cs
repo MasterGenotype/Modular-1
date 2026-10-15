@@ -9,6 +9,7 @@ namespace Modular.Switch.Tests.Totk;
 /// The merge service's file handling. No game dump is configured, so a merge clears and
 /// snapshots the output and then fails opening the game, which is all these need.
 /// </summary>
+[Collection(TkSharpCollection.Name)]
 public sealed class TotkMergeServiceTests : IDisposable
 {
     private static readonly string[] Targets = ["romfs/Pack/a.bin", "romfslite/b.bin", "exefs/c.ips", "cheats/d.txt", "romfs_metadata.bin"];

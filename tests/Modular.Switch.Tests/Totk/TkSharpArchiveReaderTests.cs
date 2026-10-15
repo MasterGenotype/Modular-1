@@ -16,6 +16,7 @@ namespace Modular.Switch.Tests.Totk;
 /// the point where the reader asks for the game ROM (the archive was opened and its romfs
 /// root located), and a .tkcl pack all the way through.
 /// </summary>
+[Collection(TkSharpCollection.Name)]
 public sealed class TkSharpArchiveReaderTests
 {
     private sealed class RomRequestedException : Exception;
