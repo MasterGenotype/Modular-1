@@ -1,0 +1,184 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="900"
+             x:Class="Modular.Gui.Views.TotkView"
+             x:DataType="vm:TotkViewModel">
+
+    <Design.DataContext>
+        <vm:TotkViewModel/>
+    </Design.DataContext>
+
+    <StackPanel Spacing="20">
+        <!-- Mods in the current profile -->
+        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="20">
+            <StackPanel Spacing="15">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                        <mi:MaterialIcon Kind="LayersTriple" Width="24" Height="24"/>
+                        <TextBlock Text="Mods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Mods.Count, StringFormat='({0})'}"
+                                   VerticalAlignment="Center" Opacity="0.6"/>
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Profiles}" SelectedItem="{Binding CurrentProfile}"
+                              MinWidth="140" Margin="0,0,5,0" IsEnabled="{Binding !IsBusy}"
+                              ToolTip.Tip="Profile (selecting one merges its cheats and exefs)"/>
+                    <Button Grid.Column="2" Command="{Binding CreateProfileCommand}" ToolTip.Tip="New profile">
+                        <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
+                    </Button>
+                </Grid>
+
+                <TextBlock Text="Merged top to bottom: the first mod has the highest priority."
+                           Opacity="0.6" TextWrapping="Wrap"/>
+
+                <TextBlock Text="No mods in this profile. Install some below." Opacity="0.5"
+                           IsVisible="{Binding !Mods.Count}"/>
+
+                <ItemsControl ItemsSource="{Binding Mods}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TotkModItem">
+                            <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                    CornerRadius="4" Padding="10,8" Margin="0,2">
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}"
+                                              VerticalAlignment="Center" Margin="0,0,6,0"
+                                              ToolTip.Tip="Enabled (merge to apply)"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Position, StringFormat='#{0}'}"
+                                               FontSize="11" Opacity="0.4" VerticalAlignment="Center"
+                                               Margin="0,0,6,0" MinWidth="24"/>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Version}" Opacity="0.6" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                        <Button Command="{Binding $parent[ItemsControl].((vm:TotkViewModel)DataContext).MoveUpCommand}"
+                                                CommandParameter="{Binding}" ToolTip.Tip="Higher priority" Padding="4,2">
+                                            <mi:MaterialIcon Kind="ArrowUp" Width="14" Height="14"/>
+                                        </Button>
+                                        <Button Command="{Binding $parent[ItemsControl].((vm:TotkViewModel)DataContext).MoveDownCommand}"
+                                                CommandParameter="{Binding}" ToolTip.Tip="Lower priority" Padding="4,2">
+                                            <mi:MaterialIcon Kind="ArrowDown" Width="14" Height="14"/>
+                                        </Button>
+                                    </StackPanel>
+                                    <Button Grid.Column="4" Margin="6,0,0,0" Padding="6,4"
+                                            Command="{Binding $parent[ItemsControl].((vm:TotkViewModel)DataContext).UninstallCommand}"
+                                            CommandParameter="{Binding}" ToolTip.Tip="Uninstall from every profile">
+                                        <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid ColumnDefinitions="*,10,*">
+                    <Button Grid.Column="0" Command="{Binding InstallModCommand}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="PackageDown" Width="16" Height="16"/>
+                            <TextBlock Text="Install archive or .tkcl…"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="2" Command="{Binding InstallFolderCommand}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="FolderDownload" Width="16" Height="16"/>
+                            <TextBlock Text="Install folder…"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Merge and deploy -->
+        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="20">
+            <StackPanel Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <mi:MaterialIcon Kind="SourceMerge" Width="24" Height="24"/>
+                    <TextBlock Text="Merge" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="{Binding MergeOutputFolder, StringFormat='Output: {0}'}" Opacity="0.6" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,10,Auto">
+                    <Button Grid.Column="0" Command="{Binding MergeCommand}" Padding="15,12"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <mi:MaterialIcon Kind="SourceMerge" Width="20" Height="20"/>
+                            <TextBlock Text="Merge Profile" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="2" Command="{Binding DeployCommand}" Padding="15,12"
+                            ToolTip.Tip="Link the emulator's load/0100F2C0115B6000/TKMM to the merge output">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <mi:MaterialIcon Kind="LinkVariant" Width="20" Height="20"/>
+                            <TextBlock Text="Deploy"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <StackPanel Spacing="5" IsVisible="{Binding IsBusy}">
+                    <ProgressBar IsIndeterminate="True"/>
+                    <TextBlock Text="{Binding ProgressText}" FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Game dump and keys -->
+        <Expander Header="Game dump, keys and merge settings" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="10" Margin="0,10,0,0">
+                <TextBlock Text="Keys folder (prod.keys / title.keys)" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding KeysFolderPath}" Watermark="e.g. ~/.local/share/yuzu/keys"/>
+
+                <TextBlock Text="Base game (.xci / .nsp), one per line" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding BaseGamePaths}" AcceptsReturn="True" MinHeight="50"/>
+
+                <TextBlock Text="Update (.nsp), one per line" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding UpdatePaths}" AcceptsReturn="True" MinHeight="50"/>
+
+                <TextBlock Text="Emulator NAND folders, one per line" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding NandFolderPaths}" AcceptsReturn="True" MinHeight="50"
+                         Watermark="e.g. ~/.local/share/yuzu/nand"/>
+
+                <TextBlock Text="Extracted RomFS dumps, one per line" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding GameDumpFolderPaths}" AcceptsReturn="True" MinHeight="50"/>
+
+                <TextBlock Text="SD card / emuMMC root" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding SdCardRootPath}"/>
+
+                <TextBlock Text="Emulator executable (optional; Ryujinx or a Yuzu-family emulator)" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding EmulatorPath}"/>
+
+                <Grid ColumnDefinitions="*,10,*">
+                    <StackPanel Grid.Column="0" Spacing="5">
+                        <TextBlock Text="Preferred game version" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding GameVersions}" SelectedItem="{Binding PreferredGameVersion}"
+                                  HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="5">
+                        <TextBlock Text="Game language" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding GameLanguages}" SelectedItem="{Binding GameLanguage}"
+                                  HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="Merge output folder (empty for the default)" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding MergeOutput}"/>
+                <TextBlock Text="Changing it only creates the new folder; the old one is left as it is."
+                           FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+
+                <CheckBox IsChecked="{Binding UseRomfslite}" Content="Write romfslite instead of romfs (Atmosphère 20+ with the TotK Optimizer)"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Command="{Binding SaveSettingsCommand}" Content="Save"/>
+                    <Button Command="{Binding CheckGameCommand}" Content="Check game"/>
+                    <TextBlock Text="{Binding GameStatus}" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
+        </Expander>
+
+        <TextBlock Text="{Binding StatusMessage}" Opacity="0.7" TextWrapping="Wrap"/>
+    </StackPanel>
+</UserControl>

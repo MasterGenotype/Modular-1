@@ -25,6 +25,7 @@ using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
 using Modular.Switch.Installer;
 using Modular.Switch.Scanner;
+using Modular.Switch.Totk;
 
 namespace Modular.Gui;
 
@@ -296,6 +297,10 @@ sealed class Program
             var logger = sp.GetService<ILogger<SwitchModInstaller>>();
             return new SwitchModInstaller(logger);
         });
+        // Opened on first use: it loads TkSharp's store and embedded game data.
+        services.AddSingleton(sp => new Lazy<TotkMergeService>(() => new TotkMergeService(
+            sp.GetRequiredService<AppSettings>().SwitchTotk,
+            logger: sp.GetService<ILogger<TotkMergeService>>())));
 
         // GUI services - use pre-loaded instance
         services.AddSingleton<IDialogService, DialogService>();
@@ -324,6 +329,7 @@ sealed class Program
         services.AddTransient<InstallViewModel>();
         services.AddTransient<InstalledModsViewModel>();
         services.AddTransient<SwitchInstallViewModel>();
+        services.AddTransient<TotkViewModel>();
         services.AddTransient<ProfilesViewModel>();
         services.AddTransient<CollectionViewModel>();
         // Combined wrapper ViewModels

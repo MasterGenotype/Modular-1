@@ -2,10 +2,12 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Gui.Services;
+using Modular.Switch;
 using Modular.Switch.DependencyResolver;
 using Modular.Switch.Installer;
 using Modular.Switch.Models;
 using Modular.Switch.Scanner;
+using Modular.Switch.Totk;
 
 namespace Modular.Gui.ViewModels;
 
@@ -43,9 +45,36 @@ public partial class SwitchInstallViewModel : ViewModelBase
     [ObservableProperty]
     private string _statusMessage = "Configure Yuzu path and select a folder to scan";
 
+    /// <summary>The games with their own installer, and every other Switch game.</summary>
+    public IReadOnlyList<SwitchGameChoice> Games { get; } =
+    [
+        new("Switch games (one LayeredFS folder per mod)", null),
+        new("The Legend of Zelda: Tears of the Kingdom (merged)", TotkTitle.TitleIdValue)
+    ];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTotkSelected))]
+    private SwitchGameChoice? _selectedGame;
+
+    /// <summary>True when the selected game installs through the TotK merge installer.</summary>
+    public bool IsTotkSelected =>
+        Modular.Switch.Models.SwitchTitleId.TryParse(SelectedGame?.TitleId, out var titleId)
+        && SwitchInstallRouting.For(titleId) == SwitchInstallMethod.TotkMerge;
+
+    /// <summary>Tears of the Kingdom's panel.</summary>
+    public TotkViewModel Totk { get; }
+
+    partial void OnSelectedGameChanged(SwitchGameChoice? value)
+    {
+        if (IsTotkSelected)
+            _ = Totk.EnsureLoadedAsync();
+    }
+
     // Designer constructor
     public SwitchInstallViewModel()
     {
+        Totk = new TotkViewModel();
+        SelectedGame = Games[0];
         YuzuDataRoot = "~/.local/share/yuzu";
         DiscoveredMods.Add(new SwitchModDisplayModel
         {
@@ -70,11 +99,14 @@ public partial class SwitchInstallViewModel : ViewModelBase
     public SwitchInstallViewModel(
         SwitchModScanner scanner,
         SwitchModInstaller installer,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        TotkViewModel totk)
     {
         _scanner = scanner;
         _installer = installer;
         _dialogService = dialogService;
+        Totk = totk;
+        SelectedGame = Games[0];
 
         YuzuDataRoot = YuzuPaths.DataRoot;
         _ = LoadStateAsync();
@@ -492,6 +524,14 @@ public partial class SwitchInstallViewModel : ViewModelBase
         foreach (var mod in DiscoveredMods)
             mod.IsSelected = false;
     }
+}
+
+/// <summary>A choice in the Switch panel's game selector.</summary>
+/// <param name="Label">What the selector shows.</param>
+/// <param name="TitleId">The game's TitleID, or null for every game without its own installer.</param>
+public sealed record SwitchGameChoice(string Label, string? TitleId)
+{
+    public override string ToString() => Label;
 }
 
 public partial class SwitchModDisplayModel : ObservableObject
