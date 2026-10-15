@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\lib\TkSharp\TkSharp.Merging\TkSharp.Merging.csproj" />
     <ProjectReference Include="..\..\lib\TkSharp\TkSharp.Data.Embedded\TkSharp.Data.Embedded.csproj" />
     <ProjectReference Include="..\..\lib\TkSharp\Extensions\TkSharp.Extensions.LibHac\TkSharp.Extensions.LibHac.csproj" />
+    <ProjectReference Include="..\Modular.Core\Modular.Core.csproj" />
   </ItemGroup>
 
 </Project>

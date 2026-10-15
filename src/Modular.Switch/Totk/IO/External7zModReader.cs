@@ -1,0 +1,115 @@
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Logging;
+using Modular.Core.Configuration;
+using TkSharp.Core;
+using TkSharp.Core.IO.ModSources;
+using TkSharp.Core.Models;
+using TkSharp.Merging;
+
+namespace Modular.Switch.Totk.IO;
+
+/// <summary>
+/// Port of TKMM v2.0.0-rc1 <c>Tkmm.Core/IO/Readers/External7zModReader.cs</c>: reads a .7z
+/// mod by extracting it with an external 7-Zip, taking precedence over TkSharp's
+/// built-in .7z reader whenever 7-Zip is available. Behaviour is unchanged.
+/// </summary>
+public sealed class External7zModReader(ITkSystemProvider systemProvider, ITkRomProvider romProvider, TotkSettings settings) : ITkModReader
+{
+    private readonly ITkSystemProvider _systemProvider = systemProvider;
+    private readonly ITkRomProvider _romProvider = romProvider;
+    private readonly TotkSettings _settings = settings;
+
+    public async ValueTask<TkMod?> ReadMod(TkModContext context, CancellationToken ct = default)
+    {
+        if (context.Input is not string fileName || context.Stream is null)
+        {
+            TkLog.Instance.LogWarning(
+                "[External 7z] Invalid input ('{Input}') with null stream", context.Input);
+            return null;
+        }
+
+        context.EnsureId();
+
+        // Use a random ID instead of the
+        // mod ID to avoid possible issues
+        // if installing the same mod twice
+        var tmp = Path.Combine(Path.GetTempPath(), "tkmm", "7z", Ulid.NewUlid().ToString());
+        Directory.CreateDirectory(tmp);
+
+        var tmpInput = File.Exists(fileName) ? fileName : Path.Combine(tmp, "input");
+        var tmpOutput = Path.Combine(tmp, "output");
+
+        try
+        {
+            if (!File.Exists(tmpInput))
+            {
+                await using var fs = File.Create(tmpInput);
+                await context.Stream.CopyToAsync(fs, ct);
+            }
+
+            await External7zHelper.ExtractToFolder(_settings, tmpInput, tmpOutput, ct);
+
+            if (!TryGetRoot(tmpOutput, out var root))
+            {
+                TkLog.Instance.LogWarning(
+                    "[External 7z] Root folder could not be found when installing '{Input}'", context.Input);
+                return null;
+            }
+
+            FolderModSource source = new(root);
+            var writer = _systemProvider.GetSystemWriter(context);
+
+            using var rom = _romProvider.GetRom();
+            TkChangelogBuilder builder = new(source, writer, _romProvider.GetRom(),
+                _systemProvider.GetSystemSource(context.Id.ToString())
+            );
+            var changelog = await builder.BuildAsync(ct);
+
+            return new TkMod
+            {
+                Id = context.Id,
+                Name = Path.GetFileNameWithoutExtension(fileName),
+                Changelog = changelog
+            };
+        }
+        finally
+        {
+            if (Directory.Exists(tmp))
+                Directory.Delete(tmp, recursive: true);
+        }
+    }
+
+    public bool IsKnownInput(object? input)
+    {
+        return input is string path
+               && Path.GetExtension(path.AsSpan()) is ".7z"
+               && External7zHelper.CanUseExternal(_settings);
+    }
+
+    private static bool TryGetRoot(string tmp, [MaybeNullWhen(false)] out string root)
+    {
+        foreach (var directory in Directory.EnumerateDirectories(tmp, "*", SearchOption.AllDirectories))
+        {
+            ReadOnlySpan<char> path = directory;
+
+            if (path.Length <= 0)
+                continue;
+
+            var normalized = directory[^1] is '\\' or '/' ? path[..^1] : path;
+            ReadOnlySpan<char> normalizedLowercase = normalized
+                .ToString()
+                .ToLowerInvariant();
+
+            switch (normalized.Length)
+            {
+                case > 4 when normalizedLowercase[^5..] is "romfs" or "exefs":
+                case > 5 when normalizedLowercase[^6..] is "cheats" or "extras":
+                    root = Path.GetDirectoryName(directory)!;
+                    return true;
+            }
+        }
+
+        root = null;
+        return false;
+    }
+}

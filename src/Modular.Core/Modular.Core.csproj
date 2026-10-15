@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Modular.Core.Tests" />
+    <InternalsVisibleTo Include="Modular.Switch" />
   </ItemGroup>
 
 </Project>

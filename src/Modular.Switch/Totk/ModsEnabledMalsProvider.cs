@@ -1,0 +1,80 @@
+using MessageStudio.Formats.BinaryText;
+using SarcLibrary;
+using TkSharp.Core;
+using TkSharp.Core.Models;
+
+namespace Modular.Switch.Totk;
+
+/// <summary>
+/// Port of TKMM v2.0.0-rc1 <c>Tkmm.Core/Providers/ModsEnabledMalsProvider.cs</c>: a changelog,
+/// merged first, that changes the title screen's version line to "TKMM - Mods Enabled" in
+/// the target language. Behaviour is unchanged.
+/// </summary>
+public static class ModsEnabledMalsProvider
+{
+    private static readonly Dictionary<string, string> LanguageMappings = new()
+    {
+        ["CNzh"] = "模组已启用",
+        ["EUde"] = "Mods Aktiviert",
+        ["EUen"] = "Mods Enabled",
+        ["EUes"] = "Mods Habilitados",
+        ["EUfr"] = "Mods Activés",
+        ["EUit"] = "Mod Attivati",
+        ["EUnl"] = "Mods Ingeschakeld",
+        ["EUru"] = "Моды Включены",
+        ["JPja"] = "モード有効",
+        ["KRko"] = "모드 활성화됨",
+        ["TWzh"] = "模組已啟用",
+        ["USen"] = "Mods Enabled",
+        ["USes"] = "Mods Habilitados",
+        ["USfr"] = "Mods Activés"
+    };
+    
+    public static TkChangelog? CreateDefaultMalsChangelog(string locale)
+    {
+        if (locale.Length < 4 || !LanguageMappings.TryGetValue(locale, out var localizedText))
+        {
+            return null;
+        }
+
+        try
+        {
+            Msbt changelog = new() { ["0003"] = new MsbtEntry { Text = "TKMM - " + localizedText } };
+
+            using var msbtStream = new MemoryStream();
+            changelog.WriteBinary(msbtStream);
+            var msbtData = msbtStream.ToArray();
+
+            var sarc = new Sarc { ["LayoutMsg/Title_00.msbt"] = msbtData };
+
+            var sarcStream = new MemoryStream();
+            sarc.Write(sarcStream);
+            sarcStream.Position = 0;
+
+            var malsFile = $"Mals/{locale}.Product.sarc";
+            
+            return new TkChangelog
+            {
+                BuilderVersion = 200,
+                GameVersion = 121,
+                MalsFiles = { malsFile },
+                Source = new StreamSystemSource(sarcStream)
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed class StreamSystemSource(Stream stream) : ITkSystemSource
+    {
+        public Stream OpenRead(string path) 
+        {
+            stream.Position = 0;
+            return stream;
+        }
+        public bool Exists(string path) => true;
+        public ITkSystemSource GetRelative(string _) => this;
+    }
+}

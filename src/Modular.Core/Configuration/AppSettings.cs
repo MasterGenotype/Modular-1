@@ -165,4 +165,10 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("deployment_fallback")]
     public string DeploymentFallback { get; set; } = "copy";
+
+    /// <summary>
+    /// Settings for the Tears of the Kingdom merge installer.
+    /// </summary>
+    [JsonPropertyName("switch_totk")]
+    public TotkSettings SwitchTotk { get; set; } = new();
 }
