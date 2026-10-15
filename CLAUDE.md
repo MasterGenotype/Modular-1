@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Modular is an extensible mod manager for downloading, organizing, and managing game modifications from multiple repositories (NexusMods, GameBanana, extensible via plugins). It provides both a CLI (Spectre.Console) and GUI (Avalonia 11.3) interface, built on .NET 8.0 / C# 12.
+Modular is an extensible mod manager for downloading, organizing, and managing game modifications from multiple repositories (NexusMods, GameBanana, extensible via plugins). It provides both a CLI (Spectre.Console) and GUI (Avalonia 11.3) interface, built on .NET 9.0 / C# 12.
 
 ## Build & Test Commands
 
@@ -74,7 +74,7 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 
 ## Code Style
 
-- C# 12 / .NET 8.0, implicit usings, file-scoped namespaces
+- C# 12 / .NET 9.0, implicit usings, file-scoped namespaces
 - 4-space indentation
 - `PascalCase` for types and public members, `_camelCase` for private fields
 - Nullable reference types enabled (`<Nullable>enable</Nullable>`)

@@ -81,7 +81,7 @@ FluentHttp                - Fluent HTTP client with middleware filters
 
 ## Code Style
 
-- C# 12 / .NET 8.0
+- C# 12 / .NET 9.0
 - 4-space indentation
 - PascalCase for types and public members, _camelCase for private fields
 - File-scoped namespaces

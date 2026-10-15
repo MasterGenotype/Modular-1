@@ -8,7 +8,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_PROJECT="$SCRIPT_DIR/build/_build.csproj"
-DOTNET_VERSION="8.0"
+DOTNET_VERSION="9.0"
 DOTNET_INSTALL_DIR="$HOME/.dotnet"
 
 # Colors for output

@@ -743,20 +743,20 @@ catch (ModularException ex)
 
 | Dependency | Purpose | Version |
 |------------|---------|---------|
-| **.NET SDK** | Runtime and build | 8.0+ |
+| **.NET SDK** | Runtime and build | 9.0+ |
 | **Spectre.Console** | Rich terminal UI and progress | 0.49.1 |
 | **Spectre.Console.Cli** | CLI command framework | 0.49.1 |
 | **System.Composition** | MEF plugin composition | 10.0.3 |
-| **Microsoft.Extensions.Configuration** | Configuration management | 8.0.0 |
-| **Microsoft.Extensions.Logging** | Logging abstractions | 8.0.0 |
-| **Microsoft.Extensions.Hosting** | DI and hosting (CLI) | 8.0.0 |
-| **Microsoft.Extensions.Http** | HttpClient factory | 8.0.0 |
-| **Microsoft.Extensions.Http.Polly** | Polly integration for HTTP | 8.0.0 |
-| **Microsoft.Extensions.DependencyInjection** | DI container (GUI) | 8.0.0 |
-| **Microsoft.Data.Sqlite** | SQLite database access | 8.0.0 |
+| **Microsoft.Extensions.Configuration** | Configuration management | 9.0.7 |
+| **Microsoft.Extensions.Logging** | Logging abstractions | 9.0.7 |
+| **Microsoft.Extensions.Hosting** | DI and hosting (CLI) | 9.0.7 |
+| **Microsoft.Extensions.Http** | HttpClient factory | 9.0.7 |
+| **Microsoft.Extensions.Http.Polly** | Polly integration for HTTP | 9.0.7 |
+| **Microsoft.Extensions.DependencyInjection** | DI container (GUI) | 9.0.7 |
+| **Microsoft.Data.Sqlite** | SQLite database access | 9.0.7 |
 | **Polly** | Resilience and transient fault handling | 8.3.0 |
 | **SharpCompress** | Multi-format archive support (7z, RAR, TAR) | 0.36.0 |
-| **System.Text.Json** | JSON serialization | 8.0.5 |
+| **System.Text.Json** | JSON serialization | 9.0.7 |
 | **Avalonia** | Cross-platform GUI framework | 11.3.11 |
 | **Avalonia.Themes.Fluent** | Fluent design theme | 11.3.11 |
 | **Avalonia.Fonts.Inter** | Inter font family | 11.3.11 |
@@ -769,7 +769,7 @@ catch (ModularException ex)
 
 ### Prerequisites
 
-- .NET SDK 8.0 or later
+- .NET SDK 9.0 or later
   - Check with: `dotnet --version`
 - `webkit2gtk` (Linux only, required for the embedded WebView mod browser in the GUI)
   - Arch Linux: `sudo pacman -S webkit2gtk`
@@ -786,7 +786,7 @@ sudo dpkg -i packages-microsoft-prod.deb
 rm packages-microsoft-prod.deb
 
 sudo apt update
-sudo apt install dotnet-sdk-8.0
+sudo apt install dotnet-sdk-9.0
 ```
 
 **Arch Linux:**
@@ -796,7 +796,7 @@ sudo pacman -S dotnet-sdk
 
 **Fedora:**
 ```bash
-sudo dnf install dotnet-sdk-8.0
+sudo dnf install dotnet-sdk-9.0
 ```
 
 ### Build Commands
@@ -1256,7 +1256,7 @@ Additional documentation is available in the [`docs/`](docs/) directory. See the
 
 ### Code Style
 
-- C# 12 / .NET 8.0
+- C# 12 / .NET 9.0
 - 4-space indentation
 - PascalCase for types and public members, camelCase for private fields with underscore prefix
 - File-scoped namespaces

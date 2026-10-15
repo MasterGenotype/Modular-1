@@ -7,8 +7,8 @@
         sdk-pack help
 
 # Directories
-BUILD_DIR = src/Modular.Cli/bin/Release/net8.0/linux-x64
-GUI_BUILD_DIR = src/Modular.Gui/bin/Release/net8.0
+BUILD_DIR = src/Modular.Cli/bin/Release/net9.0/linux-x64
+GUI_BUILD_DIR = src/Modular.Gui/bin/Release/net9.0
 PUBLISH_DIR = publish
 INSTALL_DIR = $(HOME)/.local/bin
 INSTALL_SHARE_DIR = $(HOME)/.local/share
@@ -189,12 +189,12 @@ plugin: plugin-example ## Build example plugin (alias)
 
 plugin-example: ## Build example plugin
 	dotnet build examples/ExamplePlugin/ExamplePlugin.csproj -c Release
-	@echo "Example plugin built: examples/ExamplePlugin/bin/Release/net8.0/"
+	@echo "Example plugin built: examples/ExamplePlugin/bin/Release/net9.0/"
 
 plugin-install: plugin-example ## Install example plugin to user plugins directory
 	mkdir -p $(PLUGIN_DIR)/ExamplePlugin
-	cp examples/ExamplePlugin/bin/Release/net8.0/ExamplePlugin.dll $(PLUGIN_DIR)/ExamplePlugin/
-	cp examples/ExamplePlugin/bin/Release/net8.0/Modular.Sdk.dll $(PLUGIN_DIR)/ExamplePlugin/ 2>/dev/null || true
+	cp examples/ExamplePlugin/bin/Release/net9.0/ExamplePlugin.dll $(PLUGIN_DIR)/ExamplePlugin/
+	cp examples/ExamplePlugin/bin/Release/net9.0/Modular.Sdk.dll $(PLUGIN_DIR)/ExamplePlugin/ 2>/dev/null || true
 	cp examples/ExamplePlugin/plugin.json $(PLUGIN_DIR)/ExamplePlugin/ 2>/dev/null || true
 	@echo "Example plugin installed to $(PLUGIN_DIR)/ExamplePlugin/"
 

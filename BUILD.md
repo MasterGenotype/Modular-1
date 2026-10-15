@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- .NET SDK 8.0 or later
+- .NET SDK 9.0 or later
   - Check with: `dotnet --version`
   - Install on Arch/Artix: `sudo pacman -S dotnet-sdk`
 

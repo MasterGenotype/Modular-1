@@ -8,7 +8,7 @@ setlocal EnableDelayedExpansion
 
 set SCRIPT_DIR=%~dp0
 set BUILD_PROJECT=%SCRIPT_DIR%build\_build.csproj
-set DOTNET_VERSION=8.0
+set DOTNET_VERSION=9.0
 set DOTNET_INSTALL_DIR=%USERPROFILE%\.dotnet
 
 :: Check if dotnet is available and has the required version

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12</LangVersion>
@@ -14,7 +14,7 @@
     <!-- Archive extraction (already used by Modular.Core) -->
     <PackageReference Include="SharpCompress" Version="0.50.4" />
     <!-- Logging abstractions -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
   </ItemGroup>
 
 </Project>

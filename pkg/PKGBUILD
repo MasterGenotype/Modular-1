@@ -9,7 +9,7 @@ license=('unknown')
 depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
          'libx11' 'libxcb' 'libxkbcommon' 'libxrandr' 'libxcursor' 'libxi'
          'fontconfig' 'freetype2' 'mesa')
-makedepends=('dotnet-sdk-8.0' 'git')
+makedepends=('dotnet-sdk-9.0' 'git')
 provides=('modular')
 conflicts=('modular')
 # strip corrupts .NET single-file bundles
