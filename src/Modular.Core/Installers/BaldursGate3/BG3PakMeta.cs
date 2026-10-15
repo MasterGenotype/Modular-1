@@ -82,13 +82,26 @@ public sealed record BG3PakMeta(
     /// </summary>
     /// <param name="pakPath">Absolute path to the <c>.pak</c>.</param>
     /// <returns>
-    /// The metadata, or <c>null</c> when the pak has no readable <c>meta.lsx</c>. A pak
-    /// without one is normal: override paks carry files and no module of their own.
+    /// The metadata, or <c>null</c> when the pak has no readable <c>meta.lsx</c> of its own.
+    /// A pak without one is normal: override paks carry files and no module of their own.
     /// </returns>
+    /// <remarks>
+    /// A pak that overrides the game's own modules packs their <c>meta.lsx</c> beside its
+    /// own (Party Limit Begone ships nine). Those describe the game, not the mod, so they
+    /// are passed over.
+    /// </remarks>
     public static BG3PakMeta? Read(string pakPath)
     {
-        var bytes = LspkReader.ReadFile(pakPath, IsMetaPath);
-        return bytes == null ? null : Parse(bytes);
+        foreach (var metaPath in LspkReader.ReadFileNames(pakPath).Where(IsMetaPath))
+        {
+            var bytes = LspkReader.ReadFile(pakPath, name => name == metaPath);
+            var meta = bytes == null ? null : Parse(bytes);
+
+            if (meta != null && !IsBuiltIn(meta.Module.Uuid))
+                return meta;
+        }
+
+        return null;
     }
 
     /// <summary>

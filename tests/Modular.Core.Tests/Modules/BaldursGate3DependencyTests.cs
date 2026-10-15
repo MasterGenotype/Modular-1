@@ -113,6 +113,33 @@ public sealed class BaldursGate3DependencyTests : IDisposable
     }
 
     [Fact]
+    public void PakMeta_APakThatOverridesGameModules_ReadsItsOwnModule()
+    {
+        // Party Limit Begone's layout: the game's metas sort ahead of the mod's own.
+        const string gustavUuid = "991c9c7a-fb80-40cb-8f0d-b92d4e80e9b1";
+        const string modUuid = "1d6c4030-67b9-4b0a-b3ab-caf6dd73d1af";
+        var pak = Path.Combine(NewTempDir(), "PartyLimitBegone.pak");
+
+        Bg3TestPak.Write(
+            pak,
+            ("Mods/Gustav/meta.lsx", MetaBytes(gustavUuid, "Gustav"), Bg3TestPak.Lz4),
+            ("Mods/GustavDev/meta.lsx", MetaBytes(GustavDevUuid, "GustavDev"), Bg3TestPak.Lz4),
+            ("Mods/PartyLimitBegone/meta.lsx", MetaBytes(modUuid, "PartyLimitBegone"), Bg3TestPak.Lz4));
+
+        BG3PakMeta.Read(pak)!.Module.Uuid.Should().Be(modUuid);
+    }
+
+    [Fact]
+    public void PakMeta_APakWithOnlyGameModuleMetas_IsNull()
+    {
+        var pak = Path.Combine(NewTempDir(), "override.pak");
+        Bg3TestPak.Write(
+            pak, ("Mods/GustavDev/meta.lsx", MetaBytes(GustavDevUuid, "GustavDev"), Bg3TestPak.Lz4));
+
+        BG3PakMeta.Read(pak).Should().BeNull();
+    }
+
+    [Fact]
     public void FindUnmetDependencies_ReportsOnlyModulesNothingProvides()
     {
         var installation = Installation();
@@ -153,6 +180,9 @@ public sealed class BaldursGate3DependencyTests : IDisposable
     {
         new BaldursGate3GameModule().FindUnmetDependencies(Installation()).Should().BeEmpty();
     }
+
+    private static byte[] MetaBytes(string uuid, string name) =>
+        Encoding.UTF8.GetBytes(Bg3TestPak.Meta(uuid, name));
 
     private static string ModsFolder(BaldursGate3GameModule module, GameInstallation installation)
     {
