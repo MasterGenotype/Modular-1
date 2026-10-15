@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Modular.Cli.Commands.Switch.Totk;
+using Modular.Switch;
 using Modular.Switch.Installer;
 using Modular.Switch.Models;
 using Spectre.Console;
@@ -31,6 +33,13 @@ public sealed class SwitchRollbackCommand : AsyncCommand<SwitchRollbackCommand.S
         {
             AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
             return 1;
+        }
+
+        if (SwitchInstallRouting.For(titleId) == SwitchInstallMethod.TotkMerge)
+        {
+            if (!string.IsNullOrEmpty(settings.Mods))
+                AnsiConsole.MarkupLine("[grey]Tears of the Kingdom rolls back the whole merge; --mods is ignored.[/]");
+            return await TotkSwitchRouting.RollbackAsync();
         }
 
         var state = await SwitchInstallState.LoadAsync();

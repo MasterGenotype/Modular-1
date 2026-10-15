@@ -7,6 +7,7 @@ using Modular.Cli.Commands.Modules;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
 using Modular.Cli.Commands.Switch;
+using Modular.Cli.Commands.Switch.Totk;
 using Modular.Cli.Commands.Telemetry;
 using Modular.Cli.Infrastructure;
 using Spectre.Console.Cli;
@@ -308,6 +309,43 @@ class Program
                 switchBranch.AddCommand<SwitchStatusCommand>("status")
                     .WithDescription("Show installation status of Switch mods")
                     .WithExample("switch", "status", "--game", "0100F2C0115B6000");
+
+                // Tears of the Kingdom: merge installer (TKMM v2.0.0-rc1 model)
+                switchBranch.AddBranch("totk", totk =>
+                {
+                    totk.SetDescription("Tears of the Kingdom: merge mods into one output, as TKMM does");
+
+                    totk.AddCommand<TotkConfigCommand>("config")
+                        .WithExample("switch", "totk", "config", "keys", "~/.local/share/yuzu/keys")
+                        .WithExample("switch", "totk", "config", "base-game", "~/Switch/TOTK.xci")
+                        .WithExample("switch", "totk", "config", "--check");
+                    totk.AddCommand<TotkInstallCommand>("install")
+                        .WithExample("switch", "totk", "install", "./MyMod.zip");
+                    totk.AddCommand<TotkUninstallCommand>("uninstall")
+                        .WithExample("switch", "totk", "uninstall", "MyMod");
+                    totk.AddCommand<TotkListCommand>("list");
+                    totk.AddBranch("profile", profile =>
+                    {
+                        profile.SetDescription("List, create and select TotK profiles");
+                        profile.AddCommand<TotkProfileListCommand>("list");
+                        profile.AddCommand<TotkProfileCreateCommand>("create");
+                        profile.AddCommand<TotkProfileSelectCommand>("select");
+                        profile.AddCommand<TotkProfileAddCommand>("add");
+                        profile.AddCommand<TotkProfileRemoveCommand>("remove");
+                    });
+                    totk.AddCommand<TotkOrderCommand>("order")
+                        .WithExample("switch", "totk", "order", "MyMod", "1");
+                    totk.AddCommand<TotkEnableCommand>("enable");
+                    totk.AddCommand<TotkDisableCommand>("disable");
+                    totk.AddCommand<TotkOptionCommand>("option")
+                        .WithExample("switch", "totk", "option", "MyMod")
+                        .WithExample("switch", "totk", "option", "MyMod", "Colour", "Blue", "--on");
+                    totk.AddCommand<TotkMergeCommand>("merge")
+                        .WithExample("switch", "totk", "merge", "--dry-run");
+                    totk.AddCommand<TotkDeployCommand>("deploy");
+                    totk.AddCommand<TotkExportSdCommand>("export-sd")
+                        .WithExample("switch", "totk", "export-sd", "/run/media/me/SWITCH");
+                });
             });
         });
 

@@ -105,6 +105,15 @@ public sealed class SwitchMod
     [JsonIgnore]
     public bool HasBnpOptions => BnpOptions?.HasOptions == true;
 
+    // ── Tears of the Kingdom ─────────────────────────────────────────────
+
+    /// <summary>
+    /// For a TotK mod installed through the merge installer, the ID of its TkSharp mod,
+    /// so reinstalling replaces that mod instead of adding another.
+    /// </summary>
+    [JsonPropertyName("totk_mod_id")]
+    public string? TotkModId { get; set; }
+
     // ── Snapshot ─────────────────────────────────────────────────────────
 
     /// <summary>Pre-install snapshot directory (for rollback).</summary>

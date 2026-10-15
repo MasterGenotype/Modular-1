@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Modular.Cli.Commands.Switch.Totk;
+using Modular.Switch;
 using Modular.Switch.DependencyResolver;
 using Modular.Switch.Installer;
 using Modular.Switch.Lutris;
@@ -75,6 +77,20 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
             AnsiConsole.MarkupLine($"[yellow]No mods found for TitleID {titleId}.[/]");
             AnsiConsole.MarkupLine("[grey]Run: modular switch scan <path> --game <TITLE_ID>[/]");
             return 1;
+        }
+
+        if (SwitchInstallRouting.For(titleId) == SwitchInstallMethod.TotkMerge)
+        {
+            if (settings.Runner != null || settings.NoOptions || settings.AllowConflicts)
+                AnsiConsole.MarkupLine("[grey]--runner, --no-options and --allow-conflicts don't apply to Tears of the Kingdom.[/]");
+
+            var totkMods = string.IsNullOrEmpty(settings.Mods)
+                ? gameMods
+                : gameMods.Where(m => settings.Mods
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Any(n => m.ModKey.Equals(n, StringComparison.OrdinalIgnoreCase) ||
+                              m.Name.Contains(n, StringComparison.OrdinalIgnoreCase))).ToList();
+            return await TotkSwitchRouting.InstallAsync(state, totkMods, settings.DryRun, settings.Force, cts.Token);
         }
 
         // Determine which mods to install

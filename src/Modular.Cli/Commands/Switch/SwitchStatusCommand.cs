@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Modular.Cli.Commands.Switch.Totk;
+using Modular.Switch;
 using Modular.Switch.Installer;
 using Modular.Switch.Models;
 using Spectre.Console;
@@ -28,6 +30,9 @@ public sealed class SwitchStatusCommand : AsyncCommand<SwitchStatusCommand.Setti
             AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
             return 1;
         }
+
+        if (SwitchInstallRouting.For(titleId) == SwitchInstallMethod.TotkMerge)
+            return await TotkSwitchRouting.StatusAsync();
 
         var state = await SwitchInstallState.LoadAsync();
         var gameMods = state.ForTitle(titleId).OrderBy(m => m.LoadOrder).ThenBy(m => m.Name).ToList();

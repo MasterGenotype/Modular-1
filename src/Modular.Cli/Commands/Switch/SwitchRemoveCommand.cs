@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Modular.Cli.Commands.Switch.Totk;
+using Modular.Switch;
 using Modular.Switch.Installer;
 using Modular.Switch.Models;
 using Spectre.Console;
@@ -46,6 +48,10 @@ public sealed class SwitchRemoveCommand : AsyncCommand<SwitchRemoveCommand.Setti
         }
 
         var state = await SwitchInstallState.LoadAsync();
+
+        if (SwitchInstallRouting.For(titleId) == SwitchInstallMethod.TotkMerge)
+            return await TotkSwitchRouting.RemoveAsync(state, settings.Mods, settings.All, CancellationToken.None);
+
         var gameMods = state.ForTitle(titleId).Where(m => m.IsInstalled).ToList();
 
         List<SwitchMod> targets;

@@ -109,10 +109,16 @@ public sealed class TotkMergeService
     /// into <paramref name="profile"/> (the current profile by default). A mod with the
     /// same ID replaces the installed one.
     /// </summary>
+    /// <param name="input">A mod folder or archive (.zip, .rar, .7z, .tkcl).</param>
+    /// <param name="id">
+    /// The ID to install under. Passing an installed mod's ID replaces it in place;
+    /// by default each install gets a new ID, as in rc1.
+    /// </param>
     /// <returns>The mod, or null when no reader could read it (the reason is logged).</returns>
     public async ValueTask<TkMod?> InstallAsync(
         string input,
         TkProfile? profile = null,
+        Ulid? id = null,
         IProgress<TotkProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -126,7 +132,8 @@ public sealed class TotkMergeService
 
         await using var stream = File.Exists(input) ? File.OpenRead(input) : null;
 
-        if (await reader.ReadMod(input, stream, context: null, ct) is not TkMod mod)
+        var context = id is { } fixedId ? new TkModContext(fixedId) : null;
+        if (await reader.ReadMod(input, stream, context, ct) is not TkMod mod)
         {
             TkLog.Instance.LogError("Failed to parse mod from input: '{Input}'", input);
             return null;
