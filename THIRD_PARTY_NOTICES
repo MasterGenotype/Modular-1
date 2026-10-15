@@ -11,8 +11,9 @@ Source:   https://github.com/TKMM-Team/TkSharp
 Included: lib/TkSharp (git submodule), built into Modular.Switch for
           Tears of the Kingdom mod merging.
 Version:  commit 797e76ec19bd6ce10af451a13909cffe8ddb21cd (the commit pinned by
-          TKMM v2.0.0-rc1), plus one Modular patch that builds it against
-          SharpCompress 0.50.4. The patched tree is published at
+          TKMM v2.0.0-rc1), plus two Modular patches for SharpCompress 0.50.4:
+          building against it, and buffering a .tkcl read from inside an
+          archive. The patched tree is published at
           https://github.com/MasterGenotype/TkSharp
           (branch modular/rc1-sharpcompress-0.50).
 
