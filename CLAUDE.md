@@ -69,6 +69,13 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 - **Rate Limiting** (`RateLimiting/`) — Thread-safe `NexusRateLimiter` parses `x-rl-*` response headers. Dual-tier: 20K daily, 500 hourly.
 - **Installers** (`Installers/`) — `FomodInstaller`, `BepInExInstaller`, `LooseFileInstaller` with confidence-based detection.
 
+### Switch (`src/Modular.Switch/`)
+
+- `SwitchInstallRouting` picks each title's installer. Most titles use `SwitchModInstaller` (one LayeredFS folder per mod).
+- Tears of the Kingdom (`Totk/`, TitleID `0100F2C0115B6000`) merges mods into one output, a port of TKMM v2.0.0-rc1 on TkSharp. See `docs/switch-totk-merge.md`.
+- TkSharp is the `lib/TkSharp` submodule (`git submodule update --init`): MasterGenotype/TkSharp, branch `modular/rc1-sharpcompress-0.50` = 797e76ec + SharpCompress 0.50 patches. Follow rc1 only; never backport from later TKMM/TkSharp; don't edit `lib/TkSharp` without the user's say-so.
+- TkSharp has process-wide, non-thread-safe state: one `TotkMergeService` per process, one operation at a time; tests touching it use the `TkSharp` xUnit collection.
+
 ### Legacy Code
 
 `NexusModsService` and `GameBananaService` in `src/Modular.Core/Services/` are `[Obsolete]`. Use the backend abstraction (`NexusModsBackend`, `GameBananaBackend`) instead.
