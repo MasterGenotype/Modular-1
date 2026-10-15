@@ -52,6 +52,12 @@ prepare() {
     git -C "$repo" ls-files -z --cached --others --exclude-standard -- . ':(exclude)pkg' \
         | tar -C "$repo" --null --ignore-failed-read --no-recursion -T - -cf - \
         | tar -C "$srcdir/modular" -xf -
+
+    # Submodules (lib/TkSharp) appear above as a single entry; copy their files too.
+    git -C "$repo" submodule foreach --quiet --recursive \
+        'git ls-files -z --cached --others --exclude-standard | sed -z "s|^|$displaypath/|"' \
+        | tar -C "$repo" --null --ignore-failed-read --no-recursion -T - -cf - \
+        | tar -C "$srcdir/modular" -xf -
 }
 
 build() {
