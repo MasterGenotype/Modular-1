@@ -1,6 +1,6 @@
 .PHONY: build build-cli build-gui build-sdk build-core build-http build-all \
         release release-cli release-gui install install-cli install-gui uninstall uninstall-cli uninstall-gui \
-        clean clean-all test test-core test-http test-all \
+        clean clean-all test test-core test-http test-switch test-all \
         run run-gui dev dev-gui \
         publish-linux publish-windows publish-macos \
         plugin plugin-example plugin-install plugin-clean \
@@ -141,6 +141,9 @@ test-core: ## Run Core library tests only
 
 test-http: ## Run FluentHttp tests only
 	dotnet test tests/Modular.FluentHttp.Tests/Modular.FluentHttp.Tests.csproj
+
+test-switch: ## Run Switch tests only
+	dotnet test tests/Modular.Switch.Tests/Modular.Switch.Tests.csproj
 
 test-all: test ## Alias for test
 

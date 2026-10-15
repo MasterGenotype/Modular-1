@@ -1,0 +1,80 @@
+THIRD-PARTY NOTICES
+===================
+
+Modular includes or is derived from the third-party software listed below.
+Each is distributed under its own license, reproduced here.
+
+-------------------------------------------------------------------------------
+TkSharp
+-------------------------------------------------------------------------------
+Source:   https://github.com/TKMM-Team/TkSharp
+Included: lib/TkSharp (git submodule), built into Modular.Switch for
+          Tears of the Kingdom mod merging.
+Version:  commit 797e76ec19bd6ce10af451a13909cffe8ddb21cd (the commit pinned by
+          TKMM v2.0.0-rc1), plus one Modular patch that builds it against
+          SharpCompress 0.50.4. The patched tree is published at
+          https://github.com/MasterGenotype/TkSharp
+          (branch modular/rc1-sharpcompress-0.50).
+
+The MIT License (MIT)
+=====================
+
+Copyright © 2024 TKMM-Team and Contributors
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the “Software”), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+-------------------------------------------------------------------------------
+TKMM (Tears of the Kingdom Mod Manager)
+-------------------------------------------------------------------------------
+Source:   https://github.com/TKMM-Team/Tkmm
+Used:     Modular's Tears of the Kingdom merge installer (Modular.Switch.Totk)
+          ports behaviour and code from TKMM v2.0.0-rc1: the install and merge
+          flow (TKMM.cs), ROM provider configuration (TkConfig.cs), emulator,
+          Ryujinx, symlink and directory helpers, export locations and the
+          external 7-Zip reader.
+
+The MIT License (MIT)
+=====================
+
+Copyright © 2023-2025 TKMM-Team and Contributors
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the “Software”), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

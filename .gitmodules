@@ -1,0 +1,4 @@
+[submodule "lib/TkSharp"]
+	path = lib/TkSharp
+	url = https://github.com/MasterGenotype/TkSharp
+	branch = modular/rc1-sharpcompress-0.50

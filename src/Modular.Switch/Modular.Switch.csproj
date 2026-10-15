@@ -17,4 +17,12 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\lib\TkSharp\TkSharp\TkSharp.csproj" />
+    <ProjectReference Include="..\..\lib\TkSharp\TkSharp.Core\TkSharp.Core.csproj" />
+    <ProjectReference Include="..\..\lib\TkSharp\TkSharp.Merging\TkSharp.Merging.csproj" />
+    <ProjectReference Include="..\..\lib\TkSharp\TkSharp.Data.Embedded\TkSharp.Data.Embedded.csproj" />
+    <ProjectReference Include="..\..\lib\TkSharp\Extensions\TkSharp.Extensions.LibHac\TkSharp.Extensions.LibHac.csproj" />
+  </ItemGroup>
+
 </Project>

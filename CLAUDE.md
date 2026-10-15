@@ -23,6 +23,7 @@ make test                     # or: dotnet test Modular.sln
 # Run specific test project
 make test-core                # dotnet test tests/Modular.Core.Tests/
 make test-http                # dotnet test tests/Modular.FluentHttp.Tests/
+make test-switch              # dotnet test tests/Modular.Switch.Tests/
 
 # Run a single test
 dotnet test --filter "FullyQualifiedName~TestClassName.TestMethodName"
