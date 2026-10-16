@@ -76,13 +76,6 @@ public partial class ModManagerViewModel : ViewModelBase
             StatusMessage = files.Count > 0
                 ? $"Found {files.Count} archive(s) in {modsDir}"
                 : "No archives found in mods directory";
-
-            // Auto-populate the Install VM's archive list if empty
-            if (InstallViewModel != null && InstallViewModel.ArchivePaths.Count == 0)
-            {
-                foreach (var archive in files.Take(50)) // Limit to avoid overwhelming
-                    InstallViewModel.ArchivePaths.Add(archive);
-            }
         }
         catch (Exception ex)
         {
