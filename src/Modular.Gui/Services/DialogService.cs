@@ -345,6 +345,114 @@ public class DialogService : IDialogService
         return result;
     }
 
+    public async Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
+        string title, string message, List<string> mainItems, List<string> optionalItems)
+    {
+        var window = GetMainWindow();
+        if (window == null) return null;
+
+        var okBtn = new Button { Content = "OK", MinWidth = 80 };
+        var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
+
+        // Each dialog gets its own group, so radio buttons never couple across windows.
+        var group = $"main-{Guid.NewGuid():N}";
+        var radios = mainItems.Select(text => new RadioButton
+        {
+            GroupName = group,
+            Content = new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+            FontSize = 12
+        }).ToList();
+
+        var checkBoxes = optionalItems.Select(text => new CheckBox
+        {
+            Content = new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+            IsChecked = false,
+            FontSize = 12
+        }).ToList();
+
+        // OK stays off until the choice is complete: a main file when there are any,
+        // otherwise at least one optional file.
+        void UpdateOk() => okBtn.IsEnabled = radios.Count > 0
+            ? radios.Any(r => r.IsChecked == true)
+            : checkBoxes.Any(c => c.IsChecked == true);
+
+        foreach (var r in radios) r.IsCheckedChanged += (_, _) => UpdateOk();
+        foreach (var c in checkBoxes) c.IsCheckedChanged += (_, _) => UpdateOk();
+        UpdateOk();
+
+        var listPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 12, 0) };
+
+        if (radios.Count > 0)
+        {
+            listPanel.Children.Add(SectionHeader("Main file — pick one (required)", top: 0));
+            foreach (var r in radios) listPanel.Children.Add(r);
+        }
+
+        if (checkBoxes.Count > 0)
+        {
+            listPanel.Children.Add(SectionHeader(
+                radios.Count > 0 ? "Optional files — tick any to add" : "Optional files — tick at least one",
+                top: radios.Count > 0 ? 12 : 0));
+            foreach (var c in checkBoxes) listPanel.Children.Add(c);
+        }
+
+        Control? toolbar = null;
+        if (checkBoxes.Count > 1)
+        {
+            var allBtn = new Button { Content = "Select All Optional", FontSize = 11, Padding = new Thickness(8, 3) };
+            var noneBtn = new Button { Content = "Select No Optional", FontSize = 11, Padding = new Thickness(8, 3) };
+            allBtn.Click += (_, _) => { foreach (var c in checkBoxes) c.IsChecked = true; };
+            noneBtn.Click += (_, _) => { foreach (var c in checkBoxes) c.IsChecked = false; };
+            toolbar = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 8,
+                Children = { allBtn, noneBtn }
+            };
+        }
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 600,
+            Height = 600,
+            MinWidth = 400,
+            MinHeight = 350,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = BuildPickerLayout(
+                message,
+                toolbar,
+                new ScrollViewer
+                {
+                    Content = listPanel,
+                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+                },
+                okBtn,
+                cancelBtn)
+        };
+
+        var cancelled = true;
+        okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
+        cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
+
+        await dialog.ShowDialog(window);
+
+        if (cancelled) return null;
+
+        var main = radios.FindIndex(r => r.IsChecked == true);
+        var optional = Enumerable.Range(0, checkBoxes.Count).Where(i => checkBoxes[i].IsChecked == true).ToList();
+
+        return (main >= 0 ? main : null, optional);
+    }
+
+    private static TextBlock SectionHeader(string text, double top) => new()
+    {
+        Text = text,
+        FontWeight = Avalonia.Media.FontWeight.SemiBold,
+        Margin = new Thickness(0, top, 0, 2)
+    };
+
     // Message on top, the list filling whatever height is left, buttons pinned to the
     // bottom. The list scrolls on its own, and a long message scrolls in its own capped
     // area, so neither can push the other or the buttons out of the window.

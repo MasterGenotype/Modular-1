@@ -59,4 +59,20 @@ public interface IDialogService
     /// <param name="preSelected">Indices of items that should be pre-selected. Null selects all.</param>
     /// <returns>List of selected indices, or empty if cancelled.</returns>
     Task<List<int>> ShowMultiSelectAsync(string title, string message, List<string> items, List<int>? preSelected = null);
+
+    /// <summary>
+    /// Shows a file chooser where exactly one main file must be picked and any optional
+    /// files can be ticked alongside it. With no main files, at least one optional file
+    /// must be ticked instead.
+    /// </summary>
+    /// <param name="title">Dialog title.</param>
+    /// <param name="message">Description message.</param>
+    /// <param name="mainItems">Main files; one of them is required.</param>
+    /// <param name="optionalItems">Optional files; any number may be ticked.</param>
+    /// <returns>
+    /// The picked main index (null when there are no main files) and the ticked optional
+    /// indices, or null if cancelled.
+    /// </returns>
+    Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
+        string title, string message, List<string> mainItems, List<string> optionalItems);
 }

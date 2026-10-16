@@ -566,11 +566,11 @@ public partial class InstalledModsViewModel : ViewModelBase
 
                 try
                 {
-                    var picked = await ChooseFileAsync(item);
-                    if (picked == null)
+                    var picked = await ChooseFilesAsync(item);
+                    if (picked.Count == 0)
                         skipped.Add(item.Name);
                     else
-                        toQueue.Add(picked.Value);
+                        toQueue.AddRange(picked);
                 }
                 catch (Exception ex)
                 {
@@ -614,9 +614,9 @@ public partial class InstalledModsViewModel : ViewModelBase
         }
     }
 
-    // Settles which mod and which file to download for one missing dependency, asking
-    // only when the answer is in doubt. Null means the user backed out or nothing fits.
-    private async Task<(BackendMod Mod, BackendModFile File)?> ChooseFileAsync(MissingDependency item)
+    // Settles which mod and which files to download for one missing dependency, asking
+    // only when the answer is in doubt. Empty means the user backed out or nothing fits.
+    private async Task<IReadOnlyList<(BackendMod Mod, BackendModFile File)>> ChooseFilesAsync(MissingDependency item)
     {
         var backendId = item.BackendId;
         var modId = item.ModId;
@@ -632,7 +632,7 @@ public partial class InstalledModsViewModel : ViewModelBase
                     string.IsNullOrEmpty(c.Author) ? c.Name : $"{c.Name} — {c.Author}").ToList());
 
             if (index < 0 || index >= item.Candidates.Count)
-                return null;
+                return [];
 
             var candidate = item.Candidates[index];
             backendId = candidate.BackendId;
@@ -641,29 +641,43 @@ public partial class InstalledModsViewModel : ViewModelBase
         }
 
         if (string.IsNullOrEmpty(backendId) || string.IsNullOrEmpty(modId))
-            return null;
+            return [];
 
         var (mod, files) = await _dependencyService!.GetFilesAsync(backendId, modId, gameDomain);
         if (files.Count == 0)
             throw new InvalidOperationException("no downloadable files");
 
         var file = MissingDependencyService.PickDefaultFile(files);
-        if (file == null)
-        {
-            var message = $"'{mod.Name}' has {files.Count} files. Pick the one to download.";
-            if (item.Notes.Count > 0)
-                message += "\n\nThe requiring mod's author says:\n" + string.Join("\n", item.Notes);
+        if (file != null)
+            return [(mod, file)];
 
-            var index = await _dialogService!.ShowListPickerAsync(
-                "Choose File", message, files.Select(DescribeFile).ToList());
+        // One main file is required; optional files ride along with it if ticked.
+        var mains = files.Where(MissingDependencyService.IsMain).ToList();
+        var optionals = files.Where(f => !MissingDependencyService.IsMain(f)).ToList();
 
-            if (index < 0 || index >= files.Count)
-                return null;
+        var message = mains.Count > 0
+            ? $"'{mod.Name}' has {files.Count} files. Pick the main file to download, and tick any optional files to download with it."
+            : $"'{mod.Name}' has {files.Count} files. Tick the ones to download.";
+        if (item.Notes.Count > 0)
+            message += "\n\nThe requiring mod's author says:\n" + string.Join("\n", item.Notes);
 
-            file = files[index];
-        }
+        var choice = await _dialogService!.ShowFileChoiceAsync(
+            "Choose Files",
+            message,
+            mains.Select(DescribeFile).ToList(),
+            optionals.Select(DescribeFile).ToList());
 
-        return (mod, file);
+        if (choice == null)
+            return [];
+
+        var picked = new List<(BackendMod Mod, BackendModFile File)>();
+        if (choice.Value.Main is int main && main >= 0 && main < mains.Count)
+            picked.Add((mod, mains[main]));
+        picked.AddRange(choice.Value.Optional
+            .Where(i => i >= 0 && i < optionals.Count)
+            .Select(i => (mod, optionals[i])));
+
+        return picked;
     }
 
     // Settles which of a dependency's already-downloaded archives to install. A mod page

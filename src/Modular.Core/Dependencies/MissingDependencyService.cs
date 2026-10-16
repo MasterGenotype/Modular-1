@@ -817,7 +817,12 @@ public sealed class MissingDependencyService
             ? record.ModId
             : Path.GetFileNameWithoutExtension(record.ArchivePath) ?? record.ChangesetId;
 
-    private static bool IsMain(BackendModFile file) =>
+    /// <summary>
+    /// Whether a file is one of a mod's main files, as opposed to an optional extra.
+    /// </summary>
+    /// <param name="file">A mod file.</param>
+    /// <returns><c>true</c> for a main file.</returns>
+    public static bool IsMain(BackendModFile file) =>
         string.Equals(file.Category, "main", StringComparison.OrdinalIgnoreCase);
 
     // Resolving a game walks Steam's libraries, and every mod of a game resolves alike.
