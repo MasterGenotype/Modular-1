@@ -328,9 +328,8 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             if (string.IsNullOrEmpty(url))
             {
                 completed++;
-                progress?.Report(DownloadProgress.Downloading(
-                    $"Skipping {file.FileName} (no download link)",
-                    completed, total, file.FileName));
+                progress?.Report(DownloadProgress.Failure(
+                    file.FileName, "NexusMods gave no download link", completed, total));
                 continue;
             }
             resolvedUrls++;
@@ -418,6 +417,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                     Status = DownloadStatus.HashMismatch,
                     ErrorMessage = ex.Message
                 });
+                completed++;
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
+                continue;
             }
             catch (Exception ex)
             {
@@ -432,6 +434,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                     Status = DownloadStatus.Failed,
                     ErrorMessage = ex.Message
                 });
+                completed++;
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
+                continue;
             }
 
             completed++;

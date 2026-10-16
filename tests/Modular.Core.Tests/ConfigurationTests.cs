@@ -17,7 +17,7 @@ public class ConfigurationTests
         settings.DefaultCategories.Should().BeEquivalentTo(["main", "optional"]);
         settings.AutoRename.Should().BeTrue();
         settings.OrganizeByCategory.Should().BeTrue();
-        settings.VerifyDownloads.Should().BeFalse();
+        settings.VerifyDownloads.Should().BeTrue();
         settings.MaxConcurrentDownloads.Should().Be(1);
     }
 

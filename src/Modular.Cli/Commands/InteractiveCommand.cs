@@ -92,7 +92,9 @@ public sealed class InteractiveCommand : AsyncCommand
 
         var progress = new Progress<DownloadProgress>(p =>
         {
-            if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
+            if (p.Phase == DownloadPhase.Failed)
+                LiveProgressDisplay.ShowError($"[{p.Completed}/{p.Total}] {p.Status}");
+            else if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
                 Console.WriteLine($"[{p.Completed}/{p.Total}] {p.Status}");
             else if (p.Phase == DownloadPhase.Scanning)
                 Console.WriteLine($"[SCAN] {p.Status}");

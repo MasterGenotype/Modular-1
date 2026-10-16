@@ -72,7 +72,7 @@ public class DownloadOptions
         Resume = true,
         Filter = FileFilter.MainAndOptional,
         MaxConcurrency = 1,
-        VerifyDownloads = false,
+        VerifyDownloads = true,
         AutoRename = true,
         OrganizeByCategory = true
     };

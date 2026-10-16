@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
 using Modular.Core.Backends;
+using Modular.Core.Downloads;
 using Modular.Core.Services;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
@@ -119,6 +120,9 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 StatusCallback = status => Console.WriteLine($"[SCAN] {status}")
             };
 
+            // Every file that failed, from every backend, so none scroll past unnoticed.
+            var failures = new List<(string Backend, string File, string Error)>();
+
             foreach (var backend in backends)
             {
                 // Validate backend configuration
@@ -145,15 +149,17 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 var downloadStart = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    await RunBackendDownloadAsync(backend, services, gameDomain, options, cts.Token);
+                    var failed = await RunBackendDownloadAsync(backend, services, gameDomain, options, cts.Token);
+                    failures.AddRange(failed.Select(f => (backend.DisplayName, f.File, f.Error)));
                     downloadStart.Stop();
-                    services.Telemetry.RecordDownload(backend.Id, 0, downloadStart.Elapsed, true);
+                    services.Telemetry.RecordDownload(backend.Id, 0, downloadStart.Elapsed, failed.Count == 0);
                 }
                 catch (Exception ex)
                 {
                     downloadStart.Stop();
                     services.Telemetry.RecordDownload(backend.Id, 0, downloadStart.Elapsed, false);
                     LiveProgressDisplay.ShowError($"Download from {backend.DisplayName} failed: {ex.Message}");
+                    failures.Add((backend.DisplayName, "(whole backend)", ex.Message));
                     continue;
                 }
 
@@ -173,6 +179,17 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             }
 
             await services.SaveStateAsync();
+
+            if (failures.Count > 0)
+            {
+                Console.WriteLine();
+                LiveProgressDisplay.ShowError($"{failures.Count} download(s) failed:");
+                foreach (var (backendName, file, error) in failures)
+                    LiveProgressDisplay.ShowError($"  [{backendName}] {file}: {error}");
+                LiveProgressDisplay.ShowInfo("Run the same command again to retry them; finished files are skipped.");
+                return 1;
+            }
+
             LiveProgressDisplay.ShowSuccess("Download complete.");
             return 0;
         }
@@ -193,16 +210,26 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
         }
     }
 
-    private static async Task RunBackendDownloadAsync(
+    /// <returns>The files that failed.</returns>
+    private static async Task<List<(string File, string Error)>> RunBackendDownloadAsync(
         Modular.Core.Backends.IModBackend backend,
         RuntimeServices services,
         string? gameDomain,
         DownloadOptions options,
         CancellationToken ct)
     {
-        var progress = new Progress<DownloadProgress>(p =>
+        var failed = new List<(string File, string Error)>();
+
+        // Reported synchronously: Progress<T> posts to the thread pool, so a failure
+        // reported last could otherwise arrive after the summary is printed.
+        var progress = new SyncProgress<DownloadProgress>(p =>
         {
-            if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
+            if (p.Phase == DownloadPhase.Failed)
+            {
+                failed.Add((p.CurrentFile ?? "(unknown file)", p.Error ?? p.Status));
+                LiveProgressDisplay.ShowError($"[{p.Completed}/{p.Total}] {p.Status}");
+            }
+            else if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
                 Console.WriteLine($"[{p.Completed}/{p.Total}] {p.Status}");
             else if (p.Phase == DownloadPhase.Scanning)
                 Console.WriteLine($"[SCAN] {p.Status}");
@@ -214,5 +241,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             options,
             progress,
             ct);
+
+        return failed;
     }
 }

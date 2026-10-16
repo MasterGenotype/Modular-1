@@ -37,6 +37,11 @@ public class DownloadProgress
     public long? CurrentFileTotalBytes { get; set; }
 
     /// <summary>
+    /// Why the current file failed, for a <see cref="DownloadPhase.Failed"/> update.
+    /// </summary>
+    public string? Error { get; set; }
+
+    /// <summary>
     /// Current phase of the download operation.
     /// </summary>
     public DownloadPhase Phase { get; set; } = DownloadPhase.Scanning;
@@ -65,6 +70,20 @@ public class DownloadProgress
         Total = total,
         CurrentFile = currentFile,
         Phase = DownloadPhase.Downloading
+    };
+
+    /// <summary>
+    /// Creates a progress update for a file that could not be downloaded. The operation
+    /// carries on with the next file; the caller is expected to collect these.
+    /// </summary>
+    public static DownloadProgress Failure(string fileName, string error, int completed, int total) => new()
+    {
+        Status = $"Failed: {fileName} - {error}",
+        Completed = completed,
+        Total = total,
+        CurrentFile = fileName,
+        Error = error,
+        Phase = DownloadPhase.Failed
     };
 
     /// <summary>
@@ -97,5 +116,10 @@ public enum DownloadPhase
     Organizing,
 
     /// <summary>Operation complete.</summary>
-    Complete
+    Complete,
+
+    /// <summary>
+    /// One file failed and was skipped; see <see cref="DownloadProgress.Error"/>.
+    /// </summary>
+    Failed
 }

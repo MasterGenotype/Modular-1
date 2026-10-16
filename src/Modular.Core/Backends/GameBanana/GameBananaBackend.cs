@@ -486,6 +486,8 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
             {
                 _logger?.LogWarning("No download URL for file in mod {ModName}", mod.Name);
                 completed++;
+                progress?.Report(DownloadProgress.Failure(
+                    file.FileName, "GameBanana gave no download link", completed, total));
                 continue;
             }
 
@@ -564,16 +566,16 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
             catch (HttpRequestException ex)
             {
                 _logger?.LogError("Failed to download {ModName}/{FileName}: {Error}", mod.Name, file.FileName, ex.Message);
-                progress?.Report(DownloadProgress.Downloading(
-                    $"Failed: {file.FileName} - {ex.Message}",
-                    completed, total, file.FileName));
+                completed++;
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
+                continue;
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to download {Url}", url);
-                progress?.Report(DownloadProgress.Downloading(
-                    $"Failed: {file.FileName} - {ex.Message}",
-                    completed, total, file.FileName));
+                completed++;
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
+                continue;
             }
 
             completed++;

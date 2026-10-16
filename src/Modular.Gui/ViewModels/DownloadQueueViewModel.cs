@@ -394,7 +394,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     // GameBanana sizes are exact; NexusMods only provides size_kb.
                     ExpectedSize = isGameBanana ? item.File?.SizeBytes : null,
                     ExpectedMd5 = item.File?.Md5,
-                    VerifyMd5 = _settings?.VerifyDownloads ?? false,
+                    VerifyMd5 = _settings?.VerifyDownloads ?? true,
                     RefreshUrlAsync = refreshUrl
                 },
                 progress,

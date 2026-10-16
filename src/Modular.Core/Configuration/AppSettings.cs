@@ -84,7 +84,7 @@ public class AppSettings
     /// Whether to verify downloads using MD5 checksums.
     /// </summary>
     [JsonPropertyName("verify_downloads")]
-    public bool VerifyDownloads { get; set; } = false;
+    public bool VerifyDownloads { get; set; } = true;
 
     /// <summary>
     /// Whether to validate API tracking against web tracking center.
