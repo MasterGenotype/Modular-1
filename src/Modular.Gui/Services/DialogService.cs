@@ -240,51 +240,25 @@ public class DialogService : IDialogService
         var listBox = new ListBox
         {
             ItemsSource = items,
-            MinHeight = 150,
-            MaxHeight = 350,
             SelectedIndex = items.Count > 0 ? 0 : -1
         };
+
+        var selectBtn = new Button { Content = "Select", MinWidth = 80 };
+        var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
 
         var dialog = new Window
         {
             Title = title,
-            Width = 500,
-            Height = 420,
+            Width = 550,
+            Height = 480,
+            MinWidth = 400,
+            MinHeight = 300,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(20),
-                Spacing = 15,
-                Children =
-                {
-                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                    listBox,
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                        Spacing = 10,
-                        Children =
-                        {
-                            new Button { Content = "Select", MinWidth = 80 },
-                            new Button { Content = "Cancel", MinWidth = 80 }
-                        }
-                    }
-                }
-            }
+            Content = BuildPickerLayout(message, null, listBox, selectBtn, cancelBtn)
         };
 
-        if (dialog.Content is StackPanel panel && panel.Children[2] is StackPanel btnPanel)
-        {
-            if (btnPanel.Children[0] is Button selectBtn)
-            {
-                selectBtn.Click += (_, _) => { result = listBox.SelectedIndex; dialog.Close(); };
-            }
-            if (btnPanel.Children[1] is Button cancelBtn)
-            {
-                cancelBtn.Click += (_, _) => { result = -1; dialog.Close(); };
-            }
-        }
+        selectBtn.Click += (_, _) => { result = listBox.SelectedIndex; dialog.Close(); };
+        cancelBtn.Click += (_, _) => { result = -1; dialog.Close(); };
 
         listBox.DoubleTapped += (_, _) =>
         {
@@ -307,12 +281,12 @@ public class DialogService : IDialogService
         var result = new List<int>();
         var checkBoxes = new List<CheckBox>();
 
-        var listPanel = new StackPanel { Spacing = 4 };
+        var listPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 12, 0) };
         for (var i = 0; i < items.Count; i++)
         {
             var cb = new CheckBox
             {
-                Content = items[i],
+                Content = new TextBlock { Text = items[i], TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                 IsChecked = preSelected == null || preSelected.Contains(i),
                 FontSize = 12
             };
@@ -320,65 +294,43 @@ public class DialogService : IDialogService
             listPanel.Children.Add(cb);
         }
 
-        var scrollViewer = new ScrollViewer
-        {
-            Content = listPanel,
-            MaxHeight = 350,
-            MinHeight = 100
-        };
-
         var selectAllBtn = new Button { Content = "Select All", FontSize = 11, Padding = new Thickness(8, 3) };
         var selectNoneBtn = new Button { Content = "Select None", FontSize = 11, Padding = new Thickness(8, 3) };
         selectAllBtn.Click += (_, _) => { foreach (var cb in checkBoxes) cb.IsChecked = true; };
         selectNoneBtn.Click += (_, _) => { foreach (var cb in checkBoxes) cb.IsChecked = false; };
 
+        var okBtn = new Button { Content = "OK", MinWidth = 80 };
+        var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
+
         var dialog = new Window
         {
             Title = title,
-            Width = 550,
-            Height = 500,
+            Width = 600,
+            Height = 600,
+            MinWidth = 400,
+            MinHeight = 350,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(20),
-                Spacing = 12,
-                Children =
+            Content = BuildPickerLayout(
+                message,
+                new StackPanel
                 {
-                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        Spacing = 8,
-                        Children = { selectAllBtn, selectNoneBtn }
-                    },
-                    scrollViewer,
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                        Spacing = 10,
-                        Children =
-                        {
-                            new Button { Content = "OK", MinWidth = 80 },
-                            new Button { Content = "Cancel", MinWidth = 80 }
-                        }
-                    }
-                }
-            }
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { selectAllBtn, selectNoneBtn }
+                },
+                new ScrollViewer
+                {
+                    Content = listPanel,
+                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+                },
+                okBtn,
+                cancelBtn)
         };
 
         var cancelled = true;
-        if (dialog.Content is StackPanel panel && panel.Children[3] is StackPanel btnPanel)
-        {
-            if (btnPanel.Children[0] is Button okBtn)
-            {
-                okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
-            }
-            if (btnPanel.Children[1] is Button cancelBtn)
-            {
-                cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
-            }
-        }
+        okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
+        cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
 
         await dialog.ShowDialog(window);
 
@@ -393,4 +345,56 @@ public class DialogService : IDialogService
         return result;
     }
 
+    // Message on top, the list filling whatever height is left, buttons pinned to the
+    // bottom. The list scrolls on its own, and a long message scrolls in its own capped
+    // area, so neither can push the other or the buttons out of the window.
+    private static Grid BuildPickerLayout(
+        string message, Control? toolbar, Control list, Button confirm, Button cancel)
+    {
+        var grid = new Grid
+        {
+            Margin = new Thickness(20),
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto")
+        };
+
+        var messageView = new ScrollViewer
+        {
+            MaxHeight = 200,
+            Margin = new Thickness(0, 0, 0, 12),
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            Content = new SelectableTextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+        };
+        grid.Children.Add(messageView);
+
+        if (toolbar != null)
+        {
+            toolbar.Margin = new Thickness(0, 0, 0, 8);
+            Grid.SetRow(toolbar, 1);
+            grid.Children.Add(toolbar);
+        }
+
+        var listBorder = new Border
+        {
+            BorderThickness = new Thickness(1),
+            BorderBrush = Avalonia.Media.Brushes.Gray,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6),
+            Child = list
+        };
+        Grid.SetRow(listBorder, 2);
+        grid.Children.Add(listBorder);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Spacing = 10,
+            Margin = new Thickness(0, 12, 0, 0),
+            Children = { confirm, cancel }
+        };
+        Grid.SetRow(buttons, 3);
+        grid.Children.Add(buttons);
+
+        return grid;
+    }
 }
