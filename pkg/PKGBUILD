@@ -1,6 +1,6 @@
 # Maintainer: superphenotype
 pkgname=modular-git
-pkgver=r150.g8d31f23
+pkgver=r168.gf6a3039
 pkgrel=1
 pkgdesc="Extensible mod manager for downloading, organizing, and managing game modifications (CLI + GUI)"
 arch=('x86_64')
