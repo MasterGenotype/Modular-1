@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Backends;
 using Modular.Core.Backends.GameBanana;
+using Modular.Core.Backends.ModIo;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
@@ -168,9 +169,17 @@ sealed class Program
         });
         services.AddSingleton(sp =>
         {
+            var settings = sp.GetRequiredService<AppSettings>();
+            var logger = sp.GetService<ILogger<ModIoBackend>>();
+            var downloader = sp.GetRequiredService<ResumableDownloader>();
+            return new ModIoBackend(settings, logger, downloader);
+        });
+        services.AddSingleton(sp =>
+        {
             var registry = new BackendRegistry();
             registry.Register(sp.GetRequiredService<NexusModsBackend>());
             registry.Register(sp.GetRequiredService<GameBananaBackend>());
+            registry.Register(sp.GetRequiredService<ModIoBackend>());
             return registry;
         });
 
@@ -325,6 +334,8 @@ sealed class Program
         services.AddTransient<GameDetectionViewModel>();
         services.AddTransient<NexusSearchViewModel>();
         services.AddTransient<GameBananaSearchViewModel>();
+        services.AddTransient<ModIoViewModel>();
+        services.AddTransient<ModIoSearchViewModel>();
         // Sub-ViewModels for combined panels
         services.AddTransient<InstallViewModel>();
         services.AddTransient<InstalledModsViewModel>();
@@ -335,6 +346,7 @@ sealed class Program
         // Combined wrapper ViewModels
         services.AddTransient<NexusModsViewModel>();
         services.AddTransient<GameBananaPanelViewModel>();
+        services.AddTransient<ModIoPanelViewModel>();
         services.AddTransient<BackupsViewModel>();
         services.AddTransient<SnapshotViewModel>();
         services.AddTransient<ModManagerViewModel>();

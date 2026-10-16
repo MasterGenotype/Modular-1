@@ -194,6 +194,68 @@
                     </StackPanel>
                 </Border>
 
+                <!-- mod.io Section -->
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="15">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="Puzzle" Width="24" Height="24"/>
+                            <TextBlock Text="mod.io" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="OAuth Access Token" Margin="0,0,0,5"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Text="{Binding ModIoAccessToken}"
+                                         PasswordChar="•"
+                                         Watermark="Needed for your subscriptions"
+                                         IsVisible="{Binding !ShowModIoSecrets}"/>
+                                <TextBox Text="{Binding ModIoAccessToken}"
+                                         Watermark="Needed for your subscriptions"
+                                         IsVisible="{Binding ShowModIoSecrets}"/>
+                                <Button Grid.Column="1" Command="{Binding ToggleModIoSecretsVisibilityCommand}"
+                                        Margin="5,0,0,0" ToolTip.Tip="Show or hide the token and key">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="Eye" Width="16" Height="16" IsVisible="{Binding !ShowModIoSecrets}"/>
+                                        <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" IsVisible="{Binding ShowModIoSecrets}"/>
+                                    </Panel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="API Key (optional with a token)" Margin="0,0,0,5"/>
+                            <Panel>
+                                <TextBox Text="{Binding ModIoApiKey}"
+                                         PasswordChar="•"
+                                         Watermark="Read-only access to public mods"
+                                         IsVisible="{Binding !ShowModIoSecrets}"/>
+                                <TextBox Text="{Binding ModIoApiKey}"
+                                         Watermark="Read-only access to public mods"
+                                         IsVisible="{Binding ShowModIoSecrets}"/>
+                            </Panel>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Game IDs (comma-separated)" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding ModIoGameIds}"
+                                     Width="300" HorizontalAlignment="Left"
+                                     Watermark="e.g., 6715"
+                                     ToolTip.Tip="mod.io game ids to use for subscriptions and search. Baldur's Gate 3 is 6715."/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding ModIoDownloadDir}"
+                                     Width="200" HorizontalAlignment="Left"
+                                     Watermark="modio"/>
+                        </StackPanel>
+
+                        <TextBlock Text="Create a token or key at mod.io/me/access. Subscriptions need the OAuth access token."
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Backends Section -->
                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                         CornerRadius="8" Padding="20">
@@ -207,6 +269,8 @@
                                   Content="NexusMods"/>
                         <CheckBox IsChecked="{Binding GameBananaBackendEnabled}"
                                   Content="GameBanana"/>
+                        <CheckBox IsChecked="{Binding ModIoBackendEnabled}"
+                                  Content="mod.io"/>
 
                         <TextBlock Text="Disabled backends will not be loaded at startup"
                                    FontSize="12" Opacity="0.6"/>

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Modular.Core.Authentication;
 using Modular.Core.Backends;
 using Modular.Core.Backends.GameBanana;
+using Modular.Core.Backends.ModIo;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
@@ -223,6 +224,14 @@ public sealed class RuntimeServices : IDisposable
                 Downloader));
         }
 
+        if (Settings.EnabledBackends.Contains(BackendIds.ModIo, StringComparer.OrdinalIgnoreCase))
+        {
+            registry.Register(new ModIoBackend(
+                Settings,
+                LoggerFactory?.CreateLogger<ModIoBackend>(),
+                Downloader));
+        }
+
         return registry;
     }
 
@@ -285,6 +294,13 @@ public sealed class RuntimeServices : IDisposable
             provider.Register(BackendIds.GameBanana, new GameBananaVersionProvider(
                 gbBackend,
                 LoggerFactory?.CreateLogger<GameBananaVersionProvider>()));
+        }
+
+        if (Settings.EnabledBackends.Contains(BackendIds.ModIo, StringComparer.OrdinalIgnoreCase))
+        {
+            provider.Register(BackendIds.ModIo, new ModIoVersionProvider(
+                new ModIoBackend(Settings, LoggerFactory?.CreateLogger<ModIoBackend>()),
+                LoggerFactory?.CreateLogger<ModIoVersionProvider>()));
         }
 
         return provider;

@@ -62,7 +62,7 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 
 ### Key Subsystems in Core
 
-- **Backends** (`Backends/`) — `NexusModsBackend` and `GameBananaBackend` implement `IModBackend`. `BackendRegistry` manages registration with case-insensitive ID lookup.
+- **Backends** (`Backends/`) — `NexusModsBackend`, `GameBananaBackend` and `ModIoBackend` implement `IModBackend`. mod.io games are numeric ids (BG3 is 6715) and every request goes to the game's `g-{id}.modapi.io` host; see `docs/MODIO-API-GUIDE.md`. `BackendRegistry` manages registration with case-insensitive ID lookup.
 - **Plugins** (`Plugins/`) — `AssemblyLoadContext`-based isolation with MEF composition. Discovers plugins from `~/.config/Modular/plugins/` via `plugin.json` manifests. `ErrorBoundary` isolates plugin failures (permissive/strict policies).
 - **Dependencies** (`Dependencies/`) — PubGrub-inspired semantic version solver (`GreedyDependencyResolver`), file conflict detection (`FileConflictIndex`), operation DAG (`OperationGraph`).
 - **Authentication** (`Authentication/`) — NexusMods WebSocket-based browser SSO flow.
@@ -93,6 +93,7 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 
 - `NEXUS_API_KEY` — NexusMods API key (alternative to SSO)
 - `GB_USER_ID` — GameBanana user ID
+- `MODIO_ACCESS_TOKEN` — mod.io OAuth token (subscriptions); `MODIO_API_KEY` — mod.io read-only API key
 
 ## Configuration
 

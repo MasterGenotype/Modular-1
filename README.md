@@ -1,6 +1,6 @@
 # Modular
 
-An extensible C#/.NET mod manager for downloading, searching, installing, and managing game modifications from multiple mod repositories. Supports NexusMods and GameBanana out of the box, with a plugin system for adding more sources.
+An extensible C#/.NET mod manager for downloading, searching, installing, and managing game modifications from multiple mod repositories. Supports NexusMods, GameBanana and mod.io out of the box, with a plugin system for adding more sources.
 
 Provides both CLI and GUI (Avalonia) interfaces, SSO authentication, mod collections, Steam game detection, intelligent rate limiting, and real-time progress tracking.
 
@@ -874,6 +874,8 @@ make publish-macos-arm
 |----------|-------------|
 | `NEXUS_API_KEY` | Your NexusMods API key (required for NexusMods features) |
 | `GB_USER_ID` | Your GameBanana User ID (required for GameBanana features) |
+| `MODIO_ACCESS_TOKEN` | mod.io OAuth access token (required for mod.io subscriptions) |
+| `MODIO_API_KEY` | mod.io API key (read-only; enough for mod.io search and downloads) |
 
 ### Config File
 
@@ -900,6 +902,10 @@ Configuration is stored in `~/.config/Modular/config.json`:
 |--------|------|---------|-------------|
 | `nexus_api_key` | string | - | NexusMods API key |
 | `gamebanana_user_id` | string | - | GameBanana user ID |
+| `modio_access_token` | string | - | mod.io OAuth access token |
+| `modio_api_key` | string | - | mod.io API key |
+| `modio_game_ids` | int[] | `[]` | mod.io game ids used when none is given (Baldur's Gate 3 is 6715) |
+| `modio_download_dir` | string | `modio` | Subdirectory for mod.io downloads |
 | `download_path` | string | `~/Mods` | Base directory for downloads |
 | `organize_by_category` | bool | `false` | Create category subdirectories |
 | `auto_rename` | bool | `true` | Rename mod folders to human-readable names |
@@ -1240,6 +1246,7 @@ Additional documentation is available in the [`docs/`](docs/) directory. See the
 | [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) | Guide to creating Modular plugins |
 | [`docs/API-BACKENDS-GUIDE.md`](docs/API-BACKENDS-GUIDE.md) | Implementing backend plugins for new mod sources |
 | [`docs/GAMEBANANA-API-GUIDE.md`](docs/GAMEBANANA-API-GUIDE.md) | GameBanana API integration reference |
+| [`docs/MODIO-API-GUIDE.md`](docs/MODIO-API-GUIDE.md) | mod.io backend: credentials, game ids, files and downloads |
 | [`docs/NEXUSMODS_SSO_INTEGRATION.md`](docs/NEXUSMODS_SSO_INTEGRATION.md) | NexusMods SSO/WebSocket authentication |
 | [`docs/fluent/README.md`](docs/fluent/README.md) | Fluent HTTP client user guide |
 | [`docs/EVOLUTION_SUMMARY.md`](docs/EVOLUTION_SUMMARY.md) | Project evolution history and milestones |

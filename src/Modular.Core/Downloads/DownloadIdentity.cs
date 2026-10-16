@@ -14,4 +14,8 @@ public static class DownloadIdentity
     /// <summary>Identity for a GameBanana file.</summary>
     public static string GameBanana(string modId, string fileId) =>
         $"gamebanana:{modId}:{fileId}";
+
+    /// <summary>Identity for a mod.io file.</summary>
+    public static string ModIo(string gameId, string modId, string fileId) =>
+        $"modio:{gameId}:{modId}:{fileId}";
 }

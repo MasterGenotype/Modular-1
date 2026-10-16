@@ -21,7 +21,7 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
         public string Terms { get; init; } = string.Empty;
 
         [CommandOption("--game|-g")]
-        [Description("Game domain (e.g., skyrimspecialedition)")]
+        [Description("Game domain (e.g., skyrimspecialedition), or a mod.io game id (e.g., 6715)")]
         public string? Game { get; init; }
 
         [CommandOption("--sort|-s")]

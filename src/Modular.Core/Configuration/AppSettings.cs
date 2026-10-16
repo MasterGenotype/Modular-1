@@ -48,11 +48,36 @@ public class AppSettings
     public string GameBananaDownloadDir { get; set; } = "gamebanana";
 
     /// <summary>
+    /// mod.io API key, for reading public mod data. Created at https://mod.io/me/access.
+    /// </summary>
+    [JsonPropertyName("modio_api_key")]
+    public string ModIoApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// mod.io OAuth 2 access token, for reading the user's subscriptions. Created at
+    /// https://mod.io/me/access; it also covers everything the API key does.
+    /// </summary>
+    [JsonPropertyName("modio_access_token")]
+    public string ModIoAccessToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// mod.io game IDs to use when no game is given, such as 6715 for Baldur's Gate 3.
+    /// </summary>
+    [JsonPropertyName("modio_game_ids")]
+    public List<int> ModIoGameIds { get; set; } = [];
+
+    /// <summary>
+    /// Subdirectory name for mod.io downloads (default: "modio").
+    /// </summary>
+    [JsonPropertyName("modio_download_dir")]
+    public string ModIoDownloadDir { get; set; } = "modio";
+
+    /// <summary>
     /// List of enabled backend IDs (e.g., "nexusmods", "gamebanana").
     /// Backends not in this list will not be registered at startup.
     /// </summary>
     [JsonPropertyName("enabled_backends")]
-    public List<string> EnabledBackends { get; set; } = [BackendIds.NexusMods, BackendIds.GameBanana];
+    public List<string> EnabledBackends { get; set; } = [BackendIds.NexusMods, BackendIds.GameBanana, BackendIds.ModIo];
 
     /// <summary>
     /// Base directory for storing downloaded mods.

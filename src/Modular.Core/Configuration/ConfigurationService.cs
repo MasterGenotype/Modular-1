@@ -163,6 +163,15 @@ public class ConfigurationService
         if (!string.IsNullOrWhiteSpace(gbUserId))
             settings.GameBananaUserId = gbUserId;
 
+        // MODIO_API_KEY, MODIO_ACCESS_TOKEN
+        var modIoKey = Environment.GetEnvironmentVariable("MODIO_API_KEY");
+        if (!string.IsNullOrWhiteSpace(modIoKey))
+            settings.ModIoApiKey = modIoKey;
+
+        var modIoToken = Environment.GetEnvironmentVariable("MODIO_ACCESS_TOKEN");
+        if (!string.IsNullOrWhiteSpace(modIoToken))
+            settings.ModIoAccessToken = modIoToken;
+
         // MODULAR_MODS_DIR
         var modsDir = Environment.GetEnvironmentVariable("MODULAR_MODS_DIR");
         if (!string.IsNullOrWhiteSpace(modsDir))

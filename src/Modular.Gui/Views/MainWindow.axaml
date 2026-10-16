@@ -57,6 +57,14 @@
                             </StackPanel>
                         </Button>
 
+                        <Button Command="{Binding NavigateToCommand}" CommandParameter="mod.io"
+                                Classes="nav-button">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <mi:MaterialIcon Kind="Puzzle" Width="20" Height="20"/>
+                                <TextBlock Text="mod.io" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
                         <Button Command="{Binding NavigateToCommand}" CommandParameter="Downloads"
                                 Classes="nav-button">
                             <StackPanel Orientation="Horizontal" Spacing="10">
@@ -141,6 +149,9 @@
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:GameBananaPanelViewModel">
                                     <views:GameBananaPanelView/>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:ModIoPanelViewModel">
+                                    <views:ModIoPanelView/>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:DownloadQueueViewModel">
                                     <views:DownloadQueueView/>

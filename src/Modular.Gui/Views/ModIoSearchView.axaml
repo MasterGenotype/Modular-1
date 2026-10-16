@@ -1,0 +1,154 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:models="using:Modular.Gui.Models"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.ModIoSearchView"
+             x:DataType="vm:ModIoSearchViewModel">
+
+    <Design.DataContext>
+        <vm:ModIoSearchViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Search bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,15">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
+                <TextBlock Text="Game ID:" VerticalAlignment="Center"/>
+                <AutoCompleteBox ItemsSource="{Binding AvailableGameIds}"
+                                 Text="{Binding GameIdText}"
+                                 FilterMode="Contains"
+                                 MinWidth="140"
+                                 Watermark="e.g. 6715"/>
+            </StackPanel>
+
+            <TextBox Grid.Column="1"
+                     Text="{Binding SearchText}"
+                     Watermark="Search mod.io mods..."
+                     Margin="0,0,10,0">
+                <TextBox.InnerLeftContent>
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
+                </TextBox.InnerLeftContent>
+                <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding ExecuteSearchCommand}"/>
+                </TextBox.KeyBindings>
+            </TextBox>
+
+            <Button Grid.Column="2" Command="{Binding ExecuteSearchCommand}"
+                    ToolTip.Tip="Search">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    <TextBlock Text="Search"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Selection bar -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+            <Button Command="{Binding SelectAllCommand}" Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="CheckboxMultipleMarked" Width="14" Height="14"/>
+                    <TextBlock Text="Select All" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <Button Command="{Binding SelectNoneCommand}" Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="CheckboxMultipleBlankOutline" Width="14" Height="14"/>
+                    <TextBlock Text="Select None" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <TextBlock VerticalAlignment="Center" Opacity="0.6" FontSize="12">
+                <Run Text="{Binding SelectedCount}"/>
+                <Run Text=" selected"/>
+            </TextBlock>
+        </StackPanel>
+
+        <!-- Results grid -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8" Padding="1">
+            <Grid>
+                <!-- Loading indicator -->
+                <StackPanel IsVisible="{Binding IsLoading}"
+                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <ProgressBar IsIndeterminate="True" Width="200"/>
+                    <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.7"/>
+                </StackPanel>
+
+                <!-- Status message when not loading and no results -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <StackPanel.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!IsLoading"/>
+                            <Binding Path="!SearchResults.Count"/>
+                        </MultiBinding>
+                    </StackPanel.IsVisible>
+                    <mi:MaterialIcon Kind="Magnify" Width="48" Height="48" Opacity="0.3"/>
+                    <TextBlock Text="{Binding StatusMessage}" HorizontalAlignment="Center" Opacity="0.6" FontSize="14"/>
+                </StackPanel>
+
+                <!-- Results DataGrid -->
+                <DataGrid ItemsSource="{Binding SearchResults}"
+                          AutoGenerateColumns="False"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="Horizontal"
+                          IsReadOnly="False"
+                          SelectionMode="Single">
+                    <DataGrid.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!IsLoading"/>
+                            <Binding Path="SearchResults.Count"/>
+                        </MultiBinding>
+                    </DataGrid.IsVisible>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="40">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Game" Binding="{Binding GameDomain}" Width="80" IsReadOnly="True"/>
+                        <DataGridTemplateColumn Header="Updated" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:ModDisplayModel">
+                                    <TextBlock Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd}'}"
+                                               VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
+                <Run Text="{Binding TotalResults}"/>
+                <Run Text=" results found"/>
+            </TextBlock>
+
+            <Button Grid.Column="1"
+                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
+                    IsEnabled="{Binding SelectedCount}"
+                    Padding="16,10">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
+                    <TextBlock VerticalAlignment="Center">
+                        <Run Text="Download Selected ("/>
+                        <Run Text="{Binding SelectedCount}"/>
+                        <Run Text=")"/>
+                    </TextBlock>
+                </StackPanel>
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

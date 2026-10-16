@@ -10,4 +10,7 @@ public static class BackendIds
 
     /// <summary>GameBanana.</summary>
     public const string GameBanana = "gamebanana";
+
+    /// <summary>mod.io.</summary>
+    public const string ModIo = "modio";
 }

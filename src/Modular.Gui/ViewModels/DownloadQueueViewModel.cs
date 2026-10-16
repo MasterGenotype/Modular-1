@@ -9,6 +9,7 @@ using Modular.Core.Database;
 using Modular.Sdk.Backends.Common;
 using Modular.Core.Backends.NexusMods;
 using Modular.Core.Backends.GameBanana;
+using Modular.Core.Backends.ModIo;
 using Modular.Core.Configuration;
 using Modular.Core.Downloads;
 using Modular.Core.Services;
@@ -28,6 +29,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
 {
     private readonly NexusModsBackend? _nexusBackend;
     private readonly GameBananaBackend? _gameBananaBackend;
+    private readonly ModIoBackend? _modIoBackend;
     private readonly IRenameService? _renameService;
     private readonly AppSettings? _settings;
     private readonly DownloadHistoryService? _historyService;
@@ -96,6 +98,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     public DownloadQueueViewModel(
         NexusModsBackend nexusBackend,
         GameBananaBackend gameBananaBackend,
+        ModIoBackend modIoBackend,
         IRenameService renameService,
         AppSettings settings,
         DownloadHistoryService historyService,
@@ -106,6 +109,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
         _dialogService = dialogService;
         _nexusBackend = nexusBackend;
         _gameBananaBackend = gameBananaBackend;
+        _modIoBackend = modIoBackend;
         _renameService = renameService;
         _settings = settings;
         _historyService = historyService;
@@ -301,6 +305,15 @@ public partial class DownloadQueueViewModel : ViewModelBase
                         item.GameDomain,
                         itemToken);
                 }
+                else if (item.Mod.BackendId == BackendIds.ModIo && _modIoBackend != null)
+                {
+                    // Left out of the listing when it had already expired.
+                    url = await _modIoBackend.ResolveDownloadUrlAsync(
+                        item.Mod.ModId,
+                        item.File.FileId,
+                        item.GameDomain,
+                        itemToken);
+                }
                 // GameBanana URLs are provided directly, no resolution needed
             }
 
@@ -320,6 +333,11 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 var gbDir = _settings?.GameBananaDownloadDir ?? "gamebanana";
                 modOutputDir = Path.Combine(outputDir, gbDir, FileUtils.SanitizeDirectoryName(item.Mod.Name));
             }
+            else if (item.Mod.BackendId == BackendIds.ModIo)
+            {
+                var modIoDir = string.IsNullOrEmpty(_settings?.ModIoDownloadDir) ? "modio" : _settings.ModIoDownloadDir;
+                modOutputDir = Path.Combine(outputDir, modIoDir, FileUtils.SanitizeDirectoryName(item.Mod.Name));
+            }
             else
             {
                 // NexusMods: domain/modId structure
@@ -335,16 +353,27 @@ public partial class DownloadQueueViewModel : ViewModelBase
             // Identity must match the backends' so partial files from the CLI resume here too.
             var fileId = item.File?.FileId ?? "0";
             var isGameBanana = item.Mod.BackendId == BackendIds.GameBanana;
+            var isModIo = item.Mod.BackendId == BackendIds.ModIo;
             var identity = isGameBanana
                 ? DownloadIdentity.GameBanana(item.Mod.ModId, fileId)
-                : DownloadIdentity.NexusMods(item.GameDomain ?? "unknown", item.Mod.ModId, fileId);
+                : isModIo
+                    ? DownloadIdentity.ModIo(item.GameDomain ?? "0", item.Mod.ModId, fileId)
+                    : DownloadIdentity.NexusMods(item.GameDomain ?? "unknown", item.Mod.ModId, fileId);
 
             if (ResumableDownloader.GetPartialLength(outputPath) > 0)
                 StatusMessage = $"Resuming {item.DisplayName}...";
 
             // NexusMods CDN links expire; allow the downloader to fetch a fresh one.
             Func<CancellationToken, Task<string?>>? refreshUrl = null;
-            if (!isGameBanana && _nexusBackend != null && item.File != null)
+            if (isModIo && _modIoBackend != null && item.File != null)
+            {
+                // mod.io links can carry an expiring verification hash.
+                var modIo = _modIoBackend;
+                var modId = item.Mod.ModId;
+                var game = item.GameDomain;
+                refreshUrl = token => modIo.ResolveDownloadUrlAsync(modId, fileId, game, token);
+            }
+            else if (!isGameBanana && _nexusBackend != null && item.File != null)
             {
                 var nexus = _nexusBackend;
                 var modId = item.Mod.ModId;
@@ -391,8 +420,8 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     Url = url,
                     DestinationPath = outputPath,
                     Identity = identity,
-                    // GameBanana sizes are exact; NexusMods only provides size_kb.
-                    ExpectedSize = isGameBanana ? item.File?.SizeBytes : null,
+                    // GameBanana and mod.io sizes are exact; NexusMods only provides size_kb.
+                    ExpectedSize = isGameBanana || isModIo ? item.File?.SizeBytes : null,
                     ExpectedMd5 = item.File?.Md5,
                     VerifyMd5 = _settings?.VerifyDownloads ?? true,
                     RefreshUrlAsync = refreshUrl
@@ -464,7 +493,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 DependencyConventions.WriteDownloadRecord(outputPath, new DeclaredSource(
                     item.Mod.BackendId,
                     item.Mod.ModId,
-                    item.Mod.BackendId == BackendIds.NexusMods ? item.GameDomain : null,
+                    item.Mod.BackendId is BackendIds.NexusMods or BackendIds.ModIo ? item.GameDomain : null,
                     item.File.FileId));
             }
 

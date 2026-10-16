@@ -19,11 +19,11 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
     public sealed class Settings : CommandSettings
     {
         [CommandArgument(0, "[domain]")]
-        [Description("Game domain (e.g., skyrimspecialedition, stardewvalley)")]
+        [Description("Game domain (e.g., skyrimspecialedition), or a mod.io game id (e.g., 6715)")]
         public string? Domain { get; init; }
 
         [CommandOption("--backend")]
-        [Description("Backend to use (e.g., nexusmods, gamebanana)")]
+        [Description("Backend to use (e.g., nexusmods, gamebanana, modio)")]
         public string? Backend { get; init; }
 
         [CommandOption("--all")]
