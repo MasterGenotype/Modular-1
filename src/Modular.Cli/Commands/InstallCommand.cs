@@ -189,6 +189,8 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                     AnsiConsole.MarkupLine($"[grey]Backed up {result.BackedUpFiles.Count} existing files[/]");
                 AnsiConsole.MarkupLine($"[grey]Changeset: {result.ChangesetId} (use to uninstall later)[/]");
                 AnsiConsole.MarkupLine($"[grey]Installer: {result.InstallerUsed}[/]");
+                if (result.ArchivePath != archivePath)
+                    AnsiConsole.MarkupLine($"[grey]Archive kept at: {Markup.Escape(result.ArchivePath)}[/]");
                 if (result.ModuleId != null)
                     AnsiConsole.MarkupLine($"[grey]Module: {Markup.Escape(result.ModuleId)}[/]");
 

@@ -508,6 +508,9 @@ public partial class InstallViewModel : ViewModelBase
                     foreach (var diagnostic in result.Diagnostics)
                         InstallResults.Add($"! {diagnostic.Code}: {diagnostic.Message}");
 
+                    if (!result.DryRun && result.ArchivePath != archivePath)
+                        InstallResults.Add($"  Archive kept at: {result.ArchivePath}");
+
                     foreach (var warning in result.Warnings)
                         InstallResults.Add($"! {warning}");
 

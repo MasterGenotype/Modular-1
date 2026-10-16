@@ -55,6 +55,8 @@ public sealed class ProfileExportCommand : AsyncCommand<ProfileExportCommand.Set
                 foreach (var gameDir in Directory.GetDirectories(appSettings.ModsDirectory))
                 {
                     var gameDomain = Path.GetFileName(gameDir);
+                    if (gameDomain.StartsWith('.'))
+                        continue;
                     foreach (var modDir in Directory.GetDirectories(gameDir))
                     {
                         var modName = Path.GetFileName(modDir);

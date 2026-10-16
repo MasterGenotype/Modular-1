@@ -18,6 +18,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
     private ModInstallationService _service = null!;
     private ChangesetManager _changesets = null!;
     private string _backupBase = null!;
+    private string _archiveBase = null!;
 
     /// <inheritdoc />
     public async Task InitializeAsync()
@@ -30,6 +31,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         // whole test off the user's real config directory.
         var configRoot = NewDir("config");
         _backupBase = Path.Combine(configRoot, "backups");
+        _archiveBase = Path.Combine(configRoot, "archives");
 
         _service = new ModInstallationService(
             _database, stagingBasePath: Path.Combine(configRoot, "staging"));
@@ -155,7 +157,8 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         });
         first.Success.Should().BeTrue(first.Error);
 
-        var second = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        // The first install moved the archive into the store; a reinstall reads it there.
+        var second = await _service.InstallAsync(first.ArchivePath, game, new ModInstallationOptions
         {
             ModId = "mod-a", AutoSnapshot = false
         });
@@ -280,7 +283,160 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
 
         // The changeset points at the .pak, not at the temporary zip it was read through.
         var changeset = await _changesets.GetChangesetAsync(result.ChangesetId!);
-        changeset!.ArchivePath.Should().Be(pak);
+        changeset!.ArchivePath.Should().Be(result.ArchivePath);
+        Path.GetFileName(changeset.ArchivePath).Should().Be("Library.pak");
+        File.ReadAllText(changeset.ArchivePath!).Should().Be("LSPK-bytes");
+    }
+
+    // ── archive store ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InstallAsync_ArchiveFromElsewhere_IsMovedIntoTheStore()
+    {
+        // An archive left in Downloads is gone by the time a snapshot restore wants it.
+        var game = NewDir("game");
+        var archive = CreateZip(("data/thing.dat", "payload"));
+
+        var result = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(archive).Should().BeFalse();
+        result.ArchivePath.Should().StartWith(_archiveBase + Path.DirectorySeparatorChar);
+        File.Exists(result.ArchivePath).Should().BeTrue();
+
+        var changeset = await _changesets.GetChangesetAsync(result.ChangesetId!);
+        changeset!.ArchivePath.Should().Be(result.ArchivePath);
+    }
+
+    [Fact]
+    public async Task InstallAsync_ArchiveInTheModsDirectory_StaysWhereItIs()
+    {
+        var modsDir = NewDir("mods");
+        var service = new ModInstallationService(
+            _database,
+            stagingBasePath: Path.Combine(Path.GetDirectoryName(_archiveBase)!, "staging"),
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+
+        var archive = Path.Combine(modsDir, "game-domain", "mod.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        File.Move(CreateZip(("data/thing.dat", "payload")), archive);
+
+        var result = await service.InstallAsync(archive, NewDir("game"), new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        result.ArchivePath.Should().Be(archive);
+        File.Exists(archive).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InstallAsync_WithAModsDirectory_KeepsTheArchiveInsideIt()
+    {
+        var modsDir = NewDir("mods");
+        var service = new ModInstallationService(
+            _database,
+            stagingBasePath: Path.Combine(Path.GetDirectoryName(_archiveBase)!, "staging"),
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+
+        var archive = CreateZip(("data/thing.dat", "payload"));
+
+        var result = await service.InstallAsync(archive, NewDir("game"), new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(archive).Should().BeFalse();
+        result.ArchivePath.Should().StartWith(
+            Path.Combine(modsDir, ArchiveStore.FolderName) + Path.DirectorySeparatorChar);
+        File.Exists(result.ArchivePath).Should().BeTrue();
+
+        // The store is not mistaken for a game's download folder.
+        Modular.Core.Utilities.FileUtils.GetGameDomains(modsDir).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task InstallAsync_ArchiveInsideTheGameFolder_IsCopiedNotMoved()
+    {
+        // A pak taken from an earlier deployment must not vanish from under the game.
+        var game = NewDir("game");
+        var archive = Path.Combine(game, "old-mod.zip");
+        File.Move(CreateZip(("data/thing.dat", "payload")), archive);
+
+        var result = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(archive).Should().BeTrue();
+        result.ArchivePath.Should().StartWith(_archiveBase + Path.DirectorySeparatorChar);
+        File.Exists(result.ArchivePath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InstallAsync_SameNameDifferentArchive_KeepsBoth()
+    {
+        var game = NewDir("game");
+
+        var first = await _service.InstallAsync(CreateZip(("a.dat", "one")), game,
+            new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
+        var second = await _service.InstallAsync(CreateZip(("b.dat", "two")), game,
+            new ModInstallationOptions { ModId = "mod-b", AutoSnapshot = false });
+
+        first.Success.Should().BeTrue(first.Error);
+        second.Success.Should().BeTrue(second.Error);
+        second.ArchivePath.Should().NotBe(first.ArchivePath);
+        File.Exists(first.ArchivePath).Should().BeTrue();
+        File.Exists(second.ArchivePath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InstallAsync_AdoptingAnArchive_RepointsEarlierSnapshotsAtIt()
+    {
+        // A snapshot keeps its own copy of each archive path, and a restore reads that copy.
+        var game = NewDir("game");
+        var archive = CreateZip(("data/thing.dat", "payload"));
+
+        var first = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false, AdoptArchive = false
+        });
+        first.Success.Should().BeTrue(first.Error);
+
+        var snapshots = new Modular.Core.Snapshots.SnapshotManager(_database, _changesets);
+        var snapshot = await snapshots.CreateSnapshotAsync(
+            424242, "Test Game", game, Modular.Core.Snapshots.SnapshotTrigger.Manual,
+            gameKey: first.GameKey);
+
+        var second = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+        second.Success.Should().BeTrue(second.Error);
+
+        var entries = await snapshots.GetSnapshotEntriesAsync(snapshot.SnapshotId);
+        entries.Should().ContainSingle().Which.ArchivePath.Should().Be(second.ArchivePath);
+    }
+
+    [Fact]
+    public async Task InstallAsync_AdoptArchiveOff_LeavesTheArchive()
+    {
+        var archive = CreateZip(("data/thing.dat", "payload"));
+
+        var result = await _service.InstallAsync(archive, NewDir("game"), new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false, AdoptArchive = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        result.ArchivePath.Should().Be(archive);
+        File.Exists(archive).Should().BeTrue();
     }
 
     // ── reinstall ───────────────────────────────────────────────────────────

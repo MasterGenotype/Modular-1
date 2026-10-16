@@ -143,6 +143,32 @@ public class ChangesetManager
     }
 
     /// <summary>
+    /// Points every record of an archive at its new location.
+    /// </summary>
+    /// <param name="oldPath">Where the archive was.</param>
+    /// <param name="newPath">Where it is now.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the rows are updated.</returns>
+    /// <remarks>
+    /// Snapshot entries are rewritten too: each holds its own copy of the archive path,
+    /// taken when the snapshot was, and a restore reads that copy.
+    /// </remarks>
+    public async Task RelocateArchiveAsync(string oldPath, string newPath, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE changeset SET archive_path = @new, updated_at_utc = @now WHERE archive_path = @old;
+            UPDATE snapshot_entry SET archive_path = @new WHERE archive_path = @old;
+            """;
+        cmd.Parameters.AddWithValue("@old", oldPath);
+        cmd.Parameters.AddWithValue("@new", newPath);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
     /// Gets a changeset by ID.
     /// </summary>
     public async Task<ChangesetRecord?> GetChangesetAsync(string changesetId, CancellationToken ct = default)

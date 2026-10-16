@@ -36,6 +36,9 @@ public class ModInstallationService
     private readonly GameInstallationResolver _gameResolver;
     private readonly IModCategorySource? _categorySource;
     private readonly DeploymentService _deployment;
+    private readonly AppSettings? _settings;
+    private readonly string? _archiveStorePath;
+    private readonly string _fallbackArchiveStorePath;
     private readonly ILogger<ModInstallationService>? _logger;
 
     /// <summary>
@@ -68,6 +71,11 @@ public class ModInstallationService
     /// Mod hub categories. Looked up when a mod is installed, so that game modules which
     /// order mods by kind have the answer when they plan a deployment.
     /// </param>
+    /// <param name="archiveStorePath">
+    /// Where archives installed from outside Modular's own folders are kept. Defaults to
+    /// <c>.archives</c> in the configured mods directory, or <c>archives</c> beside the
+    /// staging root when no settings are given.
+    /// </param>
     public ModInstallationService(
         ModularDatabase database,
         TelemetryService? telemetry = null,
@@ -79,7 +87,8 @@ public class ModInstallationService
         string? stagingBasePath = null,
         AppSettings? settings = null,
         DeploymentService? deployment = null,
-        IModCategorySource? categorySource = null)
+        IModCategorySource? categorySource = null,
+        string? archiveStorePath = null)
     {
         _database = database;
         _telemetry = telemetry;
@@ -90,6 +99,15 @@ public class ModInstallationService
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".config", "Modular");
         var stagingPath = stagingBasePath ?? Path.Combine(configDir, "staging");
+
+        _settings = settings;
+        _archiveStorePath = archiveStorePath;
+
+        // Without a mods directory the store sits beside the staging root, like the
+        // deployer's backups, so a test that moves the staging root keeps it off the real
+        // config directory too.
+        _fallbackArchiveStorePath = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(stagingPath)) ?? configDir, "archives");
 
         var archiveReaderFactory = new ArchiveReaderFactory();
 
@@ -521,6 +539,17 @@ public class ModInstallationService
             {
                 await _changesetManager.UpdateStateAsync(
                     supersededChangesetId, ChangesetState.Superseded, ct: ct);
+            }
+
+            // Step 8b: Keep the archive where a reinstall or snapshot restore can find it.
+            if (options.AdoptArchive)
+            {
+                var adopted = await AdoptArchiveAsync(
+                    archivePath, gameKey, targetDirectory, modPaths, ct);
+                if (adopted.Path != null)
+                    result.ArchivePath = adopted.Path;
+                if (adopted.Warning != null)
+                    result.Warnings.Add(adopted.Warning);
             }
 
             // Step 9: Record telemetry
@@ -1167,6 +1196,80 @@ public class ModInstallationService
     /// <remarks>
     /// Keyed on the full path so two unresolved games never share a staging area.
     /// </remarks>
+    /// <summary>
+    /// Moves an archive from outside Modular's folders into the archive store and points
+    /// its changesets and snapshot entries at the new path.
+    /// </summary>
+    /// <param name="archivePath">The archive as the caller gave it.</param>
+    /// <param name="gameKey">Game it was installed for.</param>
+    /// <param name="targetDirectory">The game directory.</param>
+    /// <param name="modPaths">The game's mod roots, when known.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The new path, or a warning when the archive could not be adopted.</returns>
+    /// <remarks>
+    /// An archive inside the game folder or one of its mod roots, such as a pak taken
+    /// from an earlier deployment, is copied instead: moving it would take a file out
+    /// from under the game. Failing to adopt never fails the install.
+    /// </remarks>
+    /// <summary>
+    /// Builds the archive store from the current settings.
+    /// </summary>
+    /// <returns>The store.</returns>
+    /// <remarks>
+    /// Built per install rather than once, because the GUI can change the mods directory
+    /// while the service is alive.
+    /// </remarks>
+    private ArchiveStore CreateArchiveStore()
+    {
+        var modsDirectory = string.IsNullOrWhiteSpace(_settings?.ModsDirectory)
+            ? null
+            : FileUtils.ExpandPath(_settings.ModsDirectory);
+
+        var storePath = _archiveStorePath
+            ?? (modsDirectory != null
+                ? Path.Combine(modsDirectory, ArchiveStore.FolderName)
+                : _fallbackArchiveStorePath);
+
+        return new ArchiveStore(storePath, [modsDirectory]);
+    }
+
+    private async Task<(string? Path, string? Warning)> AdoptArchiveAsync(
+        string archivePath,
+        string gameKey,
+        string targetDirectory,
+        GameModPaths? modPaths,
+        CancellationToken ct)
+    {
+        var store = CreateArchiveStore();
+        if (store.IsManaged(archivePath))
+            return (null, null);
+
+        var fullPath = Path.GetFullPath(archivePath);
+        var gameRoots = (modPaths?.Roots.Values ?? []).Append(targetDirectory);
+        var copy = gameRoots.Any(root => ArchiveStore.IsUnder(fullPath, root));
+
+        string adopted;
+        try
+        {
+            adopted = store.Adopt(fullPath, gameKey, copy);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogWarning(ex, "Could not keep {Archive} in the archive store", archivePath);
+            return (null,
+                $"{Path.GetFileName(archivePath)} was left where it is ({ex.Message}); " +
+                "a snapshot restore needs it to stay there.");
+        }
+
+        await _changesetManager.RelocateArchiveAsync(archivePath, adopted, ct);
+        if (!string.Equals(fullPath, archivePath, StringComparison.Ordinal))
+            await _changesetManager.RelocateArchiveAsync(fullPath, adopted, ct);
+
+        _logger?.LogInformation(
+            "{Action} {Archive} to {Destination}", copy ? "Copied" : "Moved", archivePath, adopted);
+        return (adopted, null);
+    }
+
     private static string DeriveGameKey(string targetDirectory)
     {
         var full = Path.GetFullPath(targetDirectory).TrimEnd(Path.DirectorySeparatorChar);
@@ -1322,6 +1425,17 @@ public class ModInstallationOptions
 
     /// <summary>Backend file id, stored so an update or 1-Click flow can find it again.</summary>
     public string? SourceFileId { get; set; }
+
+    /// <summary>
+    /// Whether an archive from outside Modular's folders, such as Downloads, is moved
+    /// into Modular's archive store once it is installed.
+    /// </summary>
+    /// <remarks>
+    /// The default, so that a reinstall or snapshot restore still finds the archive after
+    /// the original folder is cleaned out. <see cref="ModInstallationResult.ArchivePath"/>
+    /// gives its new location.
+    /// </remarks>
+    public bool AdoptArchive { get; set; } = true;
 }
 
 /// <summary>

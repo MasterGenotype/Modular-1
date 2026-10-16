@@ -183,7 +183,10 @@ public static class FileUtils
 
         foreach (var dir in Directory.GetDirectories(modsRoot))
         {
-            yield return Path.GetFileName(dir);
+            // Dot-folders are Modular's own, such as the archive store, not games.
+            var name = Path.GetFileName(dir);
+            if (!name.StartsWith('.'))
+                yield return name;
         }
     }
 
