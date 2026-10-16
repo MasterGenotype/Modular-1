@@ -14,10 +14,32 @@
 
     <Grid RowDefinitions="Auto,*,Auto">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,15">
-            <TextBlock Grid.Column="0" Text="{Binding TotalInstalled, StringFormat='{}{0} installed mod(s)'}"
-                       VerticalAlignment="Center" Opacity="0.7"/>
-            <Button Grid.Column="1" Command="{Binding FetchAllMissingDependenciesCommand}"
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,15">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <ComboBox ItemsSource="{Binding Games}"
+                          SelectedItem="{Binding SelectedGame}"
+                          IsEnabled="{Binding !IsLoading}"
+                          MinWidth="260"
+                          ToolTip.Tip="Show the mods installed for one game">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GameFilterOption">
+                            <TextBlock Text="{Binding Label}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Text="{Binding TotalInstalled, StringFormat='{}{0} installed mod(s)'}"
+                           VerticalAlignment="Center" Opacity="0.7"/>
+            </StackPanel>
+            <Button Grid.Column="2" Command="{Binding ReapplyGameCommand}"
+                    IsEnabled="{Binding CanReapply}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Deploy this game's whole mod installation again, in load order, putting back any missing or changed files">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Restore" Width="16" Height="16"/>
+                    <TextBlock Text="Re-apply Mods"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="3" Command="{Binding FetchAllMissingDependenciesCommand}"
                     IsEnabled="{Binding !IsLoading}"
                     Margin="0,0,8,0"
                     ToolTip.Tip="Find and download what the installed mods need and do not have">
@@ -26,16 +48,16 @@
                     <TextBlock Text="Fetch Missing Dependencies"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="2" Command="{Binding RemoveAllCommand}"
+            <Button Grid.Column="4" Command="{Binding RemoveAllCommand}"
                     IsEnabled="{Binding !IsLoading}"
                     Margin="0,0,8,0"
-                    ToolTip.Tip="Remove all installed mods">
+                    ToolTip.Tip="Remove all the mods listed">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="DeleteSweep" Width="16" Height="16"/>
                     <TextBlock Text="Remove All"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="3" Command="{Binding RefreshInstalledCommand}"
+            <Button Grid.Column="5" Command="{Binding RefreshInstalledCommand}"
                     IsEnabled="{Binding !IsLoading}">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
@@ -60,6 +82,7 @@
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Changeset" Binding="{Binding ChangesetId}" Width="120"/>
                 <DataGridTextColumn Header="Mod" Binding="{Binding ModId}" Width="*"/>
+                <DataGridTextColumn Header="Game" Binding="{Binding Game}" Width="160"/>
                 <DataGridTextColumn Header="Target Directory" Binding="{Binding TargetDirectory}" Width="2*"/>
                 <DataGridTextColumn Header="Installed" Binding="{Binding CreatedAt}" Width="150"/>
                 <DataGridTextColumn Header="State" Binding="{Binding State}" Width="80"/>

@@ -3,6 +3,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Dependencies;
+using Modular.Core.Deployment;
+using Modular.Core.GameDetection;
 using Modular.Core.Installers;
 using Modular.Gui.Messages;
 using Modular.Gui.Services;
@@ -15,6 +17,11 @@ public partial class InstalledModsViewModel : ViewModelBase
     private readonly ModInstallationService? _installService;
     private readonly IDialogService? _dialogService;
     private readonly MissingDependencyService? _dependencyService;
+    private readonly SteamGameScanner? _gameScanner;
+
+    // Every installed changeset, and the key of the game option each one is listed under.
+    private readonly List<ChangesetRecord> _allRecords = new();
+    private readonly Dictionary<string, string> _gameKeyOf = new(StringComparer.Ordinal);
 
     // The records behind the rows, which carry what a dependency check needs.
     private readonly Dictionary<string, ChangesetRecord> _records = new(StringComparer.Ordinal);
@@ -23,6 +30,14 @@ public partial class InstalledModsViewModel : ViewModelBase
     private ObservableCollection<ChangesetDisplayModel> _changesets = new();
 
     [ObservableProperty]
+    private ObservableCollection<GameFilterOption> _games = new();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReapply))]
+    private GameFilterOption? _selectedGame;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReapply))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -31,13 +46,22 @@ public partial class InstalledModsViewModel : ViewModelBase
     [ObservableProperty]
     private int _totalInstalled;
 
+    /// <summary>Whether the selected game has mods whose deployment can be re-applied.</summary>
+    public bool CanReapply => !IsLoading && SelectedGame is { IsAllGames: false, ModCount: > 0 };
+
     // Designer constructor
     public InstalledModsViewModel()
     {
+        var game = new GameFilterOption("489830", "Skyrim Special Edition", 1);
+        Games.Add(GameFilterOption.AllGames(1));
+        Games.Add(game);
+        SelectedGame = game;
+
         Changesets.Add(new ChangesetDisplayModel
         {
             ChangesetId = "abc123",
             ModId = "SkyUI",
+            Game = game.DisplayName,
             TargetDirectory = "/home/user/.steam/steamapps/common/Skyrim",
             CreatedAt = "2026-03-20 14:30",
             State = "Active"
@@ -49,14 +73,18 @@ public partial class InstalledModsViewModel : ViewModelBase
     public InstalledModsViewModel(
         ModInstallationService installService,
         IDialogService dialogService,
-        MissingDependencyService dependencyService)
+        MissingDependencyService dependencyService,
+        SteamGameScanner gameScanner)
     {
         _installService = installService;
         _dialogService = dialogService;
         _dependencyService = dependencyService;
+        _gameScanner = gameScanner;
 
         _ = RefreshInstalledAsync();
     }
+
+    partial void OnSelectedGameChanged(GameFilterOption? value) => ApplyGameFilter();
 
     [RelayCommand]
     private async Task RefreshInstalledAsync()
@@ -73,25 +101,51 @@ public partial class InstalledModsViewModel : ViewModelBase
         try
         {
             var installed = await _installService.ListInstalledAsync();
-            Changesets.Clear();
-            _records.Clear();
+            var scanned = await ScanGamesAsync();
+
+            _allRecords.Clear();
+            _allRecords.AddRange(installed);
+            _gameKeyOf.Clear();
+
+            // The games listed on the Games page, then any game that has mods but was not
+            // found by the scan (a non-Steam install, or one whose library is offline).
+            var names = scanned.ToDictionary(
+                g => g.AppId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                g => g.DisplayName,
+                StringComparer.OrdinalIgnoreCase);
 
             foreach (var record in installed)
+                _gameKeyOf[record.ChangesetId] = AssignGameKey(record, scanned);
+
+            foreach (var key in _gameKeyOf.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList())
             {
-                _records[record.ChangesetId] = record;
-                Changesets.Add(new ChangesetDisplayModel
-                {
-                    ChangesetId = record.ChangesetId,
-                    ModId = record.ModId ?? "Unknown",
-                    TargetDirectory = record.TargetDirectory ?? "Unknown",
-                    ArchivePath = record.ArchivePath ?? "",
-                    CreatedAt = record.CreatedAtUtc,
-                    State = record.State.ToString()
-                });
+                if (!names.ContainsKey(key))
+                    names[key] = await DescribeUnscannedGameAsync(key, installed);
             }
 
-            TotalInstalled = Changesets.Count;
-            StatusMessage = $"{TotalInstalled} installed mod(s)";
+            var previous = SelectedGame?.Key;
+            var options = names
+                .Select(n => new GameFilterOption(
+                    n.Key,
+                    n.Value,
+                    _gameKeyOf.Values.Count(k => string.Equals(k, n.Key, StringComparison.OrdinalIgnoreCase))))
+                .OrderByDescending(o => o.ModCount > 0)
+                .ThenBy(o => o.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            Games.Clear();
+            Games.Add(GameFilterOption.AllGames(installed.Count));
+            foreach (var option in options)
+                Games.Add(option);
+
+            // Keep the game the user was looking at; otherwise open on the game with the
+            // most mods, since the tab is about one game at a time.
+            SelectedGame =
+                Games.FirstOrDefault(g => previous != null && g.Key == previous) ??
+                options.Where(o => o.ModCount > 0).MaxBy(o => o.ModCount) ??
+                Games[0];
+
+            ApplyGameFilter();
         }
         catch (Exception ex)
         {
@@ -103,15 +157,245 @@ public partial class InstalledModsViewModel : ViewModelBase
         }
     }
 
+    // The Steam games the Games page would list. A scan failure only costs the names.
+    private async Task<List<SteamGameInstall>> ScanGamesAsync()
+    {
+        if (_gameScanner == null)
+            return [];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            return await _gameScanner.ScanAllAsync(cts.Token);
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    // A managed changeset names its game; a legacy one is placed by where it installed to.
+    private static string AssignGameKey(ChangesetRecord record, IReadOnlyList<SteamGameInstall> scanned)
+    {
+        if (!string.IsNullOrEmpty(record.GameKey))
+            return record.GameKey;
+
+        if (!string.IsNullOrEmpty(record.TargetDirectory))
+        {
+            var target = Path.GetFullPath(record.TargetDirectory);
+            var game = scanned.FirstOrDefault(g =>
+                !string.IsNullOrEmpty(g.InstallPath) && IsUnder(target, g.InstallPath));
+
+            if (game != null)
+                return game.AppId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return GameFilterOption.UnknownKey;
+    }
+
+    private static bool IsUnder(string path, string root)
+    {
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        return path.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Names a game the Steam scan did not find, by resolving one of its mods' installs.
+    private async Task<string> DescribeUnscannedGameAsync(string key, IReadOnlyList<ChangesetRecord> installed)
+    {
+        if (key == GameFilterOption.UnknownKey)
+            return "Unknown game";
+
+        var sample = installed.FirstOrDefault(r =>
+            string.Equals(_gameKeyOf.GetValueOrDefault(r.ChangesetId), key, StringComparison.OrdinalIgnoreCase));
+
+        if (sample != null && _installService != null)
+        {
+            try
+            {
+                var resolved = await _installService.ResolveGameAsync(sample);
+                if (!string.IsNullOrEmpty(resolved?.Installation.DisplayName))
+                    return resolved.Value.Installation.DisplayName!;
+            }
+            catch (Exception)
+            {
+                // Fall back to the key.
+            }
+        }
+
+        return key;
+    }
+
+    private void ApplyGameFilter()
+    {
+        Changesets.Clear();
+        _records.Clear();
+
+        var selected = SelectedGame;
+        var names = Games.Where(g => !g.IsAllGames)
+            .ToDictionary(g => g.Key!, g => g.DisplayName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var record in _allRecords)
+        {
+            var key = _gameKeyOf.GetValueOrDefault(record.ChangesetId, GameFilterOption.UnknownKey);
+            if (selected is { IsAllGames: false } &&
+                !string.Equals(key, selected.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _records[record.ChangesetId] = record;
+            Changesets.Add(new ChangesetDisplayModel
+            {
+                ChangesetId = record.ChangesetId,
+                ModId = record.ModId ?? "Unknown",
+                Game = names.GetValueOrDefault(key, key),
+                TargetDirectory = record.TargetDirectory ?? "Unknown",
+                ArchivePath = record.ArchivePath ?? "",
+                CreatedAt = record.CreatedAtUtc,
+                State = record.State.ToString()
+            });
+        }
+
+        TotalInstalled = Changesets.Count;
+        StatusMessage = selected is { IsAllGames: false }
+            ? $"{TotalInstalled} installed mod(s) for {selected.DisplayName}"
+            : $"{TotalInstalled} installed mod(s)";
+    }
+
+    // Drops removed changesets from the full list and the game counts, so the selector
+    // stays honest without a rescan.
+    private void ForgetChangesets(IReadOnlyCollection<string> changesetIds)
+    {
+        if (changesetIds.Count == 0)
+            return;
+
+        _allRecords.RemoveAll(r => changesetIds.Contains(r.ChangesetId));
+        foreach (var id in changesetIds)
+            _gameKeyOf.Remove(id);
+
+        foreach (var game in Games)
+        {
+            game.ModCount = game.IsAllGames
+                ? _allRecords.Count
+                : _gameKeyOf.Values.Count(k => string.Equals(k, game.Key, StringComparison.OrdinalIgnoreCase));
+        }
+
+        OnPropertyChanged(nameof(CanReapply));
+    }
+
+    /// <summary>
+    /// Re-applies the selected game's whole mod installation: every enabled mod is laid
+    /// down again from staging, in load order, and the game's load-order files rewritten.
+    /// Files that are already in place are left as they are; missing or changed ones are
+    /// put back.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReapplyGameAsync()
+    {
+        if (_installService == null || _dialogService == null || SelectedGame is not { IsAllGames: false } game)
+            return;
+
+        var records = _allRecords
+            .Where(r => string.Equals(_gameKeyOf.GetValueOrDefault(r.ChangesetId), game.Key, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var managed = records.Where(r => r.ManagedBy == ChangesetOwnership.Deployment).ToList();
+        var legacy = records.Count - managed.Count;
+
+        if (managed.Count == 0)
+        {
+            await _dialogService.ShowWarningAsync(
+                "Nothing to Re-apply",
+                $"None of the {records.Count} mod(s) installed for {game.DisplayName} were installed " +
+                "through staging, so there is no deployment to re-apply. Reinstall them from their archives.");
+            return;
+        }
+
+        var message =
+            $"Re-apply every enabled mod for {game.DisplayName} from staging, in load order?\n\n" +
+            "Files already in place are kept. Missing or changed files are put back, and any " +
+            "changed file is preserved before it is replaced.";
+        if (legacy > 0)
+            message += $"\n\n{legacy} mod(s) installed without staging are not part of the deployment and are left as they are.";
+
+        if (!await _dialogService.ShowConfirmationAsync("Re-apply Mods", message))
+            return;
+
+        IsLoading = true;
+        StatusMessage = $"Re-applying mods for {game.DisplayName}...";
+
+        try
+        {
+            var resolved = await _installService.ResolveGameAsync(managed[0]);
+            if (resolved == null)
+            {
+                StatusMessage = $"Could not find {game.DisplayName}";
+                await _dialogService.ShowErrorAsync(
+                    "Re-apply Failed",
+                    $"{game.DisplayName} could not be found on disk. Check that it is still installed.");
+                return;
+            }
+
+            var installation = resolved.Value.Installation;
+            var result = await Task.Run(() => _installService.Deployment.DeployAsync(installation));
+
+            if (!result.Success)
+            {
+                StatusMessage = $"Re-apply failed: {result.Error}";
+                await _dialogService.ShowErrorAsync("Re-apply Failed", result.Error ?? "Unknown error");
+                return;
+            }
+
+            StatusMessage =
+                $"Re-applied {game.DisplayName}: {result.Placed.Count} file(s) placed, " +
+                $"{result.Unchanged.Count} already in place, {result.Removed.Count} removed";
+
+            var notes = DescribeDeploymentNotes(result);
+            if (notes.Count > 0)
+                await _dialogService.ShowWarningAsync("Re-applied with Notes", string.Join("\n", notes));
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            await _dialogService.ShowErrorAsync("Re-apply Error", ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private static List<string> DescribeDeploymentNotes(DeploymentResult result)
+    {
+        var notes = new List<string>();
+
+        if (result.Displaced.Count > 0)
+            notes.Add($"{result.Displaced.Count} file(s) had been changed outside Modular and were preserved before being replaced.");
+        if (result.FellBackToCopy.Count > 0)
+            notes.Add($"{result.FellBackToCopy.Count} file(s) were copied because the chosen deployment method was unavailable.");
+        if (result.StaleBackupsSkipped.Count > 0)
+            notes.Add($"{result.StaleBackupsSkipped.Count} vanilla backup(s) predate a game update and were not restored.");
+
+        if (result.Warnings.Count > 0)
+        {
+            if (notes.Count > 0)
+                notes.Add(string.Empty);
+            notes.AddRange(result.Warnings);
+        }
+
+        return notes;
+    }
+
     [RelayCommand]
     private async Task RemoveAllAsync()
     {
         if (_installService == null || _dialogService == null || Changesets.Count == 0)
             return;
 
+        var scope = SelectedGame is { IsAllGames: false } game ? $" for {game.DisplayName}" : string.Empty;
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Remove All Mods",
-            $"Are you sure you want to uninstall all {Changesets.Count} installed mod(s)?\n\nThis action cannot be undone.");
+            $"Are you sure you want to uninstall all {Changesets.Count} installed mod(s){scope}?\n\nThis action cannot be undone.");
 
         if (!confirmed) return;
 
@@ -119,6 +403,7 @@ public partial class InstalledModsViewModel : ViewModelBase
         var total = Changesets.Count;
         var removed = 0;
         var failed = 0;
+        var removedIds = new List<string>();
 
         var snapshot = Changesets.ToList();
         foreach (var changeset in snapshot)
@@ -131,6 +416,7 @@ public partial class InstalledModsViewModel : ViewModelBase
                 if (result.Success)
                 {
                     Changesets.Remove(changeset);
+                    removedIds.Add(changeset.ChangesetId);
                     removed++;
                 }
                 else
@@ -144,6 +430,7 @@ public partial class InstalledModsViewModel : ViewModelBase
             }
         }
 
+        ForgetChangesets(removedIds);
         TotalInstalled = Changesets.Count;
         IsLoading = false;
 
@@ -171,7 +458,10 @@ public partial class InstalledModsViewModel : ViewModelBase
     [RelayCommand]
     private async Task FetchAllMissingDependenciesAsync()
     {
-        await FetchDependenciesAsync(_records.Values.ToList(), "all installed mods", includeUnmanaged: true);
+        var scope = SelectedGame is { IsAllGames: false } game
+            ? $"all installed {game.DisplayName} mods"
+            : "all installed mods";
+        await FetchDependenciesAsync(_records.Values.ToList(), scope, includeUnmanaged: true);
     }
 
     private async Task FetchDependenciesAsync(
@@ -505,6 +795,7 @@ public partial class InstalledModsViewModel : ViewModelBase
             if (result.Success)
             {
                 Changesets.Remove(changeset);
+                ForgetChangesets([changeset.ChangesetId]);
                 TotalInstalled = Changesets.Count;
                 StatusMessage = $"Successfully uninstalled {changeset.ModId}";
             }
@@ -535,6 +826,9 @@ public partial class ChangesetDisplayModel : ObservableObject
     private string _modId = string.Empty;
 
     [ObservableProperty]
+    private string _game = string.Empty;
+
+    [ObservableProperty]
     private string _targetDirectory = string.Empty;
 
     [ObservableProperty]
@@ -545,4 +839,35 @@ public partial class ChangesetDisplayModel : ObservableObject
 
     [ObservableProperty]
     private string _state = string.Empty;
+}
+
+/// <summary>
+/// One entry in the Game tab's selector: a game and how many installed mods it has.
+/// </summary>
+public partial class GameFilterOption : ObservableObject
+{
+    /// <summary>Key of mods whose game could not be worked out.</summary>
+    public const string UnknownKey = "?";
+
+    public GameFilterOption(string? key, string displayName, int modCount)
+    {
+        Key = key;
+        DisplayName = displayName;
+        _modCount = modCount;
+    }
+
+    /// <summary>Game key (Steam AppID or game id); null for the all-games entry.</summary>
+    public string? Key { get; }
+
+    public string DisplayName { get; }
+
+    public bool IsAllGames => Key == null;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Label))]
+    private int _modCount;
+
+    public string Label => $"{DisplayName} ({ModCount})";
+
+    public static GameFilterOption AllGames(int modCount) => new(null, "All games", modCount);
 }
