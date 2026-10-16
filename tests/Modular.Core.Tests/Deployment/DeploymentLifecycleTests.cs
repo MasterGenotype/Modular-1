@@ -252,6 +252,96 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PlanRestore_ReportsWhatTheRestoreWouldDo()
+    {
+        var a = await InstallAsync("mod-a", ("shared.txt", "from-a"));
+        await InstallAsync("mod-b", ("shared.txt", "from-b"));
+        await InstallAsync("mod-c", ("c.txt", "c"));
+
+        var snapshot = await _snapshots.CreateSnapshotAsync(
+            424242, "Test Game", _game, SnapshotTrigger.Manual, gameKey: a.GameKey);
+
+        // Uninstalling mod-c deletes its staging, so the restore reads its archive again.
+        await _service.UninstallModAsync(_game, "mod-c");
+        await InstallAsync("mod-d", ("shared.txt", "from-d"));
+
+        var plan = await _snapshots.PlanRestoreAsync(snapshot.SnapshotId);
+
+        plan!.Items.Select(i => (i.ModId, i.Action)).Should().Equal(
+            ("mod-a", SnapshotRestoreAction.Keep),
+            ("mod-b", SnapshotRestoreAction.Keep),
+            ("mod-c", SnapshotRestoreAction.Reinstall),
+            ("mod-d", SnapshotRestoreAction.Remove));
+        plan.ModCount.Should().Be(3);
+        plan.InstallCount.Should().Be(1);
+
+        // …and the restore does exactly that.
+        var restore = await _snapshots.RestoreSnapshotAsync(snapshot.SnapshotId, _service);
+        restore.ModsReinstalled.Should().Be(plan.InstallCount);
+        restore.ModsRemoved.Should().Be(plan.Count(SnapshotRestoreAction.Remove));
+    }
+
+    [Fact]
+    public async Task PlanRestore_FlagsAModWhoseStagingAndArchiveAreGone()
+    {
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+
+        var snapshot = await _snapshots.CreateSnapshotAsync(
+            424242, "Test Game", _game, SnapshotTrigger.Manual, gameKey: a.GameKey);
+
+        Directory.Delete(a.StagingPath!, recursive: true);
+        File.Delete(a.ArchivePath);
+
+        var plan = await _snapshots.PlanRestoreAsync(snapshot.SnapshotId);
+
+        plan!.Items.Should().ContainSingle()
+            .Which.Action.Should().Be(SnapshotRestoreAction.Unavailable);
+        plan.InstallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Snapshot_ModCountIsTheModSetNotEveryChangeset()
+    {
+        // Older committed changesets for the same game folder used to be counted too,
+        // which made a snapshot of 2 mods report many more.
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+        await InstallAsync("mod-b", ("b.txt", "b"));
+
+        var stray = await _changesets.CreateChangesetAsync(
+            modId: "mod-a", archivePath: a.ArchivePath, targetDirectory: _game);
+        await _changesets.UpdateStateAsync(stray, ChangesetState.Committed);
+
+        var snapshot = await _snapshots.CreateSnapshotAsync(
+            424242, "Test Game", _game, SnapshotTrigger.Manual, gameKey: a.GameKey);
+
+        snapshot.ModCount.Should().Be(2);
+        (await _snapshots.GetSnapshotAsync(snapshot.SnapshotId))!.ModCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SnapshotDates_AreDaysInTheCalendarsTimeZone()
+    {
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+        var snapshot = await _snapshots.CreateSnapshotAsync(
+            424242, "Test Game", _game, SnapshotTrigger.Manual, gameKey: a.GameKey);
+
+        var created = DateTime.Parse(
+            snapshot.CreatedAtUtc, null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+        foreach (var offset in new[] { -12, 0, 14 })
+        {
+            var zone = TimeZoneInfo.CreateCustomTimeZone(
+                $"test{offset}", TimeSpan.FromHours(offset), $"test{offset}", $"test{offset}");
+            var local = TimeZoneInfo.ConvertTimeFromUtc(created.ToUniversalTime(), zone);
+
+            var days = await _snapshots.GetSnapshotDatesAsync(
+                424242, local.Year, local.Month, timeZone: zone);
+
+            days.Should().Equal(local.Day);
+        }
+    }
+
+    [Fact]
     public async Task InstallWithNoDeploy_TakesNoAutoSnapshot()
     {
         var before = (await _snapshots.ListSnapshotsByDateRangeAsync(

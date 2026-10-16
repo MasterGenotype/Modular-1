@@ -105,7 +105,7 @@
                 <Separator DockPanel.Dock="Top" Margin="0,8"/>
 
                 <!-- Day snapshots list -->
-                <TextBlock DockPanel.Dock="Top" Text="Snapshots" FontWeight="SemiBold" FontSize="14" Margin="0,5,0,5"/>
+                <TextBlock DockPanel.Dock="Top" Text="{Binding DaySnapshotsHeader}" FontWeight="SemiBold" FontSize="14" Margin="0,5,0,5"/>
 
                 <ListBox ItemsSource="{Binding DaySnapshots}"
                          SelectedItem="{Binding SelectedSnapshot}">
@@ -162,10 +162,12 @@
                             IsVisible="{Binding SelectedSnapshot, Converter={x:Static ObjectConverters.IsNotNull}}">
                     <TextBlock Text="{Binding SelectedSnapshot.Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding SelectedSnapshot.CreatedAt}" Opacity="0.7" FontSize="12"/>
-                    <StackPanel Orientation="Horizontal" Spacing="10" Opacity="0.7">
-                        <TextBlock Text="{Binding SelectedSnapshot.ModCount, StringFormat='{}{0} mod(s)'}" FontSize="12"/>
-                        <TextBlock Text="{Binding SelectedSnapshot.Trigger}" FontSize="12"/>
-                    </StackPanel>
+                    <TextBlock Text="{Binding SelectedSnapshot.Trigger}" Opacity="0.7" FontSize="12"/>
+                    <TextBlock Text="{Binding SnapshotSummary}" FontSize="12" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding RestoreSummary}" FontSize="12" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding RestoreWarning}" FontSize="12" TextWrapping="Wrap"
+                               Foreground="Orange"
+                               IsVisible="{Binding RestoreWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
 
                 <!-- Entries DataGrid -->
@@ -176,9 +178,10 @@
                           IsReadOnly="True"
                           SelectionMode="Single">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Mod" Binding="{Binding ModId}" Width="*"/>
+                        <DataGridTextColumn Header="Mod" Binding="{Binding ModId}" Width="2*"/>
+                        <DataGridTextColumn Header="On restore" Binding="{Binding OnRestore}" Width="Auto"/>
+                        <DataGridTextColumn Header="Enabled" Binding="{Binding Enabled}" Width="Auto"/>
                         <DataGridTextColumn Header="Archive" Binding="{Binding ArchiveName}" Width="*"/>
-                        <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt}" Width="120"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>

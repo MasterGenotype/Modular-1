@@ -6,6 +6,7 @@ using Modular.Core.GameDetection;
 using Modular.Core.Installers;
 using Modular.Core.Snapshots;
 using Modular.Gui.Services;
+using Modular.Sdk.Installers;
 
 namespace Modular.Gui.ViewModels;
 
@@ -47,6 +48,21 @@ public partial class SnapshotViewModel : ViewModelBase
     private ObservableCollection<SnapshotEntryDisplayModel> _snapshotEntries = new();
 
     [ObservableProperty]
+    private string _daySnapshotsHeader = "Snapshots";
+
+    [ObservableProperty]
+    private SnapshotRestorePlan? _restorePlan;
+
+    [ObservableProperty]
+    private string _snapshotSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _restoreSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _restoreWarning = string.Empty;
+
+    [ObservableProperty]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -55,7 +71,7 @@ public partial class SnapshotViewModel : ViewModelBase
     // Designer constructor
     public SnapshotViewModel()
     {
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         DisplayYear = now.Year;
         DisplayMonth = now.Month;
         UpdateDisplayMonthName();
@@ -81,7 +97,7 @@ public partial class SnapshotViewModel : ViewModelBase
         _gameScanner = gameScanner;
         _dialogService = dialogService;
 
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         DisplayYear = now.Year;
         DisplayMonth = now.Month;
         UpdateDisplayMonthName();
@@ -94,7 +110,7 @@ public partial class SnapshotViewModel : ViewModelBase
     {
         if (value != null)
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.Now;
             DisplayYear = now.Year;
             DisplayMonth = now.Month;
             UpdateDisplayMonthName();
@@ -129,7 +145,7 @@ public partial class SnapshotViewModel : ViewModelBase
         }
         else
         {
-            SnapshotEntries.Clear();
+            ClearSnapshotDetail();
         }
     }
 
@@ -241,10 +257,14 @@ public partial class SnapshotViewModel : ViewModelBase
         if (_snapshotManager == null || _installService == null || _dialogService == null || snapshot == null)
             return;
 
-        var confirmed = await _dialogService.ShowConfirmationAsync(
-            "Restore Snapshot",
-            $"Restore snapshot \"{snapshot.Name}\" ({snapshot.ModCount} mods)?\n\n" +
-            "This will remove mods installed after this snapshot and reinstall any missing mods.");
+        var plan = await _snapshotManager.PlanRestoreAsync(snapshot.SnapshotId);
+        var message = $"Restore snapshot \"{snapshot.Name}\"?\n\n" +
+            (plan == null
+                ? "This will remove mods installed after this snapshot and reinstall any missing mods."
+                : DescribeRestore(plan) +
+                  (plan.Count(SnapshotRestoreAction.Unavailable) > 0 ? "\n\n" + DescribeUnavailable(plan) : ""));
+
+        var confirmed = await _dialogService.ShowConfirmationAsync("Restore Snapshot", message);
 
         if (!confirmed) return;
 
@@ -253,23 +273,46 @@ public partial class SnapshotViewModel : ViewModelBase
 
         try
         {
+            var progress = new Progress<InstallProgress>(p =>
+            {
+                if (!string.IsNullOrEmpty(p.CurrentOperation))
+                    StatusMessage = p.CurrentOperation;
+            });
+
             var result = await _snapshotManager.RestoreSnapshotAsync(
-                snapshot.SnapshotId, _installService);
+                snapshot.SnapshotId, _installService, progress);
+
+            var counts = $"{result.ModsReinstalled} installed, {result.ModsRemoved} removed";
 
             if (result.Success)
             {
-                StatusMessage = $"Restored: {result.ModsRemoved} removed, {result.ModsReinstalled} reinstalled";
+                StatusMessage = $"Snapshot restored: {counts}";
+                await _dialogService.ShowInfoAsync(
+                    "Snapshot Restored",
+                    $"\"{snapshot.Name}\" was restored.\n\n" +
+                    $"{counts}." +
+                    (plan == null ? "" : $" The game now has the snapshot's {plan.ModCount} mod(s)."));
             }
             else
             {
-                var errorSummary = result.Errors.Count > 0
-                    ? string.Join("\n", result.Errors.Take(5))
-                    : result.Error ?? "Unknown error";
-                StatusMessage = $"Partial restore: {result.ModsRemoved} removed, {result.ModsReinstalled} reinstalled, {result.Errors.Count} error(s)";
-                await _dialogService.ShowErrorAsync("Restore Issues", errorSummary);
+                var problems = result.Errors.Count > 0
+                    ? result.Errors
+                    : [result.Error ?? "Unknown error"];
+                const int shown = 15;
+
+                StatusMessage = $"Restore finished with {problems.Count} problem(s): {counts}";
+                await _dialogService.ShowErrorAsync(
+                    "Snapshot Restore Incomplete",
+                    $"\"{snapshot.Name}\" was only partly restored: {counts}.\n\n" +
+                    $"{problems.Count} problem(s):\n" +
+                    string.Join("\n", problems.Take(shown).Select(e => "• " + e)) +
+                    (problems.Count > shown ? $"\n…and {problems.Count - shown} more." : ""));
             }
 
-            await RefreshCalendarAsync();
+            // Show the snapshot against the restored state; a full restore now reads as
+            // every mod kept.
+            if (SelectedSnapshot?.SnapshotId == snapshot.SnapshotId)
+                await LoadSnapshotEntriesAsync(snapshot.SnapshotId);
         }
         catch (Exception ex)
         {
@@ -300,8 +343,9 @@ public partial class SnapshotViewModel : ViewModelBase
             if (SelectedSnapshot == snapshot)
             {
                 SelectedSnapshot = null;
-                SnapshotEntries.Clear();
+                ClearSnapshotDetail();
             }
+            DaySnapshotsHeader = $"Snapshots ({DaySnapshots.Count})";
 
             StatusMessage = "Snapshot deleted";
             await RefreshCalendarAsync();
@@ -343,12 +387,14 @@ public partial class SnapshotViewModel : ViewModelBase
 
         DaySnapshots.Clear();
         SelectedSnapshot = null;
-        SnapshotEntries.Clear();
+        ClearSnapshotDetail();
 
         try
         {
-            var startUtc = new DateTime(date.Year, date.Month, date.Day, 0, 0, 0, DateTimeKind.Utc);
-            var endUtc = startUtc.AddDays(1);
+            // The calendar is in local time, as are the times shown beside each snapshot.
+            var startLocal = new DateTime(date.Year, date.Month, date.Day, 0, 0, 0, DateTimeKind.Local);
+            var startUtc = startLocal.ToUniversalTime();
+            var endUtc = startLocal.AddDays(1).ToUniversalTime();
             var snapshots = await _snapshotManager.ListSnapshotsByDateRangeAsync(
                 SelectedGame.AppId, startUtc, endUtc);
 
@@ -370,9 +416,7 @@ public partial class SnapshotViewModel : ViewModelBase
                 });
             }
 
-            StatusMessage = snapshots.Count > 0
-                ? $"{snapshots.Count} snapshot(s) on {date:MMM d}"
-                : $"No snapshots on {date:MMM d}";
+            DaySnapshotsHeader = $"Snapshots on {date:MMM d} ({snapshots.Count})";
         }
         catch (Exception ex)
         {
@@ -384,41 +428,85 @@ public partial class SnapshotViewModel : ViewModelBase
     {
         if (_snapshotManager == null) return;
 
-        SnapshotEntries.Clear();
+        ClearSnapshotDetail();
 
         try
         {
-            var entries = await _snapshotManager.GetSnapshotEntriesAsync(snapshotId);
+            var plan = await _snapshotManager.PlanRestoreAsync(snapshotId);
 
-            foreach (var e in entries)
+            // The user may have picked another snapshot while this one loaded.
+            if (plan == null || SelectedSnapshot?.SnapshotId != snapshotId)
+                return;
+
+            RestorePlan = plan;
+            SnapshotSummary = $"{plan.ModCount} mod(s) in this snapshot, {plan.EnabledCount} enabled";
+            RestoreSummary = DescribeRestore(plan);
+            RestoreWarning = plan.Count(SnapshotRestoreAction.Unavailable) > 0
+                ? DescribeUnavailable(plan)
+                : string.Empty;
+
+            foreach (var item in plan.Items)
             {
                 SnapshotEntries.Add(new SnapshotEntryDisplayModel
                 {
-                    ChangesetId = e.ChangesetId,
-                    ModId = e.ModId ?? "Unknown",
-                    ArchiveName = !string.IsNullOrEmpty(e.ArchivePath) ? Path.GetFileName(e.ArchivePath) : "N/A",
-                    InstalledAt = FormatTimestamp(e.ChangesetCreatedAtUtc)
+                    ModId = item.DisplayName,
+                    Enabled = item.Enabled switch { true => "Yes", false => "No", null => "" },
+                    OnRestore = item.Action switch
+                    {
+                        SnapshotRestoreAction.Keep => "Keep",
+                        SnapshotRestoreAction.Add => "Add",
+                        SnapshotRestoreAction.Reinstall => "Reinstall",
+                        SnapshotRestoreAction.Unavailable => "Missing archive",
+                        SnapshotRestoreAction.Remove => "Remove",
+                        _ => item.Action.ToString()
+                    },
+                    ArchiveName = !string.IsNullOrEmpty(item.ArchivePath) ? Path.GetFileName(item.ArchivePath) : ""
                 });
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error loading entries: {ex.Message}";
+            StatusMessage = $"Error loading snapshot: {ex.Message}";
         }
     }
+
+    private void ClearSnapshotDetail()
+    {
+        SnapshotEntries.Clear();
+        RestorePlan = null;
+        SnapshotSummary = string.Empty;
+        RestoreSummary = string.Empty;
+        RestoreWarning = string.Empty;
+    }
+
+    private static string DescribeRestore(SnapshotRestorePlan plan)
+    {
+        var reinstall = plan.Count(SnapshotRestoreAction.Reinstall);
+        var install = plan.InstallCount > 0
+            ? $"install {plan.InstallCount}" + (reinstall > 0 ? $" ({reinstall} from archives)" : "")
+            : "install nothing";
+
+        return $"Restoring would {install}, remove {plan.Count(SnapshotRestoreAction.Remove)} " +
+               $"and keep {plan.Count(SnapshotRestoreAction.Keep)}.";
+    }
+
+    private static string DescribeUnavailable(SnapshotRestorePlan plan) =>
+        $"{plan.Count(SnapshotRestoreAction.Unavailable)} mod(s) can't be restored: " +
+        "their staged files and archives are both gone.";
 
     private void BuildCalendarGrid()
     {
         CalendarDays.Clear();
         SelectedDay = null;
         DaySnapshots.Clear();
+        DaySnapshotsHeader = "Snapshots";
         SelectedSnapshot = null;
-        SnapshotEntries.Clear();
+        ClearSnapshotDetail();
 
         var firstOfMonth = new DateTime(DisplayYear, DisplayMonth, 1);
         var daysInMonth = DateTime.DaysInMonth(DisplayYear, DisplayMonth);
         var startDayOfWeek = (int)firstOfMonth.DayOfWeek; // 0=Sunday
-        var today = DateTime.UtcNow.Date;
+        var today = DateTime.Now.Date;
 
         // Fill leading days from previous month
         var prevMonth = firstOfMonth.AddMonths(-1);
@@ -519,14 +607,14 @@ public partial class SnapshotDisplayModel : ObservableObject
 public partial class SnapshotEntryDisplayModel : ObservableObject
 {
     [ObservableProperty]
-    private string _changesetId = string.Empty;
-
-    [ObservableProperty]
     private string _modId = string.Empty;
 
     [ObservableProperty]
-    private string _archiveName = string.Empty;
+    private string _enabled = string.Empty;
 
     [ObservableProperty]
-    private string _installedAt = string.Empty;
+    private string _onRestore = string.Empty;
+
+    [ObservableProperty]
+    private string _archiveName = string.Empty;
 }

@@ -61,6 +61,71 @@ public class SnapshotRestoreResult
 }
 
 /// <summary>
+/// What a restore would do with one mod.
+/// </summary>
+public enum SnapshotRestoreAction
+{
+    /// <summary>Installed now and in the snapshot; kept as it is.</summary>
+    Keep,
+
+    /// <summary>In the snapshot but not installed now; brought back from its staged copy.</summary>
+    Add,
+
+    /// <summary>Its staged copy is gone; reinstalled from its archive.</summary>
+    Reinstall,
+
+    /// <summary>Its staged copy and its archive are both gone, so it cannot be restored.</summary>
+    Unavailable,
+
+    /// <summary>Installed now but not in the snapshot; removed.</summary>
+    Remove
+}
+
+/// <summary>
+/// One mod in a restore preview.
+/// </summary>
+public sealed class SnapshotRestorePlanItem
+{
+    /// <summary>Mod identifier.</summary>
+    public string ModId { get; init; } = string.Empty;
+
+    /// <summary>Name to show; the mod id when none was recorded.</summary>
+    public string DisplayName { get; init; } = string.Empty;
+
+    /// <summary>Whether the snapshot has the mod enabled; <c>null</c> when it is not in the snapshot.</summary>
+    public bool? Enabled { get; init; }
+
+    /// <summary>Archive a reinstall would read, when one is recorded.</summary>
+    public string? ArchivePath { get; init; }
+
+    /// <summary>What the restore would do with it.</summary>
+    public SnapshotRestoreAction Action { get; init; }
+}
+
+/// <summary>
+/// What restoring a snapshot would change, worked out without changing anything.
+/// </summary>
+public sealed class SnapshotRestorePlan
+{
+    /// <summary>Every mod the restore touches or keeps; snapshot mods first, in load order.</summary>
+    public List<SnapshotRestorePlanItem> Items { get; init; } = new();
+
+    /// <summary>Mods in the snapshot.</summary>
+    public int ModCount => Items.Count(i => i.Action != SnapshotRestoreAction.Remove);
+
+    /// <summary>Mods in the snapshot that it has enabled.</summary>
+    public int EnabledCount => Items.Count(i => i.Enabled == true);
+
+    /// <summary>Mods the restore would install: brought back from staging or reinstalled.</summary>
+    public int InstallCount => Count(SnapshotRestoreAction.Add) + Count(SnapshotRestoreAction.Reinstall);
+
+    /// <summary>Number of mods with the given action.</summary>
+    /// <param name="action">The action.</param>
+    /// <returns>The count.</returns>
+    public int Count(SnapshotRestoreAction action) => Items.Count(i => i.Action == action);
+}
+
+/// <summary>
 /// One deployed mod as a snapshot captured it.
 /// </summary>
 public sealed class SnapshotGameModRecord
@@ -175,6 +240,10 @@ public class SnapshotManager
             ? new List<GameModRecord>()
             : await _gameMods.ListAsync(gameKey, enabledOnly: false, ct);
 
+        // A managed game is restored from its mod set, so that is what the snapshot holds.
+        // Its committed changesets can name the same mod several times over.
+        var modCount = managedMods.Count > 0 ? managedMods.Count : gameChangesets.Count;
+
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
         try
@@ -195,7 +264,7 @@ public class SnapshotManager
                 cmd.Parameters.AddWithValue("@desc", (object?)description ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@trigger", triggerStr);
                 cmd.Parameters.AddWithValue("@created", createdAt);
-                cmd.Parameters.AddWithValue("@count", gameChangesets.Count);
+                cmd.Parameters.AddWithValue("@count", modCount);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -265,7 +334,7 @@ public class SnapshotManager
                 Description = description,
                 Trigger = trigger,
                 CreatedAtUtc = createdAt,
-                ModCount = gameChangesets.Count
+                ModCount = modCount
             };
         }
         catch
@@ -282,8 +351,8 @@ public class SnapshotManager
     {
         var connection = await _database.GetConnectionAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count
+        cmd.CommandText = $"""
+            SELECT {SnapshotColumns}
             FROM snapshot WHERE snapshot_id = @id
             """;
         cmd.Parameters.AddWithValue("@id", snapshotId);
@@ -336,8 +405,8 @@ public class SnapshotManager
     {
         var connection = await _database.GetConnectionAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count
+        cmd.CommandText = $"""
+            SELECT {SnapshotColumns}
             FROM snapshot
             WHERE game_appid = @appid AND created_at_utc >= @start AND created_at_utc < @end
             ORDER BY created_at_utc DESC
@@ -360,15 +429,28 @@ public class SnapshotManager
     /// Returns the set of day-of-month numbers that have snapshots for a game in a given month.
     /// Powers the calendar dot indicators without loading full records.
     /// </summary>
-    public async Task<HashSet<int>> GetSnapshotDatesAsync(int gameAppId, int year, int month, CancellationToken ct = default)
+    /// <param name="gameAppId">Game.</param>
+    /// <param name="year">Calendar year.</param>
+    /// <param name="month">Calendar month.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="timeZone">
+    /// Zone the calendar is shown in; the local zone when omitted. A snapshot belongs to the
+    /// day its time falls on there, which is what the user reads beside it.
+    /// </param>
+    /// <returns>The days of the month with at least one snapshot.</returns>
+    public async Task<HashSet<int>> GetSnapshotDatesAsync(
+        int gameAppId, int year, int month, CancellationToken ct = default, TimeZoneInfo? timeZone = null)
     {
+        timeZone ??= TimeZoneInfo.Local;
+
         var connection = await _database.GetConnectionAsync();
-        var startUtc = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var endUtc = startUtc.AddMonths(1);
+        var first = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        var startUtc = TimeZoneInfo.ConvertTimeToUtc(first, timeZone);
+        var endUtc = TimeZoneInfo.ConvertTimeToUtc(first.AddMonths(1), timeZone);
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT DISTINCT CAST(substr(created_at_utc, 9, 2) AS INTEGER)
+            SELECT created_at_utc
             FROM snapshot
             WHERE game_appid = @appid AND created_at_utc >= @start AND created_at_utc < @end
             """;
@@ -380,7 +462,14 @@ public class SnapshotManager
         var days = new HashSet<int>();
         while (await reader.ReadAsync(ct))
         {
-            days.Add(reader.GetInt32(0));
+            if (DateTime.TryParse(
+                    reader.GetString(0),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out var created))
+            {
+                days.Add(TimeZoneInfo.ConvertTimeFromUtc(created.ToUniversalTime(), timeZone).Day);
+            }
         }
 
         return days;
@@ -535,6 +624,111 @@ public class SnapshotManager
     }
 
     /// <summary>
+    /// Works out what restoring a snapshot would do, without changing anything.
+    /// </summary>
+    /// <param name="snapshotId">Snapshot identifier.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The plan, or <c>null</c> when the snapshot does not exist.</returns>
+    /// <remarks>
+    /// Follows the same rules as <see cref="RestoreSnapshotAsync"/>, so the preview and
+    /// the restore agree: a managed game is compared mod by mod against its current mod
+    /// set, a legacy one changeset by changeset.
+    /// </remarks>
+    public async Task<SnapshotRestorePlan?> PlanRestoreAsync(string snapshotId, CancellationToken ct = default)
+    {
+        var snapshot = await GetSnapshotAsync(snapshotId, ct);
+        if (snapshot == null)
+            return null;
+
+        var plan = new SnapshotRestorePlan();
+
+        var managedMods = await GetSnapshotGameModsAsync(snapshotId, ct);
+        if (managedMods.Count > 0)
+        {
+            var gameKey = managedMods[0].GameKey;
+            var current = await _gameMods.ListAsync(gameKey, enabledOnly: false, ct);
+            var currentIds = current.Select(c => c.ModId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var desiredIds = managedMods.Select(m => m.ModId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var mod in managedMods)
+            {
+                var archivePath = mod.ChangesetId == null
+                    ? null
+                    : (await _changesetManager.GetChangesetAsync(mod.ChangesetId, ct))?.ArchivePath;
+
+                var action = HasStagedFiles(mod.StagingPath)
+                    ? currentIds.Contains(mod.ModId) ? SnapshotRestoreAction.Keep : SnapshotRestoreAction.Add
+                    : archivePath != null && File.Exists(archivePath)
+                        ? SnapshotRestoreAction.Reinstall
+                        : SnapshotRestoreAction.Unavailable;
+
+                plan.Items.Add(new SnapshotRestorePlanItem
+                {
+                    ModId = mod.ModId,
+                    DisplayName = mod.DisplayName ?? mod.ModId,
+                    Enabled = mod.Enabled,
+                    ArchivePath = archivePath,
+                    Action = action
+                });
+            }
+
+            plan.Items.AddRange(current
+                .Where(c => !desiredIds.Contains(c.ModId))
+                .Select(c => new SnapshotRestorePlanItem
+                {
+                    ModId = c.ModId,
+                    DisplayName = c.DisplayName ?? c.ModId,
+                    Action = SnapshotRestoreAction.Remove
+                }));
+
+            return plan;
+        }
+
+        var entries = await GetSnapshotEntriesAsync(snapshotId, ct);
+        var normalizedPath = Path.GetFullPath(snapshot.GameInstallPath);
+        var actual = (await _changesetManager.ListByStateAsync(ChangesetState.Committed, ct))
+            .Where(c =>
+                c.TargetDirectory != null &&
+                Path.GetFullPath(c.TargetDirectory).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var actualIds = actual.Select(c => c.ChangesetId).ToHashSet();
+        var entryIds = entries.Select(e => e.ChangesetId).ToHashSet();
+
+        foreach (var entry in entries)
+        {
+            var action = actualIds.Contains(entry.ChangesetId)
+                ? SnapshotRestoreAction.Keep
+                : !string.IsNullOrEmpty(entry.ArchivePath) && File.Exists(entry.ArchivePath)
+                    ? SnapshotRestoreAction.Reinstall
+                    : SnapshotRestoreAction.Unavailable;
+
+            plan.Items.Add(new SnapshotRestorePlanItem
+            {
+                ModId = entry.ModId ?? entry.ChangesetId,
+                DisplayName = entry.ModId ?? entry.ChangesetId,
+                Enabled = true,
+                ArchivePath = entry.ArchivePath,
+                Action = action
+            });
+        }
+
+        plan.Items.AddRange(actual
+            .Where(c => !entryIds.Contains(c.ChangesetId))
+            .Select(c => new SnapshotRestorePlanItem
+            {
+                ModId = c.ModId ?? c.ChangesetId,
+                DisplayName = c.ModId ?? c.ChangesetId,
+                ArchivePath = c.ArchivePath,
+                Action = SnapshotRestoreAction.Remove
+            }));
+
+        return plan;
+    }
+
+    private static bool HasStagedFiles(string stagingPath) =>
+        Directory.Exists(stagingPath) && Directory.EnumerateFileSystemEntries(stagingPath).Any();
+
+    /// <summary>
     /// Reads the deployed mod set a snapshot captured.
     /// </summary>
     /// <param name="snapshotId">Snapshot identifier.</param>
@@ -604,11 +798,8 @@ public class SnapshotManager
         {
             ct.ThrowIfCancellationRequested();
 
-            if (Directory.Exists(mod.StagingPath) &&
-                Directory.EnumerateFileSystemEntries(mod.StagingPath).Any())
-            {
+            if (HasStagedFiles(mod.StagingPath))
                 continue;
-            }
 
             var archivePath = mod.ChangesetId == null
                 ? null
@@ -715,6 +906,13 @@ public class SnapshotManager
 
         return Convert.ToHexString(hash.GetCurrentHash()).ToLowerInvariant();
     }
+
+    // Snapshots taken before mod_count counted the managed mod set recorded every
+    // committed changeset instead; the mod set's size is read in its place.
+    private const string SnapshotColumns = """
+        snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc,
+        COALESCE(NULLIF((SELECT COUNT(*) FROM snapshot_game_mod g WHERE g.snapshot_id = snapshot.snapshot_id), 0), mod_count)
+        """;
 
     private static SnapshotRecord ReadSnapshotRecord(SqliteDataReader reader)
     {

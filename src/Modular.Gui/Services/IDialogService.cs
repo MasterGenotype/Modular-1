@@ -11,6 +11,11 @@ public interface IDialogService
     Task ShowErrorAsync(string title, string message);
 
     /// <summary>
+    /// Shows an informational dialog, such as confirmation that a long operation finished.
+    /// </summary>
+    Task ShowInfoAsync(string title, string message);
+
+    /// <summary>
     /// Shows a warning dialog.
     /// </summary>
     Task ShowWarningAsync(string title, string message);

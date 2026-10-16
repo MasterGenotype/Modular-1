@@ -19,33 +19,39 @@ public class DialogService : IDialogService
         return null;
     }
 
-    public async Task ShowErrorAsync(string title, string message)
+    public Task ShowErrorAsync(string title, string message) => ShowMessageAsync(title, message);
+
+    public Task ShowInfoAsync(string title, string message) => ShowMessageAsync(title, message);
+
+    // Grows with the message up to a cap and scrolls past it, so a list of errors is
+    // never cut off at a fixed height.
+    private async Task ShowMessageAsync(string title, string message)
     {
         var window = GetMainWindow();
         if (window == null) return;
 
+        var ok = new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
+
+        var body = new DockPanel { Margin = new Thickness(20) };
+        DockPanel.SetDock(ok, Dock.Bottom);
+        ok.Margin = new Thickness(0, 20, 0, 0);
+        body.Children.Add(ok);
+        body.Children.Add(new ScrollViewer
+        {
+            Content = new SelectableTextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+        });
+
         var dialog = new Window
         {
             Title = title,
-            Width = 400,
-            Height = 200,
+            Width = 450,
+            SizeToContent = SizeToContent.Height,
+            MaxHeight = 500,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(20),
-                Spacing = 20,
-                Children =
-                {
-                    new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                    new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center }
-                }
-            }
+            Content = body
         };
 
-        if (dialog.Content is StackPanel panel && panel.Children[1] is Button btn)
-        {
-            btn.Click += (_, _) => dialog.Close();
-        }
+        ok.Click += (_, _) => dialog.Close();
 
         await dialog.ShowDialog(window);
     }
