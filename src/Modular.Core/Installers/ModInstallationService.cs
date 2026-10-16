@@ -175,6 +175,22 @@ public class ModInstallationService
             return result;
         }
 
+        // A bare .pak is read through a temporary zip. The changeset keeps the real path,
+        // so a reinstall or snapshot restore goes back to the file the user gave.
+        LooseModFile? looseFile;
+        try
+        {
+            looseFile = LooseModFile.WrapIfNeeded(archivePath);
+        }
+        catch (IOException ex)
+        {
+            result.Error = $"Could not prepare {Path.GetFileName(archivePath)}: {ex.Message}";
+            return result;
+        }
+
+        using var looseFileScope = looseFile;
+        var readPath = looseFile?.ArchivePath ?? archivePath;
+
         // Step 0: Resolve the game and the module that owns it.
         //
         // Two bugs die here. Installer selection used to run with no game id at all, so
@@ -229,13 +245,13 @@ public class ModInstallationService
             await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Staging, ct: ct);
             progress?.Report(new InstallProgress { CurrentOperation = "Scanning archive..." });
 
-            var inventory = await _archiveInventory.GetInventoryAsync(archivePath, ct);
+            var inventory = await _archiveInventory.GetInventoryAsync(readPath, ct);
             _logger?.LogInformation("Archive contains {Count} entries", inventory.Count);
 
             // Step 3: Select installer, scoped to the resolved game and module
             progress?.Report(new InstallProgress { CurrentOperation = "Detecting installer type..." });
             var selection = await _installerManager.SelectInstallerAsync(
-                archivePath, gameId, module, ct);
+                readPath, gameId, module, ct);
 
             if (selection == null)
             {
@@ -266,7 +282,7 @@ public class ModInstallationService
                 context.Selections[choiceId] = optionId;
 
             var plan = await _installerManager.CreateInstallPlanAsync(
-                archivePath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+                readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
 
             // Step 4b: Settle anything the archive leaves to the user.
             //
@@ -290,7 +306,7 @@ public class ModInstallationService
                         context.Selections[choiceId] = optionId;
 
                     plan = await _installerManager.CreateInstallPlanAsync(
-                        archivePath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+                        readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
                 }
 
                 foreach (var choice in plan.Choices.Where(c => !c.IsResolved))

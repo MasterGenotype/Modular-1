@@ -49,8 +49,12 @@ public static class FileUtils
         if (string.IsNullOrEmpty(name))
             return name;
 
-        // Replace characters that are invalid in directory names
-        var invalid = Path.GetInvalidPathChars().Concat([':', '*', '?', '"', '<', '>', '|']).Distinct().ToArray();
+        // Replace characters that are invalid in a single directory name. Separators count:
+        // a mod called "BT 3/4" must not become a folder "BT 3" holding a folder "4".
+        var invalid = Path.GetInvalidFileNameChars()
+            .Concat(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+            .Distinct()
+            .ToArray();
         return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c));
     }
 

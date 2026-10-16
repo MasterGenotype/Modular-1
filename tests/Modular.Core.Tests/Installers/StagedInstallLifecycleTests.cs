@@ -260,6 +260,29 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         File.ReadAllText(dotBackup).Should().Be("vanilla-b");
     }
 
+    // ── bare files ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InstallAsync_BarePak_InstallsItAndRecordsTheRealPath()
+    {
+        var game = NewDir("game");
+        var pak = Path.Combine(NewDir("paks"), "Library.pak");
+        File.WriteAllText(pak, "LSPK-bytes");
+
+        var result = await _service.InstallAsync(pak, game, new ModInstallationOptions
+        {
+            ModId = "library",
+            AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        result.StagedFiles.Should().ContainSingle().Which.Should().EndWith("Library.pak");
+
+        // The changeset points at the .pak, not at the temporary zip it was read through.
+        var changeset = await _changesets.GetChangesetAsync(result.ChangesetId!);
+        changeset!.ArchivePath.Should().Be(pak);
+    }
+
     // ── reinstall ───────────────────────────────────────────────────────────
 
     [Fact]

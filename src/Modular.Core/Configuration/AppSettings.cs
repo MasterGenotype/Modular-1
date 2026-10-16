@@ -67,6 +67,14 @@ public class AppSettings
     public List<int> ModIoGameIds { get; set; } = [];
 
     /// <summary>
+    /// Platform sent to mod.io with every request, such as "windows". A file mod.io has
+    /// approved for some platforms only is hidden from a request that names none. Games
+    /// run through Proton are the Windows build. Empty sends no platform.
+    /// </summary>
+    [JsonPropertyName("modio_platform")]
+    public string ModIoPlatform { get; set; } = "windows";
+
+    /// <summary>
     /// Subdirectory name for mod.io downloads (default: "modio").
     /// </summary>
     [JsonPropertyName("modio_download_dir")]

@@ -17,7 +17,7 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
     public sealed class Settings : CommandSettings
     {
         [CommandArgument(0, "<archive>")]
-        [Description("Path to mod archive file (.zip, .7z, .rar)")]
+        [Description("Path to mod archive file (.zip, .7z, .rar) or a bare .pak")]
         public string ArchivePath { get; init; } = string.Empty;
 
         [CommandOption("--game <GAME>")]

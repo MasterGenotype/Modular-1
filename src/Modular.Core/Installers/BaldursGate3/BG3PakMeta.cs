@@ -178,6 +178,9 @@ public sealed record BG3PakMeta(
     private static bool HasId(XElement node, string id) =>
         string.Equals((string?)node.Attribute("id"), id, StringComparison.Ordinal);
 
+    /// <summary>What the game makes of a module UUID that is not a GUID.</summary>
+    public const string InvalidUuid = "00000000-0000-0000-0000-000000000000";
+
     // Attribute types vary between metas (guid or FixedString for the UUID, for one), so
     // only ids and values are read.
     private static BG3ModuleRef? ReadModule(XElement node)
@@ -190,6 +193,13 @@ public sealed record BG3PakMeta(
         var uuid = Value("UUID").Trim().ToLowerInvariant();
         if (uuid.Length == 0)
             return null;
+
+        // Some old mods declare a UUID that is not a GUID ("goldweig-htze-ro12-..."). The
+        // game reads those as all zeros and lists them that way in modsettings.lsx, so they
+        // are read the same way here; otherwise the game's own entry goes unrecognised and
+        // a second, malformed one is added.
+        if (!Guid.TryParse(uuid, out _))
+            uuid = InvalidUuid;
 
         _ = ulong.TryParse(
             Value("PublishHandle"), NumberStyles.None, CultureInfo.InvariantCulture, out var handle);

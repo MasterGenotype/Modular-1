@@ -65,6 +65,7 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         _client = client ?? new ModIoClient(
             () => _settings.ModIoApiKey,
             () => _settings.ModIoAccessToken,
+            () => _settings.ModIoPlatform,
             logger: logger);
     }
 

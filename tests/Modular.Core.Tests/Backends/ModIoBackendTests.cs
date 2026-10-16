@@ -92,6 +92,39 @@ public class ModIoBackendTests
     }
 
     [Fact]
+    public async Task Requests_NameTheConfiguredPlatform()
+    {
+        // A file approved for Windows only is hidden from a request that names no platform.
+        var (backend, server) = Create(new AppSettings
+        {
+            ModIoAccessToken = "token",
+            ModIoGameIds = [6715],
+            ModIoPlatform = "windows"
+        });
+        server.On("/v1/games/6715/mods/42", Mod(42, "Party Limit"));
+
+        await backend.GetModInfoAsync("42");
+
+        server.Requests.Single().Platform.Should().Be("windows");
+    }
+
+    [Fact]
+    public async Task Requests_WithNoPlatformConfigured_NameNone()
+    {
+        var (backend, server) = Create(new AppSettings
+        {
+            ModIoAccessToken = "token",
+            ModIoGameIds = [6715],
+            ModIoPlatform = ""
+        });
+        server.On("/v1/games/6715/mods/42", Mod(42, "Party Limit"));
+
+        await backend.GetModInfoAsync("42");
+
+        server.Requests.Single().Platform.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetUserModsAsync_WithOnlyAnApiKey_ExplainsThatATokenIsNeeded()
     {
         var (backend, server) = Create(new AppSettings { ModIoApiKey = "secret", ModIoGameIds = [6715] });
@@ -280,6 +313,7 @@ public class ModIoBackendTests
         var client = new ModIoClient(
             () => settings.ModIoApiKey,
             () => settings.ModIoAccessToken,
+            () => settings.ModIoPlatform,
             server,
             throttleDelay: TimeSpan.Zero);
 
@@ -310,7 +344,7 @@ public class ModIoBackendTests
     private static string Page(int total, params string[] items) =>
         $$"""{"data":[{{string.Join(",", items)}}],"result_count":{{items.Length}},"result_offset":0,"result_limit":100,"result_total":{{total}}}""";
 
-    private sealed record SeenRequest(Uri Uri, string? Authorization);
+    private sealed record SeenRequest(Uri Uri, string? Authorization, string? Platform);
 
     /// <summary>Serves canned responses by path; anything else is a mod.io 404.</summary>
     private sealed class FakeModIo : HttpMessageHandler
@@ -330,7 +364,10 @@ public class ModIoBackendTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            Requests.Add(new SeenRequest(request.RequestUri!, request.Headers.Authorization?.ToString()));
+            Requests.Add(new SeenRequest(
+                request.RequestUri!,
+                request.Headers.Authorization?.ToString(),
+                request.Headers.TryGetValues("X-Modio-Platform", out var platform) ? platform.Single() : null));
 
             var (status, content) = _routes.TryGetValue(request.RequestUri!.AbsolutePath, out var route)
                 ? (route.Status, route.Error ?? route.Body(Uri.UnescapeDataString(request.RequestUri.Query)))

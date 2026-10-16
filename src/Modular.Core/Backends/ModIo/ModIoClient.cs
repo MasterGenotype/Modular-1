@@ -28,6 +28,7 @@ public sealed class ModIoClient : IDisposable
     private readonly HttpClient _http;
     private readonly Func<string> _apiKey;
     private readonly Func<string> _accessToken;
+    private readonly Func<string> _platform;
     private readonly Func<long, string> _baseUrl;
     private readonly TimeSpan _throttleDelay;
     private readonly ILogger? _logger;
@@ -39,6 +40,7 @@ public sealed class ModIoClient : IDisposable
     /// </summary>
     /// <param name="apiKey">Reads the current API key, so a settings change applies at once.</param>
     /// <param name="accessToken">Reads the current OAuth access token.</param>
+    /// <param name="platform">Reads the platform to target, or empty for none.</param>
     /// <param name="handler">HTTP handler, for tests.</param>
     /// <param name="baseUrl">The API root for a game id; defaults to the game's modapi.io host.</param>
     /// <param name="throttleDelay">Minimum gap between requests.</param>
@@ -46,6 +48,7 @@ public sealed class ModIoClient : IDisposable
     public ModIoClient(
         Func<string> apiKey,
         Func<string> accessToken,
+        Func<string>? platform = null,
         HttpMessageHandler? handler = null,
         Func<long, string>? baseUrl = null,
         TimeSpan? throttleDelay = null,
@@ -53,6 +56,7 @@ public sealed class ModIoClient : IDisposable
     {
         _apiKey = apiKey;
         _accessToken = accessToken;
+        _platform = platform ?? (() => string.Empty);
         _baseUrl = baseUrl ?? (gameId => $"https://g-{gameId}.modapi.io/v1");
         _throttleDelay = throttleDelay ?? DefaultThrottle;
         _logger = logger;
@@ -162,6 +166,12 @@ public sealed class ModIoClient : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (!string.IsNullOrWhiteSpace(token))
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // Without it, a game with platform approval hides a mod's live file whenever
+            // that file is not yet approved everywhere.
+            var platform = _platform();
+            if (!string.IsNullOrWhiteSpace(platform))
+                request.Headers.TryAddWithoutValidation("X-Modio-Platform", platform.Trim());
 
             using var response = await _http.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);

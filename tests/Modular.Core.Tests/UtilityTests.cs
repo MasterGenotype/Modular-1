@@ -33,6 +33,14 @@ public class UtilityTests
     }
 
     [Fact]
+    public void FileUtils_SanitizeDirectoryName_KeepsAModNameWithASlashToOneFolder()
+    {
+        var result = FileUtils.SanitizeDirectoryName("Dragonborn Extra Tabs - BT 3/4");
+
+        Assert.Equal("Dragonborn Extra Tabs - BT 3_4", result);
+    }
+
+    [Fact]
     public void FileUtils_SanitizeDirectoryName_RemovesInvalidChars()
     {
         var result = FileUtils.SanitizeDirectoryName("Mod: Test <Version>");

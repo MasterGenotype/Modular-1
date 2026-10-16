@@ -32,7 +32,7 @@ namespace Modular.Core.Modules;
 /// person browsing it, and has no effect on the game.
 /// </para>
 /// </remarks>
-public sealed class BaldursGate3GameModule : GameModuleBase
+public sealed partial class BaldursGate3GameModule : GameModuleBase
 {
     private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly IModCategorySource? _categories;
@@ -194,7 +194,9 @@ public sealed class BaldursGate3GameModule : GameModuleBase
         if (!IsModPak(context.RootName, context.RelativePath))
             return new DeployTarget(context.RootName, context.RelativePath);
 
-        var fileName = Path.GetFileName(context.RelativePath);
+        // A pak taken from an earlier deployment already carries an order prefix; adding a
+        // second one would stack them on every reinstall.
+        var fileName = ExistingOrderPrefix().Replace(Path.GetFileName(context.RelativePath), string.Empty);
 
         var profile = context.StagedFilePath != null
             ? BG3PakProfile.Read(context.StagedFilePath)
@@ -679,4 +681,7 @@ public sealed class BaldursGate3GameModule : GameModuleBase
             ? $"{paths.Count} file(s) ({examples})"
             : $"{paths.Count} files ({examples}, …)";
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\d{2}-\d{3,}_")]
+    private static partial System.Text.RegularExpressions.Regex ExistingOrderPrefix();
 }

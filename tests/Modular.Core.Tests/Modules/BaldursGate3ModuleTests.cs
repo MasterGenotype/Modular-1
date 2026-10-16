@@ -135,6 +135,18 @@ public sealed class BaldursGate3ModuleTests : IDisposable
     }
 
     [Fact]
+    public void MapDeployPath_APakFromAnEarlierDeployment_GetsOnePrefixNotTwo()
+    {
+        var module = new BaldursGate3GameModule();
+
+        var mapped = module.MapDeployPath(new DeployPathContext(
+            BaldursGate3GameModule.ModsRoot, "30-094_CommunityLibrary.pak", 4, 10,
+            "CommunityLibrary", PackageTypes.Bg3Pak)).RelativePath;
+
+        mapped.Should().MatchRegex(@"^\d{2}-004_CommunityLibrary\.pak$");
+    }
+
+    [Fact]
     public void MapDeployPath_NothingInAFileNameDecidesTheBand()
     {
         var module = new BaldursGate3GameModule();

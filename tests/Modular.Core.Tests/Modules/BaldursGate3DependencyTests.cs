@@ -103,6 +103,25 @@ public sealed class BaldursGate3DependencyTests : IDisposable
     }
 
     [Fact]
+    public void PakMeta_AUuidThatIsNotAGuid_IsReadAsAllZerosLikeTheGameDoes()
+    {
+        // Gold Weight Zero (2023) declares this; the game lists it as 00000000-...
+        const string xml = """
+            <save><region id="Config"><node id="root"><children>
+              <node id="ModuleInfo">
+                <attribute id="Folder" type="LSWString" value="Gold Weight Zero" />
+                <attribute id="Name" type="FixedString" value="Gold Weight Zero" />
+                <attribute id="UUID" type="FixedString" value="goldweig-htze-ro12-4444-deeeeeeeeeef" />
+              </node>
+            </children></node></region></save>
+            """;
+
+        var meta = BG3PakMeta.Parse(Encoding.UTF8.GetBytes(xml));
+
+        meta!.Module.Uuid.Should().Be(BG3PakMeta.InvalidUuid);
+    }
+
+    [Fact]
     public void PakMeta_APakWithNoMeta_IsNull()
     {
         var pak = Path.Combine(NewTempDir(), "override.pak");
