@@ -273,11 +273,11 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
             ("mod-c", SnapshotRestoreAction.Reinstall),
             ("mod-d", SnapshotRestoreAction.Remove));
         plan.ModCount.Should().Be(3);
-        plan.InstallCount.Should().Be(1);
+        plan.AddCount.Should().Be(1);
 
         // …and the restore does exactly that.
         var restore = await _snapshots.RestoreSnapshotAsync(snapshot.SnapshotId, _service);
-        restore.ModsReinstalled.Should().Be(plan.InstallCount);
+        restore.ModsReinstalled.Should().Be(plan.Count(SnapshotRestoreAction.Reinstall));
         restore.ModsRemoved.Should().Be(plan.Count(SnapshotRestoreAction.Remove));
     }
 
@@ -296,7 +296,7 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
 
         plan!.Items.Should().ContainSingle()
             .Which.Action.Should().Be(SnapshotRestoreAction.Unavailable);
-        plan.InstallCount.Should().Be(0);
+        plan.AddCount.Should().Be(0);
     }
 
     [Fact]
@@ -339,6 +339,65 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
 
             days.Should().Equal(local.Day);
         }
+    }
+
+    [Fact]
+    public async Task BatchUninstall_LeavesOneSnapshot()
+    {
+        await RegisterGameAsync();
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+        var b = await InstallAsync("mod-b", ("b.txt", "b"));
+        var c = await InstallAsync("mod-c", ("c.txt", "c"));
+
+        var removed = new List<SnapshotBatchEntry>();
+        foreach (var result in new[] { a, b, c })
+        {
+            var uninstall = await _service.UninstallAsync(result.ChangesetId!, autoSnapshot: false);
+            uninstall.Success.Should().BeTrue(uninstall.Error);
+            removed.Add(new SnapshotBatchEntry(_game, result.GameKey, result.ChangesetId!));
+        }
+
+        (await TodaysSnapshotsAsync()).Should().BeEmpty();
+
+        var taken = await _service.TakeBatchSnapshotsAsync(removed, SnapshotTrigger.AutoUninstall);
+
+        taken.Should().ContainSingle();
+        var snapshots = await TodaysSnapshotsAsync();
+        snapshots.Should().ContainSingle();
+        snapshots[0].Name.Should().Be("Auto — 3 mods uninstalled");
+        snapshots[0].Trigger.Should().Be(SnapshotTrigger.AutoUninstall);
+        snapshots[0].Description.Should().Contain(a.ChangesetId!).And.Contain(c.ChangesetId!);
+    }
+
+    [Fact]
+    public async Task BatchInstall_LeavesOneSnapshotHoldingEveryMod()
+    {
+        await RegisterGameAsync();
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+        await InstallAsync("mod-b", ("b.txt", "b"));
+
+        await _service.TakeBatchSnapshotsAsync(
+            [new SnapshotBatchEntry(_game, a.GameKey, "mod-a"), new SnapshotBatchEntry(_game, a.GameKey, "mod-b")],
+            SnapshotTrigger.AutoInstall);
+
+        var snapshots = await TodaysSnapshotsAsync();
+        snapshots.Should().ContainSingle();
+        snapshots[0].Name.Should().Be("Auto — 2 mods installed");
+        snapshots[0].ModCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Uninstall_ManagedMod_TakesASnapshotByDefault()
+    {
+        // Only the legacy path used to snapshot, so removing a deployed mod left no restore point.
+        await RegisterGameAsync();
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+
+        (await _service.UninstallAsync(a.ChangesetId!)).Success.Should().BeTrue();
+
+        var snapshots = await TodaysSnapshotsAsync();
+        snapshots.Should().ContainSingle()
+            .Which.Name.Should().Be("Auto — mod-a uninstalled");
     }
 
     [Fact]
@@ -454,6 +513,25 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
         result.Success.Should().BeTrue(result.Error);
         return result;
     }
+
+    // Lets auto-snapshots find the game: they need its Steam AppID.
+    private async Task RegisterGameAsync()
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO detected_games (steam_appid, display_name, install_path, library_root,
+                                        first_seen_utc, last_seen_utc)
+            VALUES (424242, 'Test Game', @path, @path, @now, @now)
+            """;
+        cmd.Parameters.AddWithValue("@path", _game);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("o"));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private Task<List<SnapshotRecord>> TodaysSnapshotsAsync() =>
+        _snapshots.ListSnapshotsByDateRangeAsync(
+            424242, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddDays(1));
 
     private string CreateZip(string label, params (string Path, string Content)[] entries)
     {

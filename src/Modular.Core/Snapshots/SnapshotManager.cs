@@ -68,13 +68,13 @@ public enum SnapshotRestoreAction
     /// <summary>Installed now and in the snapshot; kept as it is.</summary>
     Keep,
 
-    /// <summary>In the snapshot but not installed now; brought back from its staged copy.</summary>
+    /// <summary>In the snapshot but not installed now; added back from its extracted copy.</summary>
     Add,
 
-    /// <summary>Its staged copy is gone; reinstalled from its archive.</summary>
+    /// <summary>Its extracted copy is gone; re-extracted from its archive and added back.</summary>
     Reinstall,
 
-    /// <summary>Its staged copy and its archive are both gone, so it cannot be restored.</summary>
+    /// <summary>Its extracted copy and its archive are both gone, so it cannot be restored.</summary>
     Unavailable,
 
     /// <summary>Installed now but not in the snapshot; removed.</summary>
@@ -116,8 +116,11 @@ public sealed class SnapshotRestorePlan
     /// <summary>Mods in the snapshot that it has enabled.</summary>
     public int EnabledCount => Items.Count(i => i.Enabled == true);
 
-    /// <summary>Mods the restore would install: brought back from staging or reinstalled.</summary>
-    public int InstallCount => Count(SnapshotRestoreAction.Add) + Count(SnapshotRestoreAction.Reinstall);
+    /// <summary>
+    /// Mods the restore would add to the game's mod list, from their extracted copies or
+    /// re-extracted from archives. The whole list is deployed afterwards.
+    /// </summary>
+    public int AddCount => Count(SnapshotRestoreAction.Add) + Count(SnapshotRestoreAction.Reinstall);
 
     /// <summary>Number of mods with the given action.</summary>
     /// <param name="action">The action.</param>
@@ -555,7 +558,10 @@ public class SnapshotManager
 
             try
             {
-                var uninstallResult = await installService.UninstallAsync(changeset.ChangesetId, ct);
+                // A restore is one change; snapshotting each removal would bury the
+                // snapshot being restored under new ones.
+                var uninstallResult = await installService.UninstallAsync(
+                    changeset.ChangesetId, ct, autoSnapshot: false);
                 if (uninstallResult.Success)
                 {
                     result.ModsRemoved++;

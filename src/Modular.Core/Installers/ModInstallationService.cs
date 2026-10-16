@@ -569,36 +569,12 @@ public class ModInstallationService
 
             // Auto-snapshot after a successful deploy. An install that deployed nothing
             // changed nothing in the game folder, so there is no new state to capture.
-            if (options.AutoSnapshot && _snapshotManager != null && !options.NoDeploy)
+            if (options.AutoSnapshot && !options.NoDeploy)
             {
-                try
-                {
-                    // The resolved installation is authoritative; the table lookup
-                    // is the fallback for callers that skipped resolution.
-                    var appId = installation?.SteamAppId;
-                    var name = installation?.DisplayName;
-
-                    if (appId == null)
-                    {
-                        var gameInfo = await TryDetectGameForPathAsync(targetDirectory, ct);
-                        appId = gameInfo?.appId;
-                        name ??= gameInfo?.name;
-                    }
-
-                    if (appId != null)
-                    {
-                        await _snapshotManager.CreateSnapshotAsync(
-                            appId.Value, name ?? "Unknown Game", targetDirectory,
-                            SnapshotTrigger.AutoInstall,
-                            name: $"Auto — {options.ModId ?? Path.GetFileName(archivePath)} installed",
-                            ct: ct,
-                            gameKey: gameKey);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Auto-snapshot failed after install (non-fatal)");
-                }
+                await TakeSnapshotAsync(
+                    targetDirectory, installation, gameKey, SnapshotTrigger.AutoInstall,
+                    $"Auto — {options.ModId ?? Path.GetFileName(archivePath)} installed",
+                    description: null, ct);
             }
 
             return result;
@@ -623,9 +599,18 @@ public class ModInstallationService
     /// <summary>
     /// Uninstalls a previously installed changeset by restoring backups and removing installed files.
     /// </summary>
+    /// <param name="changesetId">Changeset to undo.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="autoSnapshot">
+    /// Whether to snapshot the game afterwards. A caller removing several mods turns this
+    /// off and calls <see cref="TakeBatchSnapshotsAsync"/> once at the end, so a batch leaves
+    /// one snapshot rather than one per mod.
+    /// </param>
+    /// <returns>What was removed.</returns>
     public async Task<ModUninstallResult> UninstallAsync(
         string changesetId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool autoSnapshot = true)
     {
         var result = new ModUninstallResult { ChangesetId = changesetId };
 
@@ -672,6 +657,15 @@ public class ModInstallationService
                 {
                     await _changesetManager.UpdateStateAsync(
                         changesetId, ChangesetState.RolledBack, ct: ct);
+
+                    if (autoSnapshot && result.Success)
+                    {
+                        await TakeSnapshotAsync(
+                            changeset.TargetDirectory, SnapshotTrigger.AutoUninstall,
+                            $"Auto — {changeset.ModId ?? changesetId} uninstalled",
+                            gameKey: changeset.GameKey, ct: ct);
+                    }
+
                     return result;
                 }
 
@@ -771,26 +765,12 @@ public class ModInstallationService
                 "Uninstall complete: {Removed} files removed, {Restored} backups restored",
                 removedCount, restoredCount);
 
-            // Auto-snapshot after successful uninstall
-            if (_snapshotManager != null && changeset.TargetDirectory != null)
+            if (autoSnapshot)
             {
-                try
-                {
-                    var gameInfo = await TryDetectGameForPathAsync(changeset.TargetDirectory, ct);
-                    if (gameInfo != null)
-                    {
-                        await _snapshotManager.CreateSnapshotAsync(
-                            gameInfo.Value.appId, gameInfo.Value.name, changeset.TargetDirectory,
-                            SnapshotTrigger.AutoUninstall,
-                            name: $"Auto — {changeset.ModId ?? changesetId} uninstalled",
-                            ct: ct,
-                            gameKey: changeset.GameKey);
-                    }
-                }
-                catch (Exception ex2)
-                {
-                    _logger?.LogWarning(ex2, "Auto-snapshot failed after uninstall (non-fatal)");
-                }
+                await TakeSnapshotAsync(
+                    changeset.TargetDirectory, SnapshotTrigger.AutoUninstall,
+                    $"Auto — {changeset.ModId ?? changesetId} uninstalled",
+                    gameKey: changeset.GameKey, ct: ct);
             }
         }
         catch (Exception ex)
@@ -886,10 +866,12 @@ public class ModInstallationService
     /// <c>uninstall --game g --mod m</c> and <c>uninstall &lt;changesetId&gt;</c> cannot
     /// diverge.
     /// </remarks>
+    /// <param name="autoSnapshot">Whether to snapshot the game afterwards; see <see cref="UninstallAsync"/>.</param>
     public async Task<ModUninstallResult> UninstallModAsync(
         string gameRef,
         string modId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool autoSnapshot = true)
     {
         var result = new ModUninstallResult { ChangesetId = string.Empty };
 
@@ -929,7 +911,130 @@ public class ModInstallationService
         result.FilesRestored = deployment.Restored.Count;
         result.StagingRemoved = deployment.StagingRemoved.Count > 0;
         result.Deployment = deployment;
+
+        if (autoSnapshot)
+        {
+            await TakeSnapshotAsync(
+                installation.InstallPath, installation, installation.GameKey,
+                SnapshotTrigger.AutoUninstall, $"Auto — {modId} uninstalled",
+                description: null, ct);
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Takes the one snapshot a batch install or uninstall leaves behind, per game it touched.
+    /// </summary>
+    /// <param name="changed">The mods the batch installed or removed.</param>
+    /// <param name="trigger">Whether the batch installed or uninstalled.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The snapshots taken.</returns>
+    /// <remarks>
+    /// The caller turns per-mod snapshots off (<see cref="ModInstallationOptions.AutoSnapshot"/>,
+    /// or <c>autoSnapshot</c> on the uninstall methods) and calls this once when the batch
+    /// has finished without an abort or a failure, so removing 500 mods leaves one snapshot
+    /// rather than 500. Never throws; a snapshot is never worth failing the operation it
+    /// records.
+    /// </remarks>
+    public async Task<List<SnapshotRecord>> TakeBatchSnapshotsAsync(
+        IEnumerable<SnapshotBatchEntry> changed,
+        SnapshotTrigger trigger,
+        CancellationToken ct = default)
+    {
+        var snapshots = new List<SnapshotRecord>();
+        var verb = trigger == SnapshotTrigger.AutoUninstall ? "uninstalled" : "installed";
+
+        var byGame = changed
+            .Where(c => !string.IsNullOrEmpty(c.TargetDirectory))
+            .GroupBy(c => Path.GetFullPath(c.TargetDirectory).TrimEnd(Path.DirectorySeparatorChar));
+
+        foreach (var game in byGame)
+        {
+            var mods = game.Select(c => c.ModName).ToList();
+            var name = mods.Count == 1
+                ? $"Auto — {mods[0]} {verb}"
+                : $"Auto — {mods.Count} mods {verb}";
+
+            // The directory as recorded, not the grouping key: the game lookup matches it exactly.
+            var snapshot = await TakeSnapshotAsync(
+                game.First().TargetDirectory, trigger, name,
+                description: mods.Count == 1 ? null : string.Join("\n", mods),
+                gameKey: game.Select(c => c.GameKey).FirstOrDefault(k => !string.IsNullOrEmpty(k)),
+                ct: ct);
+
+            if (snapshot != null)
+                snapshots.Add(snapshot);
+        }
+
+        return snapshots;
+    }
+
+    private async Task<SnapshotRecord?> TakeSnapshotAsync(
+        string? targetDirectory,
+        SnapshotTrigger trigger,
+        string name,
+        string? description = null,
+        string? gameKey = null,
+        CancellationToken ct = default)
+    {
+        if (_snapshotManager == null || string.IsNullOrEmpty(targetDirectory))
+            return null;
+
+        GameInstallation? installation = null;
+        try
+        {
+            installation = await _gameResolver.ResolveAsync(targetDirectory, persist: false, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogDebug(ex, "Could not resolve the game at {Path} for a snapshot", targetDirectory);
+        }
+
+        return await TakeSnapshotAsync(
+            targetDirectory, installation,
+            gameKey ?? installation?.GameKey ?? DeriveGameKey(targetDirectory),
+            trigger, name, description, ct);
+    }
+
+    private async Task<SnapshotRecord?> TakeSnapshotAsync(
+        string targetDirectory,
+        GameInstallation? installation,
+        string? gameKey,
+        SnapshotTrigger trigger,
+        string name,
+        string? description,
+        CancellationToken ct)
+    {
+        if (_snapshotManager == null)
+            return null;
+
+        try
+        {
+            // The resolved installation is authoritative; the table lookup is the
+            // fallback for callers that skipped resolution.
+            var appId = installation?.SteamAppId;
+            var gameName = installation?.DisplayName;
+
+            if (appId == null)
+            {
+                var gameInfo = await TryDetectGameForPathAsync(targetDirectory, ct);
+                appId = gameInfo?.appId;
+                gameName ??= gameInfo?.name;
+            }
+
+            if (appId == null)
+                return null;
+
+            return await _snapshotManager.CreateSnapshotAsync(
+                appId.Value, gameName ?? "Unknown Game", targetDirectory, trigger,
+                name: name, description: description, ct: ct, gameKey: gameKey);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Auto-snapshot failed (non-fatal)");
+            return null;
+        }
     }
 
     /// <summary>
@@ -1359,6 +1464,14 @@ public class ModInstallationService
 }
 
 /// <summary>
+/// One mod a batch install or uninstall changed, for <see cref="ModInstallationService.TakeBatchSnapshotsAsync"/>.
+/// </summary>
+/// <param name="TargetDirectory">Game directory the mod was installed to.</param>
+/// <param name="GameKey">Key of the game's deployment, when known.</param>
+/// <param name="ModName">Name to list it under.</param>
+public sealed record SnapshotBatchEntry(string TargetDirectory, string? GameKey, string ModName);
+
+/// <summary>
 /// Options for mod installation.
 /// </summary>
 public class ModInstallationOptions
@@ -1385,7 +1498,10 @@ public class ModInstallationOptions
     /// <summary>Show what would be installed without actually installing.</summary>
     public bool DryRun { get; set; }
 
-    /// <summary>Whether to automatically create a snapshot after installation.</summary>
+    /// <summary>
+    /// Whether to automatically create a snapshot after installation. A batch turns this
+    /// off and calls <see cref="ModInstallationService.TakeBatchSnapshotsAsync"/> once.
+    /// </summary>
     public bool AutoSnapshot { get; set; } = true;
 
     /// <summary>

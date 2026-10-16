@@ -6,6 +6,7 @@ using Modular.Core.Dependencies;
 using Modular.Core.Deployment;
 using Modular.Core.GameDetection;
 using Modular.Core.Installers;
+using Modular.Core.Snapshots;
 using Modular.Gui.Messages;
 using Modular.Gui.Services;
 using Modular.Sdk.Backends.Common;
@@ -404,19 +405,26 @@ public partial class InstalledModsViewModel : ViewModelBase
         var removed = 0;
         var failed = 0;
         var removedIds = new List<string>();
+        var uninstalled = new List<SnapshotBatchEntry>();
 
-        var snapshot = Changesets.ToList();
-        foreach (var changeset in snapshot)
+        var toRemove = Changesets.ToList();
+        foreach (var changeset in toRemove)
         {
             StatusMessage = $"Uninstalling {changeset.ModId} ({removed + failed + 1}/{total})...";
 
             try
             {
-                var result = await _installService.UninstallAsync(changeset.ChangesetId);
+                // One snapshot for the whole batch, taken below, instead of one per mod.
+                var result = await _installService.UninstallAsync(
+                    changeset.ChangesetId, autoSnapshot: false);
                 if (result.Success)
                 {
                     Changesets.Remove(changeset);
                     removedIds.Add(changeset.ChangesetId);
+                    uninstalled.Add(new SnapshotBatchEntry(
+                        changeset.TargetDirectory,
+                        _records.TryGetValue(changeset.ChangesetId, out var record) ? record.GameKey : null,
+                        changeset.ModId));
                     removed++;
                 }
                 else
@@ -428,6 +436,13 @@ public partial class InstalledModsViewModel : ViewModelBase
             {
                 failed++;
             }
+        }
+
+        // Only a batch that finished cleanly is a state worth restoring to.
+        if (failed == 0 && uninstalled.Count > 0)
+        {
+            StatusMessage = "Taking a snapshot...";
+            await _installService.TakeBatchSnapshotsAsync(uninstalled, SnapshotTrigger.AutoUninstall);
         }
 
         ForgetChangesets(removedIds);

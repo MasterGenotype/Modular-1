@@ -282,16 +282,21 @@ public partial class SnapshotViewModel : ViewModelBase
             var result = await _snapshotManager.RestoreSnapshotAsync(
                 snapshot.SnapshotId, _installService, progress);
 
-            var counts = $"{result.ModsReinstalled} installed, {result.ModsRemoved} removed";
+            var counts =
+                (plan == null ? "" : $"{plan.AddCount} added, ") +
+                $"{result.ModsReinstalled} re-extracted from archives, {result.ModsRemoved} removed";
 
             if (result.Success)
             {
                 StatusMessage = $"Snapshot restored: {counts}";
                 await _dialogService.ShowInfoAsync(
                     "Snapshot Restored",
-                    $"\"{snapshot.Name}\" was restored.\n\n" +
+                    $"\"{snapshot.Name}\" was restored and deployed.\n\n" +
                     $"{counts}." +
-                    (plan == null ? "" : $" The game now has the snapshot's {plan.ModCount} mod(s)."));
+                    (plan == null
+                        ? ""
+                        : $"\n\nThe game's mod list now matches the snapshot: {plan.ModCount} mod(s), " +
+                          $"{plan.EnabledCount} enabled and deployed."));
             }
             else
             {
@@ -455,7 +460,7 @@ public partial class SnapshotViewModel : ViewModelBase
                     {
                         SnapshotRestoreAction.Keep => "Keep",
                         SnapshotRestoreAction.Add => "Add",
-                        SnapshotRestoreAction.Reinstall => "Reinstall",
+                        SnapshotRestoreAction.Reinstall => "Re-extract",
                         SnapshotRestoreAction.Unavailable => "Missing archive",
                         SnapshotRestoreAction.Remove => "Remove",
                         _ => item.Action.ToString()
@@ -479,20 +484,23 @@ public partial class SnapshotViewModel : ViewModelBase
         RestoreWarning = string.Empty;
     }
 
+    // "Add" is a mod going back on the game's mod list; "re-extracted" is one whose
+    // extracted copy is gone and comes back from its archive. Deploying is the separate,
+    // final step that puts the enabled mods' files in the game folder.
     private static string DescribeRestore(SnapshotRestorePlan plan)
     {
-        var reinstall = plan.Count(SnapshotRestoreAction.Reinstall);
-        var install = plan.InstallCount > 0
-            ? $"install {plan.InstallCount}" + (reinstall > 0 ? $" ({reinstall} from archives)" : "")
-            : "install nothing";
+        var reExtract = plan.Count(SnapshotRestoreAction.Reinstall);
+        var add = $"add {plan.AddCount} mod(s)" +
+                  (reExtract > 0 ? $" ({reExtract} re-extracted from archives)" : "");
 
-        return $"Restoring would {install}, remove {plan.Count(SnapshotRestoreAction.Remove)} " +
-               $"and keep {plan.Count(SnapshotRestoreAction.Keep)}.";
+        return $"Restoring would {add}, remove {plan.Count(SnapshotRestoreAction.Remove)} " +
+               $"and keep {plan.Count(SnapshotRestoreAction.Keep)}, then deploy " +
+               $"the {plan.EnabledCount} enabled mod(s).";
     }
 
     private static string DescribeUnavailable(SnapshotRestorePlan plan) =>
         $"{plan.Count(SnapshotRestoreAction.Unavailable)} mod(s) can't be restored: " +
-        "their staged files and archives are both gone.";
+        "their extracted copies and archives are both gone.";
 
     private void BuildCalendarGrid()
     {

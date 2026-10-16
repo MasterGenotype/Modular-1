@@ -6,6 +6,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.GameDetection;
 using Modular.Core.Installers;
+using Modular.Core.Snapshots;
 using Modular.Core.Utilities;
 using Modular.Gui.Services;
 using Modular.Sdk.Collections;
@@ -430,6 +431,9 @@ public partial class InstallViewModel : ViewModelBase
         var failed = 0;
         var aborted = false;
 
+        // One snapshot for the whole batch, taken at the end, instead of one per archive.
+        var installed = new List<SnapshotBatchEntry>();
+
         using var cts = new CancellationTokenSource();
         _installCts = cts;
 
@@ -462,6 +466,7 @@ public partial class InstallViewModel : ViewModelBase
                     AllowOverwrite = AllowOverwrite,
                     CreateBackups = CreateBackups,
                     DryRun = DryRun,
+                    AutoSnapshot = false,
                     ChoiceResolver = AskInstallChoicesAsync
                 };
 
@@ -526,6 +531,12 @@ public partial class InstallViewModel : ViewModelBase
                         InstallResults.Add($"! Launch argument needed: {argument}");
                     }
 
+                    if (!result.DryRun && result.Deployed)
+                    {
+                        installed.Add(new SnapshotBatchEntry(
+                            TargetDirectory, result.GameKey, options.ModId ?? fileName));
+                    }
+
                     succeeded++;
                 }
                 else
@@ -548,6 +559,13 @@ public partial class InstallViewModel : ViewModelBase
                 StatusMessage = DryRun
                     ? $"Dry run complete: {succeeded} previewed, {failed} failed"
                     : $"Batch complete: {succeeded} installed, {failed} failed";
+            }
+
+            // Only a batch that finished cleanly is a state worth restoring to.
+            if (!aborted && failed == 0 && installed.Count > 0)
+            {
+                await _installService.TakeBatchSnapshotsAsync(
+                    installed, SnapshotTrigger.AutoInstall);
             }
         }
         catch (Exception ex)
