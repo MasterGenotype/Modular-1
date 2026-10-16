@@ -244,7 +244,13 @@ public enum ChangesetState
     Committing,
     Committed,
     Failed,
-    RolledBack
+    RolledBack,
+
+    /// <summary>
+    /// Replaced by a later install of the same mod. Its files and staging now belong to
+    /// the changeset that replaced it, so it must never be undone on its own.
+    /// </summary>
+    Superseded
 }
 
 /// <summary>

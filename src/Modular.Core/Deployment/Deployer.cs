@@ -416,7 +416,8 @@ public sealed class Deployer : IDeployer
             string.Equals(existing.ModId, file.ModId, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(existing.Method, requested.ToName(), StringComparison.Ordinal) &&
             strategy.ReadIdentity(file.DestinationPath) is { } current &&
-            strategy.Matches(existing.ToIdentity(), current))
+            strategy.Matches(existing.ToIdentity(), current) &&
+            strategy.ReflectsStaged(file.StagedPath, existing.ToIdentity()))
         {
             record.SetIdentity(existing.ToIdentity());
             record.Requested = existing.Requested;

@@ -86,6 +86,19 @@ public interface IDeploymentStrategy
     bool Matches(FileIdentity recorded, FileIdentity current);
 
     /// <summary>
+    /// Whether a recorded placement still carries the staged file's current contents.
+    /// </summary>
+    /// <param name="stagedPath">Absolute path of the staged source file.</param>
+    /// <param name="recorded">Identity recorded when the file was placed.</param>
+    /// <returns>True when placing the staged file again would change nothing.</returns>
+    /// <remarks>
+    /// A reinstall rebuilds the mod's staging folder, so the deployed file can still match
+    /// its record while holding the previous version: a hardlink to the old, now unlinked
+    /// staged file, or a copy of it.
+    /// </remarks>
+    bool ReflectsStaged(string stagedPath, FileIdentity recorded);
+
+    /// <summary>
     /// Removes a deployed file.
     /// </summary>
     /// <param name="destinationPath">Absolute path of the deployed file.</param>

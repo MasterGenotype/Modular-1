@@ -221,6 +221,7 @@ public class ModInstallationService
         _logger?.LogInformation("Created changeset {Id} for {Archive}", changesetId, Path.GetFileName(archivePath));
 
         StagingSession? stagingSession = null;
+        string? supersededChangesetId = null;
 
         try
         {
@@ -426,6 +427,12 @@ public class ModInstallationService
                     DisplayName = new DirectoryInfo(targetDirectory).Name
                 };
 
+                // A reinstall takes over the mod's row and staging folder, so whichever
+                // changeset held them before is retired once this one commits.
+                var previous = await _deployment.Mods.GetAsync(gameKey, modId, ct);
+                if (previous?.ChangesetId != null && previous.ChangesetId != changesetId)
+                    supersededChangesetId = previous.ChangesetId;
+
                 await _deployment.RegisterModAsync(new GameModRecord
                 {
                     GameKey = gameKey,
@@ -491,6 +498,14 @@ public class ModInstallationService
                 manifest = installResult.Manifest
             });
             await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Committed, operationsData, ct);
+
+            // Left committed, the replaced changeset is listed as a second copy of the mod,
+            // and undoing it would delete files and staging that are now this one's.
+            if (supersededChangesetId != null)
+            {
+                await _changesetManager.UpdateStateAsync(
+                    supersededChangesetId, ChangesetState.Superseded, ct: ct);
+            }
 
             // Step 9: Record telemetry
             stopwatch.Stop();
@@ -595,6 +610,18 @@ public class ModInstallationService
             // in the game folder.
             if (changeset.ManagedBy == ChangesetOwnership.Deployment)
             {
+                // A replaced changeset would fall through to the recorded paths below and
+                // delete the files and staging its replacement now owns.
+                if ((await FindSupersededAsync([changeset], ct)).Count > 0)
+                {
+                    await _changesetManager.UpdateStateAsync(
+                        changesetId, ChangesetState.Superseded, ct: ct);
+                    result.Error =
+                        $"Changeset '{changesetId}' was replaced by a later install of the same mod; " +
+                        "uninstall that one instead.";
+                    return result;
+                }
+
                 var managed = await UninstallManagedAsync(changeset, result, ct);
                 if (managed)
                 {
@@ -946,6 +973,13 @@ public class ModInstallationService
     {
         var committed = await _changesetManager.ListByStateAsync(ChangesetState.Committed, ct);
 
+        // Reinstalls made before superseding existed left their old changesets committed.
+        var superseded = await FindSupersededAsync(committed, ct);
+        foreach (var changesetId in superseded)
+            await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Superseded, ct: ct);
+
+        committed = committed.Where(c => !superseded.Contains(c.ChangesetId)).ToList();
+
         if (targetDirectory != null)
         {
             var fullTarget = Path.GetFullPath(targetDirectory);
@@ -956,6 +990,73 @@ public class ModInstallationService
         }
 
         return committed;
+    }
+
+    /// <summary>
+    /// Finds managed changesets whose mod was since reinstalled under a newer changeset.
+    /// </summary>
+    /// <param name="committed">Committed changesets.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The ids of the changesets that were replaced.</returns>
+    /// <remarks>
+    /// Staging is one folder per game and mod, so a changeset whose staging folder is now
+    /// held by a game_mod row naming a different changeset has been replaced. A managed
+    /// changeset with no row on its folder at all is from before deployments and is kept.
+    /// </remarks>
+    private async Task<HashSet<string>> FindSupersededAsync(
+        IEnumerable<ChangesetRecord> committed, CancellationToken ct)
+    {
+        var superseded = new HashSet<string>(StringComparer.Ordinal);
+        var ownerByStaging = new Dictionary<string, Dictionary<string, string?>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var changeset in committed)
+        {
+            if (changeset.ManagedBy != ChangesetOwnership.Deployment ||
+                string.IsNullOrEmpty(changeset.GameKey) ||
+                ReadStagingPath(changeset) is not { } stagingPath)
+            {
+                continue;
+            }
+
+            if (!ownerByStaging.TryGetValue(changeset.GameKey, out var owners))
+            {
+                var mods = await _deployment.Mods.ListAsync(changeset.GameKey, ct: ct);
+                owners = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var mod in mods.Where(m => !string.IsNullOrEmpty(m.StagingPath)))
+                    owners[Path.GetFullPath(mod.StagingPath)] = mod.ChangesetId;
+                ownerByStaging[changeset.GameKey] = owners;
+            }
+
+            if (owners.TryGetValue(Path.GetFullPath(stagingPath), out var owner) &&
+                owner != null &&
+                owner != changeset.ChangesetId)
+            {
+                superseded.Add(changeset.ChangesetId);
+            }
+        }
+
+        return superseded;
+    }
+
+    private static string? ReadStagingPath(ChangesetRecord changeset)
+    {
+        if (string.IsNullOrEmpty(changeset.OperationsJson))
+            return null;
+
+        try
+        {
+            var ops = JsonSerializer.Deserialize<JsonElement>(changeset.OperationsJson);
+            return ops.ValueKind == JsonValueKind.Object &&
+                   ops.TryGetProperty("stagingPath", out var sp) &&
+                   sp.ValueKind == JsonValueKind.String &&
+                   !string.IsNullOrEmpty(sp.GetString())
+                ? sp.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

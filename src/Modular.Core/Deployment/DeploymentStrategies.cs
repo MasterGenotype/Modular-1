@@ -55,6 +55,12 @@ public sealed class HardlinkDeploymentStrategy : IDeploymentStrategy
     }
 
     /// <inheritdoc />
+    public bool ReflectsStaged(string stagedPath, FileIdentity recorded) =>
+        // A hardlink shares the staged file's inode, so a rebuilt staging tree shows up as
+        // a different one.
+        ReadIdentity(stagedPath) is { } staged && Matches(recorded, staged);
+
+    /// <inheritdoc />
     public void Remove(string destinationPath) => DeploymentFile.RemoveEntry(destinationPath);
 
     /// <inheritdoc />
@@ -140,6 +146,11 @@ public sealed class SymlinkDeploymentStrategy : IDeploymentStrategy
         string.Equals(recorded.LinkTarget, current.LinkTarget, StringComparison.Ordinal);
 
     /// <inheritdoc />
+    public bool ReflectsStaged(string stagedPath, FileIdentity recorded) =>
+        // A link reads through to whatever is staged at its target now.
+        string.Equals(recorded.LinkTarget, Path.GetFullPath(stagedPath), StringComparison.Ordinal);
+
+    /// <inheritdoc />
     public void Remove(string destinationPath) => DeploymentFile.RemoveEntry(destinationPath);
 
     /// <inheritdoc />
@@ -219,6 +230,23 @@ public sealed class CopyDeploymentStrategy : IDeploymentStrategy
     public bool Matches(FileIdentity recorded, FileIdentity current) =>
         recorded.ContentHash != null &&
         string.Equals(recorded.ContentHash, current.ContentHash, StringComparison.Ordinal);
+
+    /// <inheritdoc />
+    public bool ReflectsStaged(string stagedPath, FileIdentity recorded)
+    {
+        // A copy keeps the staged size and timestamp, so a difference in either settles it
+        // without reading the file.
+        var info = new FileInfo(stagedPath);
+        if (!info.Exists ||
+            info.Length != recorded.Size ||
+            info.LastWriteTimeUtc.Ticks != recorded.ModifiedUtcTicks)
+        {
+            return false;
+        }
+
+        return recorded.ContentHash != null &&
+               string.Equals(recorded.ContentHash, DeploymentFile.HashFile(stagedPath), StringComparison.Ordinal);
+    }
 
     /// <inheritdoc />
     public void Remove(string destinationPath) => DeploymentFile.RemoveEntry(destinationPath);

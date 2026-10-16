@@ -260,6 +260,77 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         File.ReadAllText(dotBackup).Should().Be("vanilla-b");
     }
 
+    // ── reinstall ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InstallAsync_Reinstall_ListsTheModOnceAndSupersedesTheOldChangeset()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game, options);
+
+        first.Success.Should().BeTrue(first.Error);
+        second.Success.Should().BeTrue(second.Error);
+
+        var installed = await _service.ListInstalledAsync();
+        installed.Should().ContainSingle().Which.ChangesetId.Should().Be(second.ChangesetId);
+
+        (await _changesets.GetChangesetAsync(first.ChangesetId!))!.State
+            .Should().Be(ChangesetState.Superseded);
+    }
+
+    [Fact]
+    public async Task InstallAsync_Reinstall_DeploysTheNewVersion()
+    {
+        // The rebuilt staging tree must reach the game, even though the old deployed file
+        // still matches what was recorded for it.
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+
+        await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game, options);
+
+        second.Success.Should().BeTrue(second.Error);
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("v2");
+    }
+
+    [Fact]
+    public async Task ListInstalledAsync_RepairsAReinstallRecordedBeforeSuperseding()
+    {
+        // Databases written before this fix hold both changesets as committed.
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game, options);
+        await _changesets.UpdateStateAsync(first.ChangesetId!, ChangesetState.Committed);
+
+        var installed = await _service.ListInstalledAsync();
+
+        installed.Should().ContainSingle().Which.ChangesetId.Should().Be(second.ChangesetId);
+        (await _changesets.GetChangesetAsync(first.ChangesetId!))!.State
+            .Should().Be(ChangesetState.Superseded);
+    }
+
+    [Fact]
+    public async Task UninstallAsync_ReplacedChangeset_LeavesTheReinstalledModAlone()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game, options);
+        await _changesets.UpdateStateAsync(first.ChangesetId!, ChangesetState.Committed);
+
+        var result = await _service.UninstallAsync(first.ChangesetId!);
+
+        result.Success.Should().BeFalse();
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("v2");
+        Directory.Exists(second.StagingPath).Should().BeTrue();
+    }
+
     // ── link safety ─────────────────────────────────────────────────────────
 
     [Theory]

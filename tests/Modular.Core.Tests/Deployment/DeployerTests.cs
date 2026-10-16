@@ -685,6 +685,8 @@ public sealed class DeployerTests : IDisposable
 
         public bool Matches(FileIdentity recorded, FileIdentity current) => false;
 
+        public bool ReflectsStaged(string stagedPath, FileIdentity recorded) => false;
+
         public void Remove(string destinationPath) => DeploymentFile.RemoveEntry(destinationPath);
 
         public string? Probe(string stagingRoot, string destinationRoot) =>
