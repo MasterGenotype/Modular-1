@@ -31,6 +31,17 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<GameDomainItem> _gameDomains = new();
 
+    /// <summary>
+    /// The mods directory as a tree: backend folders, the game folders in each, and the
+    /// mod folders in each game.
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<LibraryNode> _libraryTree = new();
+
+    /// <summary>The node selected in the tree.</summary>
+    [ObservableProperty]
+    private LibraryNode? _selectedNode;
+
     [ObservableProperty]
     private GameDomainItem? _selectedDomain;
 
@@ -84,6 +95,7 @@ public partial class LibraryViewModel : ViewModelBase
         GameDomains.Add(new GameDomainItem { Name = "skyrimspecialedition", BackendId = BackendIds.NexusMods, ModCount = 42 });
         GameDomains.Add(new GameDomainItem { Name = "baldursgate3", BackendId = BackendIds.ModIo, ModCount = 15 });
         ModFolders.Add(new ModFolderItem { Name = "SkyUI", Path = "/mods/skyui", FileCount = 3 });
+        BuildTree(_ => [new ModFolderItem { Name = "SkyUI", Path = "/mods/skyui", FileCount = 3 }]);
     }
 
     // DI constructor
@@ -163,6 +175,7 @@ public partial class LibraryViewModel : ViewModelBase
             }
 
             HasOldLayout = GameDomains.Any(g => g.IsOldLayout);
+            BuildTree(ListModFolders);
             StatusMessage = HasOldLayout
                 ? $"Found {GameDomains.Count} game folders. Some are in the old layout: Re-organize moves them into <backend>/<game> folders."
                 : $"Found {GameDomains.Count} game folders";
@@ -171,6 +184,118 @@ public partial class LibraryViewModel : ViewModelBase
         {
             StatusMessage = $"Error loading domains: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Builds the tree from <see cref="GameDomains"/>: one node per backend folder, holding
+    /// its game folders, each holding its mod folders.
+    /// </summary>
+    /// <param name="modsOf">Lists a game's mod folders.</param>
+    private void BuildTree(Func<GameDomainItem, List<ModFolderItem>> modsOf)
+    {
+        var tree = new ObservableCollection<LibraryNode>();
+
+        foreach (var backend in GameDomains.GroupBy(g => g.BackendId).OrderBy(g => BackendOrder(g.Key)))
+        {
+            var games = backend.ToList();
+            var backendNode = new LibraryNode
+            {
+                Name = backend.Key,
+                Caption = $"{games[0].BackendName} · {games.Count} game(s)",
+                Kind = LibraryNodeKind.Backend,
+                IsExpanded = true
+            };
+
+            foreach (var game in games)
+            {
+                List<ModFolderItem> mods;
+                try
+                {
+                    mods = modsOf(game);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    mods = [];
+                }
+
+                game.ModCount = mods.Count;
+
+                var gameNode = new LibraryNode
+                {
+                    Name = game.Name,
+                    Caption = game.IsOldLayout
+                        ? $"{mods.Count} mod(s) · old layout, Re-organize to move"
+                        : $"{mods.Count} mod(s)",
+                    Kind = LibraryNodeKind.Game,
+                    Game = game,
+                    Parent = backendNode
+                };
+
+                foreach (var mod in mods.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    gameNode.Children.Add(new LibraryNode
+                    {
+                        Name = mod.Name,
+                        Caption = $"{mod.FileCount} file(s) · {mod.SizeText}",
+                        Kind = LibraryNodeKind.Mod,
+                        Game = game,
+                        Mod = mod,
+                        Parent = gameNode
+                    });
+                }
+
+                backendNode.Children.Add(gameNode);
+            }
+
+            tree.Add(backendNode);
+        }
+
+        LibraryTree = tree;
+    }
+
+    // Backends in the order the mods directory lists them; anything else after.
+    private static int BackendOrder(string backendId)
+    {
+        var index = ModLibraryLayout.Backends.ToList().IndexOf(backendId);
+        return index < 0 ? int.MaxValue : index;
+    }
+
+    partial void OnSelectedNodeChanged(LibraryNode? value)
+    {
+        switch (value)
+        {
+            case { IsGame: true }:
+                SelectedMod = null;
+                SelectedDomain = value.Game;
+                break;
+
+            case { IsMod: true }:
+                if (!ReferenceEquals(SelectedDomain, value.Game))
+                    SelectedDomain = value.Game;
+                SelectedMod = value.Mod;
+                break;
+
+            default:
+                SelectedMod = null;
+                SelectedDomain = null;
+                break;
+        }
+    }
+
+    // Selects a game's node, opening its backend, after the tree has been rebuilt.
+    private void SelectGameNode(string backendId, string game)
+    {
+        var node = LibraryTree
+            .Where(b => b.Name == backendId)
+            .SelectMany(b => b.Children)
+            .FirstOrDefault(g => string.Equals(g.Name, game, StringComparison.OrdinalIgnoreCase));
+
+        if (node == null)
+            return;
+
+        if (node.Parent != null)
+            node.Parent.IsExpanded = true;
+        SelectedNode = node;
     }
 
     partial void OnSelectedDomainChanged(GameDomainItem? value)
@@ -209,42 +334,8 @@ public partial class LibraryViewModel : ViewModelBase
 
         try
         {
-            // An old flat folder also holds new game folders; only its mods belong here.
-            if (domain.OnlyModFolders != null)
-            {
-                foreach (var modDir in domain.OnlyModFolders.Where(Directory.Exists))
-                    AddModFolder(modDir);
-
-                StatusMessage = $"{ModFolders.Count} mods in {domain.DisplayName}";
-                return;
-            }
-
-            foreach (var dir in Directory.GetDirectories(domain.Path))
-            {
-                var dirName = Path.GetFileName(dir);
-
-                // Check if this is a category folder (contains subdirectories that are mods)
-                // Category folders are created by OrganizeByCategory and look like "Category_N" or
-                // have been renamed to category names. A directory is treated as a category if it
-                // contains subdirectories but no archive files at its top level.
-                var subDirs = Directory.GetDirectories(dir);
-                var hasTopLevelArchives = Directory.GetFiles(dir)
-                    .Any(f => IsModFile(Path.GetExtension(f)));
-
-                if (subDirs.Length > 0 && !hasTopLevelArchives && !int.TryParse(dirName, out _))
-                {
-                    // This is a category folder — enumerate the mod subdirectories inside it
-                    foreach (var modDir in subDirs)
-                    {
-                        AddModFolder(modDir);
-                    }
-                }
-                else
-                {
-                    // This is a direct mod folder (numeric ID or flat layout)
-                    AddModFolder(dir);
-                }
-            }
+            foreach (var mod in ListModFolders(domain))
+                ModFolders.Add(mod);
 
             StatusMessage = $"{ModFolders.Count} mods in {domain.DisplayName}";
         }
@@ -254,16 +345,54 @@ public partial class LibraryViewModel : ViewModelBase
         }
     }
 
-    private void AddModFolder(string dir)
+    /// <summary>
+    /// Lists the mod folders of a game folder.
+    /// </summary>
+    /// <param name="domain">The game folder.</param>
+    /// <returns>The mods; empty when the folder is gone.</returns>
+    private static List<ModFolderItem> ListModFolders(GameDomainItem domain)
+    {
+        var mods = new List<ModFolderItem>();
+
+        if (string.IsNullOrEmpty(domain.Path) || !Directory.Exists(domain.Path))
+            return mods;
+
+        // An old flat folder also holds new game folders; only its mods belong here.
+        if (domain.OnlyModFolders != null)
+        {
+            mods.AddRange(domain.OnlyModFolders.Where(Directory.Exists).Select(ModFolder));
+            return mods;
+        }
+
+        foreach (var dir in Directory.GetDirectories(domain.Path))
+        {
+            var dirName = Path.GetFileName(dir);
+
+            // A folder of mod folders with no archives of its own is a category folder from
+            // before Re-organize took mods out of them; list the mods inside it.
+            var subDirs = Directory.GetDirectories(dir);
+            var hasTopLevelArchives = Directory.GetFiles(dir)
+                .Any(f => IsModFile(Path.GetExtension(f)));
+
+            if (subDirs.Length > 0 && !hasTopLevelArchives && !int.TryParse(dirName, out _))
+                mods.AddRange(subDirs.Select(ModFolder));
+            else
+                mods.Add(ModFolder(dir));
+        }
+
+        return mods;
+    }
+
+    private static ModFolderItem ModFolder(string dir)
     {
         var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
-        ModFolders.Add(new ModFolderItem
+        return new ModFolderItem
         {
             Name = Path.GetFileName(dir),
             Path = dir,
             FileCount = files.Length,
             TotalSize = files.Sum(f => new FileInfo(f).Length)
-        });
+        };
     }
 
     private static bool IsModFile(string extension)
@@ -441,6 +570,7 @@ public partial class LibraryViewModel : ViewModelBase
         SelectedModFiles.Clear();
         FileTree.Clear();
         ClearModMetadata();
+        SelectedNode = null;
         SelectedDomain = null;
         SelectedMod = null;
     }
@@ -581,11 +711,7 @@ public partial class LibraryViewModel : ViewModelBase
         StatusMessage = message;
 
         if (reselect != null)
-        {
-            SelectedDomain = GameDomains.FirstOrDefault(g =>
-                g.BackendId == reselect.BackendId &&
-                string.Equals(g.Name, reselect.Name, StringComparison.OrdinalIgnoreCase));
-        }
+            SelectGameNode(reselect.BackendId, reselect.Name);
 
         // Selecting a game reports its mod count; the outcome matters more.
         StatusMessage = message;
@@ -627,6 +753,19 @@ public partial class LibraryViewModel : ViewModelBase
             {
                 Directory.Delete(SelectedMod.Path, true);
                 ModFolders.Remove(SelectedMod);
+
+                // Take it out of the tree too, and leave its game selected.
+                var path = SelectedMod.Path;
+                var node = LibraryTree
+                    .SelectMany(b => b.Children)
+                    .SelectMany(g => g.Children)
+                    .FirstOrDefault(m => m.Mod?.Path == path);
+                if (node?.Parent != null)
+                {
+                    node.Parent.Children.Remove(node);
+                    SelectedNode = node.Parent;
+                }
+
                 SelectedMod = null;
                 SelectedModFiles.Clear();
                 FileTree.Clear();
