@@ -151,7 +151,9 @@ public class ModIoBackendTests
         mods[0].Author.Should().Be("author");
         mods[0].IsAdult.Should().BeTrue();
         mods[1].IsAdult.Should().BeFalse();
-        server.Requests.Should().AllSatisfy(r => r.Uri.Query.Should().Contain("game_id=6715"));
+        server.Requests
+            .Where(r => r.Uri.AbsolutePath == "/v1/me/subscribed")
+            .Should().HaveCount(2).And.AllSatisfy(r => r.Uri.Query.Should().Contain("game_id=6715"));
     }
 
     [Fact]

@@ -45,6 +45,11 @@ public partial class DownloadQueueViewModel : ViewModelBase
     // Track domains that need reorganization after download batch completes
     private readonly HashSet<string> _domainsToReorganize = new();
 
+    // GameBanana and mod.io game folders downloaded into this batch, to sort into category
+    // folders once it is done, and the category each downloaded mod's listing gave it.
+    private readonly HashSet<(string BackendId, string GameFolder)> _gamesToSort = new();
+    private readonly Dictionary<string, string> _downloadedCategories = new(StringComparer.OrdinalIgnoreCase);
+
     [ObservableProperty]
     private ObservableCollection<DownloadItemModel> _activeDownloads = new();
 
@@ -236,9 +241,14 @@ public partial class DownloadQueueViewModel : ViewModelBase
     /// </summary>
     private async Task ReorganizeDownloadedModsAsync()
     {
-        if (_renameService == null || _settings == null || _domainsToReorganize.Count == 0)
+        if (_settings == null)
             return;
-            
+
+        await SortDownloadedGamesAsync();
+
+        if (_renameService == null || _domainsToReorganize.Count == 0)
+            return;
+
         var domains = _domainsToReorganize.ToList();
         _domainsToReorganize.Clear();
         
@@ -257,11 +267,14 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     ? null
                     : _changesets.RelocateArchiveFolderAsync;
 
-                // Rename mod-id folders after the mod: <backend>/<game>/<mod>/, no categories.
+                // Rename mod-id folders after the mod, into category folders when that is on.
                 var renamed = await _renameService.ReorganizeAndRenameModsAsync(
                     gameDomainPath,
-                    organizeByCategory: false,
+                    _settings.OrganizeByCategory,
                     folderMoved: folderMoved);
+
+                if (_settings.OrganizeByCategory)
+                    await _renameService.RenameCategoryFoldersAsync(gameDomainPath, folderMoved: folderMoved);
 
                 StatusMessage = renamed > 0 
                     ? $"Organized {renamed} mod(s) in {domain}" 
@@ -274,6 +287,42 @@ public partial class DownloadQueueViewModel : ViewModelBase
         }
         
         StatusMessage = "Ready";
+    }
+
+    /// <summary>
+    /// Sorts the GameBanana and mod.io game folders this batch downloaded into, so new
+    /// downloads join their category folder as NexusMods ones do.
+    /// </summary>
+    private async Task SortDownloadedGamesAsync()
+    {
+        if (_settings == null || _gamesToSort.Count == 0)
+            return;
+
+        var games = _gamesToSort.ToList();
+        var known = new Dictionary<string, string>(_downloadedCategories, StringComparer.OrdinalIgnoreCase);
+        _gamesToSort.Clear();
+        _downloadedCategories.Clear();
+
+        // A mod's listing gave its category; anything else is looked up in subscriptions.
+        Modular.Sdk.Backends.IModBackend?[] backends = [_gameBananaBackend, _modIoBackend];
+        var lookup = new KnownCategoryLookup(
+            known, new BackendLibraryGameLookup(backends.OfType<Modular.Sdk.Backends.IModBackend>(), _settings));
+
+        var sorter = new ModLibrarySorter(
+            lookup, _changesets == null ? null : _changesets.RelocateArchiveFolderAsync);
+
+        foreach (var (backendId, gameFolder) in games)
+        {
+            try
+            {
+                StatusMessage = $"Sorting mods in {Path.GetFileName(gameFolder)}...";
+                await sorter.SortAsync(backendId, gameFolder, _settings.OrganizeByCategory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                StatusMessage = $"Failed to sort {Path.GetFileName(gameFolder)}: {ex.Message}";
+            }
+        }
     }
 
     private async Task DownloadItemAsync(DownloadItemModel item, CancellationToken ct)
@@ -506,10 +555,18 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     item.File.FileId));
             }
 
-            // Track domain for reorganization (NexusMods only - GameBanana already uses mod names)
+            // NexusMods folders are renamed and sorted after the batch; GameBanana and mod.io
+            // ones are named after the mod already and only need sorting.
             if (item.Mod.BackendId == BackendIds.NexusMods && !string.IsNullOrEmpty(item.GameDomain))
             {
                 _domainsToReorganize.Add(item.GameDomain);
+            }
+            else if (item.Mod.BackendId is BackendIds.GameBanana or BackendIds.ModIo &&
+                     Path.GetDirectoryName(modOutputDir) is { } gameFolder)
+            {
+                _gamesToSort.Add((item.Mod.BackendId, gameFolder));
+                if (!string.IsNullOrWhiteSpace(item.Mod.CategoryName))
+                    _downloadedCategories[Path.GetFileName(modOutputDir)] = item.Mod.CategoryName;
             }
         }
         catch (OperationCanceledException) when (item.RemoveRequested && !ct.IsCancellationRequested)

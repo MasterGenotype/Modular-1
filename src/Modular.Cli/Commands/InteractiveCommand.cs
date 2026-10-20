@@ -56,8 +56,13 @@ public sealed class InteractiveCommand : AsyncCommand
                         var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache, null);
                         LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
                         var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
-                        var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, CancellationToken.None);
+                        var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, services.Settings.OrganizeByCategory, CancellationToken.None);
                         LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
+                    }
+                    else if (backend.Id is BackendIds.GameBanana or BackendIds.ModIo)
+                    {
+                        // Named after the mod already; new downloads only need sorting.
+                        await services.SortBackendDownloadsAsync(backend, CancellationToken.None);
                     }
 
                     await services.SaveStateAsync();
@@ -85,7 +90,7 @@ public sealed class InteractiveCommand : AsyncCommand
         {
             DryRun = false,
             Force = false,
-            OrganizeByCategory = false,
+            OrganizeByCategory = services.Settings.OrganizeByCategory,
             AutoRename = services.Settings.AutoRename,
             Filter = FileFilter.MainAndOptional
         };
@@ -133,8 +138,7 @@ public sealed class InteractiveCommand : AsyncCommand
             }
 
             LiveProgressDisplay.ShowInfo($"Processing {d}...");
-            // <backend>/<game>/<mod>/, with no category level.
-            var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, CancellationToken.None);
+            var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, services.Settings.OrganizeByCategory, CancellationToken.None);
             LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
         }
 

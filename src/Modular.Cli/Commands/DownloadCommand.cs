@@ -116,7 +116,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                     : FileFilter.MainAndOptional,
                 VerifyDownloads = services.Settings.VerifyDownloads,
                 AutoRename = services.Settings.AutoRename,
-                OrganizeByCategory = false,
+                OrganizeByCategory = services.Settings.OrganizeByCategory,
                 StatusCallback = status => Console.WriteLine($"[SCAN] {status}")
             };
 
@@ -170,9 +170,21 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                         services.LoggerFactory?.CreateLogger<RenameService>());
                     LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
                     var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
-                    // <backend>/<game>/<mod>/, with no category level.
-                    var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, cts.Token);
+                    var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, services.Settings.OrganizeByCategory, cts.Token);
                     LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
+
+                    if (services.Settings.OrganizeByCategory)
+                    {
+                        var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
+                        LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
+                    }
+                }
+                else if (backend.Id is BackendIds.GameBanana or BackendIds.ModIo && !settings.DryRun)
+                {
+                    // Named after the mod already; new downloads only need sorting.
+                    var sorted = await services.SortBackendDownloadsAsync(backend, cts.Token);
+                    if (sorted > 0)
+                        LiveProgressDisplay.ShowSuccess($"Sorted {sorted} {backend.DisplayName} mods into category folders");
                 }
             }
 

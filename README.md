@@ -898,22 +898,29 @@ Configuration is stored in `~/.config/Modular/config.json`:
 
 ### Mods directory layout
 
-Every download goes in `<mods_directory>/<backend>/<game>/<mod>/`:
+Every download goes in `<mods_directory>/<backend>/<game>/<mod>/`, sorted into
+`<mods_directory>/<backend>/<game>/<category>/<mod>/` when `organize_by_category` is on:
 
 - `<backend>` is `nexusmods`, `gamebanana` or `modio`.
 - `<game>` is the NexusMods game domain (`cyberpunk2077`), or for GameBanana and mod.io the
   game's name reduced to lower-case letters and digits (`baldursgate3`).
+- `<category>` is the category the site files the mod under: the NexusMods category, the
+  GameBanana root category, or for mod.io the mod's first tag from the game's first tag group
+  (Baldur's Gate 3's "Type": Classes, Races, Equipment, …).
 - `<mod>` is the mod's name, holding that mod's downloaded files. NexusMods downloads start
-  as the mod id and are renamed after the mod once the download finishes. There is no
-  category level.
+  as the mod id and are renamed after the mod once the download finishes.
+- New downloads from every backend are sorted into their category folder once a download
+  batch finishes, in the GUI and the CLI.
 
 Downloads from older versions sat in `<mods_directory>/<game>/` (NexusMods) or
 `<mods_directory>/gamebanana/<mod>/` and `<mods_directory>/modio/<mod>/`, and NexusMods mods
 were sorted into category folders. **Re-organize** in the Library view (or `modular rename`)
 moves them into the layout above: every NexusMods game's mod-id folders are renamed after the
-mod, mods come out of category folders, loose NexusMods archives go into their mod's folder, and
-a mod whose name had a `/` in it (saved as nested folders) is gathered under its whole name.
-Installed mods are updated to follow their archives. A GameBanana or mod.io mod whose game cannot be found from your
+mod, loose NexusMods archives go into their mod's folder, and a mod whose name had a `/` in it
+(saved as nested folders) is gathered under its whole name. It then sorts every backend's mods
+into category folders, or takes them out when `organize_by_category` is off. GameBanana and
+mod.io categories come from your subscriptions; a mod whose category cannot be found stays
+where it is. Installed mods are updated to follow their archives. A GameBanana or mod.io mod whose game cannot be found from your
 subscriptions is left where it is.
 
 ### Configuration Options
@@ -927,7 +934,7 @@ subscriptions is left where it is.
 | `modio_game_ids` | int[] | `[]` | mod.io game ids used when none is given (Baldur's Gate 3 is 6715) |
 | `modio_download_dir` | string | `modio` | Where mod.io downloads went before the backend/game layout; only read by Re-organize |
 | `download_path` | string | `~/Mods` | Base directory for downloads |
-| `organize_by_category` | bool | `false` | No longer used: mods always sit straight in `<backend>/<game>/`. Use `modular rename --organize-by-category` to sort by category |
+| `organize_by_category` | bool | `true` | Sort every backend's mods into `<backend>/<game>/<category>/<mod>/`; off keeps them straight in `<backend>/<game>/` |
 | `auto_rename` | bool | `true` | Rename mod folders to human-readable names |
 | `verify_downloads` | bool | `true` | Verify MD5 checksums after download |
 | `validate_tracking` | bool | `false` | Validate tracking against web interface |

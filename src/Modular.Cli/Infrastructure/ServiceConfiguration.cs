@@ -264,6 +264,32 @@ public sealed class RuntimeServices : IDisposable
             : null;
 
     /// <summary>
+    /// Opens the install records, so moving a downloaded archive can repoint the installed
+    /// mods that came from it.
+    /// </summary>
+    public async Task<ChangesetManager> OpenChangesetsAsync()
+    {
+        var dbPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".config", "Modular", "modular.db");
+        var db = new ModularDatabase(dbPath);
+        await db.InitializeAsync();
+        return new ChangesetManager(db);
+    }
+
+    /// <summary>
+    /// Sorts a GameBanana or mod.io backend's downloads into category folders, or out of
+    /// them, as the settings say, keeping installed mods pointed at their archives.
+    /// </summary>
+    /// <returns>How many mod folders moved.</returns>
+    public async Task<int> SortBackendDownloadsAsync(Modular.Sdk.Backends.IModBackend backend, CancellationToken ct)
+    {
+        var changesets = await OpenChangesetsAsync();
+        return await ModLibrarySorter.SortBackendAsync(
+            backend, Settings, Settings.ModsDirectory, changesets.RelocateArchiveFolderAsync, ct);
+    }
+
+    /// <summary>
     /// Creates an aggregate version provider with all enabled backend providers.
     /// </summary>
     public AggregateVersionProvider CreateVersionProvider(string defaultGameDomain = "")

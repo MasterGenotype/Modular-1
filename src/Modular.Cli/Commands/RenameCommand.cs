@@ -5,6 +5,8 @@ using Modular.Cli.UI;
 using Modular.Core.Database;
 using Modular.Core.Installers;
 using Modular.Core.Services;
+using Modular.Core.Utilities;
+using Modular.Sdk.Backends;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands;
@@ -22,7 +24,7 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
         public string? Domain { get; init; }
 
         [CommandOption("--organize-by-category")]
-        [Description("Sort mods into category subdirectories instead of <game>/<mod>")]
+        [Description("Sort mods into category subdirectories (also on when organize_by_category is set)")]
         public bool OrganizeByCategory { get; init; }
 
         [CommandOption("--verbose")]
@@ -59,12 +61,16 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
 
             // Downloads from before backend folders existed move first, so the NexusMods
             // games among them are found below.
+            // One lookup for the run, so each backend's subscriptions are listed once.
+            var lookup = new BackendLibraryGameLookup(services.CreateBackendRegistry().GetAll(), services.Settings);
+            var byCategory = settings.OrganizeByCategory || services.Settings.OrganizeByCategory;
+
             var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(services.Settings);
             if (ModLibraryMigrator.NeedsMigration(services.Settings.ModsDirectory, legacyFlat))
             {
                 LiveProgressDisplay.ShowInfo("Moving downloads into <backend>/<game> folders...");
                 var migration = await new ModLibraryMigrator(
-                        new BackendLibraryGameLookup(services.CreateBackendRegistry().GetAll(), services.Settings),
+                        lookup,
                         changesets.RelocateArchiveFolderAsync,
                         services.LoggerFactory?.CreateLogger<ModLibraryMigrator>())
                     .MigrateAsync(services.Settings.ModsDirectory, legacyFlat, cts.Token);
@@ -97,14 +103,34 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
 
                 LiveProgressDisplay.ShowInfo($"Processing {d}...");
                 var renamed = await renameService.ReorganizeAndRenameModsAsync(
-                    gameDomainPath, settings.OrganizeByCategory, cts.Token, changesets.RelocateArchiveFolderAsync);
+                    gameDomainPath, byCategory, cts.Token, changesets.RelocateArchiveFolderAsync);
                 LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
 
-                if (settings.OrganizeByCategory)
+                if (byCategory)
                 {
                     var catRenamed = await renameService.RenameCategoryFoldersAsync(
                         gameDomainPath, cts.Token, changesets.RelocateArchiveFolderAsync);
                     LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
+                }
+            }
+
+            // GameBanana and mod.io folders are named after the mod already; they only sort.
+            if (string.IsNullOrEmpty(settings.Domain))
+            {
+                var sorter = new ModLibrarySorter(
+                    lookup, changesets.RelocateArchiveFolderAsync, services.LoggerFactory?.CreateLogger<ModLibrarySorter>());
+
+                foreach (var game in ModLibraryLayout.ListGames(services.Settings.ModsDirectory)
+                             .Where(g => g.BackendId != BackendIds.NexusMods))
+                {
+                    LiveProgressDisplay.ShowInfo($"Sorting {game.BackendId}/{game.Game}...");
+                    var result = await sorter.SortAsync(game.BackendId, game.Path, byCategory, cts.Token);
+                    LiveProgressDisplay.ShowSuccess($"Moved {result.Moved} mods in {game.BackendId}/{game.Game}");
+
+                    foreach (var mod in result.Uncategorized)
+                        LiveProgressDisplay.ShowWarning($"Left unsorted, category unknown: {mod}");
+                    foreach (var error in result.Errors)
+                        LiveProgressDisplay.ShowError(error);
                 }
             }
 

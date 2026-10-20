@@ -78,6 +78,9 @@ public partial class SettingsViewModel : ViewModelBase
     private string _defaultCategories = "main, optional";
 
     [ObservableProperty]
+    private bool _organizeByCategory = true;
+
+    [ObservableProperty]
     private bool _autoRename = true;
 
     [ObservableProperty]
@@ -228,6 +231,7 @@ public partial class SettingsViewModel : ViewModelBase
             ? string.Join(", ", _settings.DefaultCategories)
             : "main, optional";
         AutoRename = _settings.AutoRename;
+        OrganizeByCategory = _settings.OrganizeByCategory;
         VerifyDownloads = _settings.VerifyDownloads;
         ValidateTracking = _settings.ValidateTracking;
         MaxConcurrentDownloads = _settings.MaxConcurrentDownloads;
@@ -258,6 +262,7 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnModsDirectoryChanged(string value) => HasUnsavedChanges = true;
     partial void OnDefaultCategoriesChanged(string value) => HasUnsavedChanges = true;
     partial void OnAutoRenameChanged(bool value) => HasUnsavedChanges = true;
+    partial void OnOrganizeByCategoryChanged(bool value) => HasUnsavedChanges = true;
     partial void OnVerifyDownloadsChanged(bool value) => HasUnsavedChanges = true;
     partial void OnValidateTrackingChanged(bool value) => HasUnsavedChanges = true;
     partial void OnMaxConcurrentDownloadsChanged(int value) => HasUnsavedChanges = true;
@@ -362,6 +367,7 @@ public partial class SettingsViewModel : ViewModelBase
             _settings.ModsDirectory = ModsDirectory;
             _settings.DefaultCategories = ParseStringList(DefaultCategories);
             _settings.AutoRename = AutoRename;
+            _settings.OrganizeByCategory = OrganizeByCategory;
             _settings.VerifyDownloads = VerifyDownloads;
             _settings.ValidateTracking = ValidateTracking;
             _settings.MaxConcurrentDownloads = MaxConcurrentDownloads;

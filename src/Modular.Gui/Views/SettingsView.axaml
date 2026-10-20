@@ -299,6 +299,9 @@
 
                         <CheckBox IsChecked="{Binding AutoRename}"
                                   Content="Auto-rename mod folders to human-readable names"/>
+                        <CheckBox IsChecked="{Binding OrganizeByCategory}"
+                                  Content="Sort mods into category folders (NexusMods, GameBanana and mod.io)"
+                                  ToolTip.Tip="&lt;backend&gt;/&lt;game&gt;/&lt;category&gt;/&lt;mod&gt;. Re-organize in the Library applies a change to mods already downloaded."/>
                         <CheckBox IsChecked="{Binding VerifyDownloads}"
                                   Content="Verify downloads (MD5 checksum)"/>
                         <CheckBox IsChecked="{Binding ValidateTracking}"

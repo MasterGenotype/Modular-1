@@ -64,6 +64,8 @@
                                                      IsVisible="{Binding IsBackend}"/>
                                     <mi:MaterialIcon Kind="GamepadVariant" Width="16" Height="16" Opacity="0.7"
                                                      IsVisible="{Binding IsGame}"/>
+                                    <mi:MaterialIcon Kind="Shape" Width="16" Height="16" Opacity="0.7"
+                                                     IsVisible="{Binding IsCategory}"/>
                                     <mi:MaterialIcon Kind="Folder" Width="16" Height="16" Opacity="0.6"
                                                      IsVisible="{Binding IsMod}"/>
                                     <StackPanel>

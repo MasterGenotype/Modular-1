@@ -78,11 +78,24 @@ public class GameBananaV11Record
     [JsonPropertyName("_aPreviewMedia")]
     public GameBananaPreviewMedia? PreviewMedia { get; set; }
 
+    /// <summary>The top-level category the mod is filed under, such as "Skins".</summary>
+    [JsonPropertyName("_aRootCategory")]
+    public GameBananaCategoryRef? RootCategory { get; set; }
+
     /// <summary>
     /// For subscription records, contains the actual mod data.
     /// </summary>
     [JsonPropertyName("_aSubscription")]
     public GameBananaV11Record? Subscription { get; set; }
+}
+
+/// <summary>
+/// A mod category, as GameBanana names it in listings.
+/// </summary>
+public class GameBananaCategoryRef
+{
+    [JsonPropertyName("_sName")]
+    public string? Name { get; set; }
 }
 
 /// <summary>

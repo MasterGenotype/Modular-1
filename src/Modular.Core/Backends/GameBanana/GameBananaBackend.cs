@@ -129,6 +129,7 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
                             ? DateTimeOffset.FromUnixTimeSeconds(mod.DateModifiedTimestamp.Value).DateTime
                             : null,
                         GameDomain = mod.Game?.Name,
+                        CategoryName = mod.RootCategory?.Name,
                         ThumbnailUrl = thumbnailUrl
                     });
                 }
@@ -302,6 +303,7 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
                             ? DateTimeOffset.FromUnixTimeSeconds(mod.DateModifiedTimestamp.Value).DateTime
                             : null,
                         GameDomain = mod.Game?.Name,
+                        CategoryName = mod.RootCategory?.Name,
                         ThumbnailUrl = thumbnailUrl
                     });
 

@@ -166,6 +166,21 @@ public class ModIoDownload
 }
 
 /// <summary>
+/// A group of tags a game's mods can carry, such as BG3's "Type".
+/// </summary>
+public class ModIoTagOption
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; } = new();
+
+    [JsonPropertyName("hidden")]
+    public bool Hidden { get; set; }
+}
+
+/// <summary>
 /// A game.
 /// </summary>
 public class ModIoGame

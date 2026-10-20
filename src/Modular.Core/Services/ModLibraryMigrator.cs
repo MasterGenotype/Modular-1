@@ -4,6 +4,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Dependencies.Conventions;
 using Modular.Core.Utilities;
 using Modular.Sdk.Backends;
+using Modular.Sdk.Backends.Common;
 
 namespace Modular.Core.Services;
 
@@ -346,16 +347,18 @@ public sealed class ModLibraryMigrator
 }
 
 /// <summary>
-/// Finds a flat-folder mod's game from the backends: the mod's download record, then the
-/// user's subscriptions (the listing the folder was named from), then the only configured
-/// game.
+/// Finds out about a mod folder from the backends. Its game: the mod's download record,
+/// then the user's subscriptions (the listing the folder was named from), then the only
+/// configured game. Its category: the subscription listing, found by the record's mod id
+/// or by the folder's name.
 /// </summary>
-public sealed class BackendLibraryGameLookup : ILibraryGameLookup
+/// <remarks>Each backend's subscriptions are listed once per lookup object.</remarks>
+public sealed class BackendLibraryGameLookup : ILibraryGameLookup, ILibraryCategoryLookup
 {
     private readonly IReadOnlyList<IModBackend> _backends;
     private readonly AppSettings _settings;
     private readonly ILogger? _logger;
-    private readonly Dictionary<string, Dictionary<string, string>> _subscriptions =
+    private readonly Dictionary<string, Subscriptions> _subscriptions =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Creates the lookup.</summary>
@@ -381,7 +384,8 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup
         if (string.IsNullOrWhiteSpace(game))
         {
             var subscriptions = await SubscriptionsAsync(backendId, ct);
-            subscriptions.TryGetValue(modFolder, out game);
+            if (subscriptions.ByFolder.TryGetValue(modFolder, out var mod))
+                game = mod.GameDomain;
         }
 
         if (string.IsNullOrWhiteSpace(game) &&
@@ -401,13 +405,25 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup
             : game;
     }
 
-    // Each subscribed mod's game, by the folder name a download of it was given.
-    private async Task<Dictionary<string, string>> SubscriptionsAsync(string backendId, CancellationToken ct)
+    /// <inheritdoc />
+    public async Task<string?> FindCategoryAsync(
+        string backendId, string modFolder, string? recordedModId, CancellationToken ct)
+    {
+        var subscriptions = await SubscriptionsAsync(backendId, ct);
+
+        if (recordedModId != null && subscriptions.ById.TryGetValue(recordedModId, out var byId))
+            return byId.CategoryName;
+
+        return subscriptions.ByFolder.TryGetValue(modFolder, out var byName) ? byName.CategoryName : null;
+    }
+
+    // Each subscribed mod, by the folder name a download of it was given and by its id.
+    private async Task<Subscriptions> SubscriptionsAsync(string backendId, CancellationToken ct)
     {
         if (_subscriptions.TryGetValue(backendId, out var known))
             return known;
 
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var found = new Subscriptions();
         var backend = _backends.FirstOrDefault(b => string.Equals(b.Id, backendId, StringComparison.OrdinalIgnoreCase));
 
         if (backend != null)
@@ -416,16 +432,24 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup
             {
                 foreach (var mod in await backend.GetUserModsAsync(null, ct))
                 {
-                    if (!string.IsNullOrWhiteSpace(mod.Name) && !string.IsNullOrWhiteSpace(mod.GameDomain))
-                        map.TryAdd(FileUtils.SanitizeDirectoryName(mod.Name), mod.GameDomain);
+                    if (!string.IsNullOrWhiteSpace(mod.Name))
+                        found.ByFolder.TryAdd(FileUtils.SanitizeDirectoryName(mod.Name), mod);
+                    if (!string.IsNullOrWhiteSpace(mod.ModId))
+                        found.ById.TryAdd(mod.ModId, mod);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger?.LogWarning(ex, "Could not list {Backend} subscriptions to sort old downloads", backendId);
+                _logger?.LogWarning(ex, "Could not list {Backend} subscriptions to sort downloads", backendId);
             }
         }
 
-        return _subscriptions[backendId] = map;
+        return _subscriptions[backendId] = found;
+    }
+
+    private sealed class Subscriptions
+    {
+        public Dictionary<string, BackendMod> ByFolder { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, BackendMod> ById { get; } = new(StringComparer.Ordinal);
     }
 }

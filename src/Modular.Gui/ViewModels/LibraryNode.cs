@@ -14,13 +14,16 @@ public enum LibraryNodeKind
     /// <summary>A game folder within a backend folder.</summary>
     Game,
 
+    /// <summary>A category folder within a game folder.</summary>
+    Category,
+
     /// <summary>A mod folder within a game folder.</summary>
     Mod
 }
 
 /// <summary>
 /// A folder in the library tree, which follows the mods directory:
-/// backend, then game, then mod.
+/// backend, then game, then category (when mods are sorted by category), then mod.
 /// </summary>
 public partial class LibraryNode : ObservableObject
 {
@@ -54,6 +57,9 @@ public partial class LibraryNode : ObservableObject
 
     /// <summary>Whether this is a game folder.</summary>
     public bool IsGame => Kind == LibraryNodeKind.Game;
+
+    /// <summary>Whether this is a category folder.</summary>
+    public bool IsCategory => Kind == LibraryNodeKind.Category;
 
     /// <summary>Whether this is a mod folder.</summary>
     public bool IsMod => Kind == LibraryNodeKind.Mod;

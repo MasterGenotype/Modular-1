@@ -231,18 +231,26 @@ public partial class LibraryViewModel : ViewModelBase
                     Parent = backendNode
                 };
 
-                foreach (var mod in mods.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+                // Category folders first, as the folder lists them, then mods outside any.
+                foreach (var category in mods
+                             .Where(m => m.Category != null)
+                             .GroupBy(m => m.Category!)
+                             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
                 {
-                    gameNode.Children.Add(new LibraryNode
+                    var categoryNode = new LibraryNode
                     {
-                        Name = mod.Name,
-                        Caption = $"{mod.FileCount} file(s) · {mod.SizeText}",
-                        Kind = LibraryNodeKind.Mod,
+                        Name = category.Key,
+                        Caption = $"{category.Count()} mod(s)",
+                        Kind = LibraryNodeKind.Category,
                         Game = game,
-                        Mod = mod,
                         Parent = gameNode
-                    });
+                    };
+
+                    AddModNodes(categoryNode, game, category);
+                    gameNode.Children.Add(categoryNode);
                 }
+
+                AddModNodes(gameNode, game, mods.Where(m => m.Category == null));
 
                 backendNode.Children.Add(gameNode);
             }
@@ -251,6 +259,22 @@ public partial class LibraryViewModel : ViewModelBase
         }
 
         LibraryTree = tree;
+    }
+
+    private static void AddModNodes(LibraryNode parent, GameDomainItem game, IEnumerable<ModFolderItem> mods)
+    {
+        foreach (var mod in mods.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            parent.Children.Add(new LibraryNode
+            {
+                Name = mod.Name,
+                Caption = $"{mod.FileCount} file(s) · {mod.SizeText}",
+                Kind = LibraryNodeKind.Mod,
+                Game = game,
+                Mod = mod,
+                Parent = parent
+            });
+        }
     }
 
     // Backends in the order the mods directory lists them; anything else after.
@@ -265,8 +289,10 @@ public partial class LibraryViewModel : ViewModelBase
         switch (value)
         {
             case { IsGame: true }:
+            case { IsCategory: true }:
                 SelectedMod = null;
-                SelectedDomain = value.Game;
+                if (!ReferenceEquals(SelectedDomain, value.Game))
+                    SelectedDomain = value.Game;
                 break;
 
             case { IsMod: true }:
@@ -375,7 +401,14 @@ public partial class LibraryViewModel : ViewModelBase
                 .Any(f => IsModFile(Path.GetExtension(f)));
 
             if (subDirs.Length > 0 && !hasTopLevelArchives && !int.TryParse(dirName, out _))
-                mods.AddRange(subDirs.Select(ModFolder));
+            {
+                foreach (var modDir in subDirs)
+                {
+                    var mod = ModFolder(modDir);
+                    mod.Category = dirName;
+                    mods.Add(mod);
+                }
+            }
             else
                 mods.Add(ModFolder(dir));
         }
@@ -603,31 +636,31 @@ public partial class LibraryViewModel : ViewModelBase
         var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(_settings);
         var migrate = ModLibraryMigrator.NeedsMigration(ModsDirectory, legacyFlat);
 
-        // Every NexusMods game's mods are renamed from their ids; the other hubs' folders
-        // are named after the mod already. Mods sit straight in the game folder:
-        // <backend>/<game>/<mod>/, with no category level.
+        // Every game of every backend is sorted: <backend>/<game>/<category>/<mod>/, or
+        // <backend>/<game>/<mod>/ with categories turned off. NexusMods mod folders are also
+        // renamed from their ids; the other hubs' are named after the mod already.
+        var byCategory = _settings.OrganizeByCategory;
         var selected = SelectedDomain;
-        var nexusGames = GameDomains
-            .Where(g => g.BackendId == BackendIds.NexusMods)
-            .Select(g => g.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var games = GameDomains.Where(g => !g.IsOldLayout).ToList();
 
-        if (!migrate && nexusGames.Count == 0)
+        if (!migrate && games.Count == 0)
         {
-            StatusMessage = "Every download is already in a <backend>/<game>/<mod> folder";
+            StatusMessage = "There are no downloads to re-organize";
             return;
         }
 
         var steps = new List<string>();
         if (migrate)
             steps.Add("move downloads into <backend>/<game>/<mod> folders");
-        if (nexusGames.Count > 0)
-            steps.Add($"rename the NexusMods mods in {string.Join(", ", nexusGames)} after the mod and take them out of category folders");
+        steps.Add("rename NexusMods mod folders after the mod");
+        steps.Add(byCategory
+            ? "sort every backend's mods into category folders"
+            : "take every backend's mods out of category folders");
 
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Re-organize Mods",
-            $"This will {string.Join(", then ", steps)}. Installed mods are updated to follow their archives. Continue?");
+            $"This will {string.Join(", ", steps.Take(steps.Count - 1))} and {steps[^1]}. " +
+            "Installed mods are updated to follow their archives. Continue?");
 
         if (!confirmed) return;
 
@@ -635,6 +668,11 @@ public partial class LibraryViewModel : ViewModelBase
         Func<string, string, CancellationToken, Task>? folderMoved = _changesets == null
             ? null
             : _changesets.RelocateArchiveFolderAsync;
+
+        // One lookup for the whole run, so each backend's subscriptions are listed once.
+        var lookup = _backends == null
+            ? null
+            : new BackendLibraryGameLookup(_backends.GetAll(), _settings);
 
         var summary = new List<string>();
 
@@ -646,13 +684,10 @@ public partial class LibraryViewModel : ViewModelBase
             {
                 StatusMessage = "Moving downloads into backend and game folders...";
 
-                var lookup = _backends == null
-                    ? null
-                    : new BackendLibraryGameLookup(_backends.GetAll(), _settings);
                 var result = await new ModLibraryMigrator(lookup, folderMoved)
                     .MigrateAsync(ModsDirectory, legacyFlat);
 
-                summary.Add($"moved {result.Moved} folder(s)");
+                summary.Add($"moved {result.Moved} folder(s) into the backend/game layout");
                 if (result.Unresolved.Count > 0)
                     summary.Add($"{result.Unresolved.Count} mod(s) left in place because their game is unknown");
                 if (result.Errors.Count > 0)
@@ -663,28 +698,47 @@ public partial class LibraryViewModel : ViewModelBase
                 }
             }
 
-            var renamedTotal = 0;
-            foreach (var nexusGame in _renameService.GetGameDomainNames().ToList())
+            // Listed again: the move may have just created game folders.
+            var sorted = 0;
+            var uncategorized = 0;
+            var sortErrors = new List<string>();
+            var sorter = new ModLibrarySorter(lookup, folderMoved);
+
+            foreach (var game in ModLibraryLayout.ListGames(ModsDirectory))
             {
-                // Read after the move, which may have just put the game under nexusmods/.
-                var gameDomainPath = _renameService.GetGameDomainPath(nexusGame);
-                if (!Directory.Exists(gameDomainPath))
-                    continue;
+                if (game.BackendId == BackendIds.NexusMods)
+                {
+                    // Fetch and cache metadata for all mods first (same as download flow)
+                    StatusMessage = $"Fetching mod metadata for {game.Game}...";
+                    await _renameService.FetchAndCacheMetadataAsync(game.Path, game.Game);
 
-                // Fetch and cache metadata for all mods first (same as download flow)
-                StatusMessage = $"Fetching mod metadata for {nexusGame}...";
-                await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, nexusGame);
+                    StatusMessage = $"Sorting NexusMods mods in {game.Game}...";
+                    sorted += await _renameService.ReorganizeAndRenameModsAsync(
+                        game.Path, byCategory, folderMoved: folderMoved);
 
-                StatusMessage = $"Renaming mods in {nexusGame}...";
-                renamedTotal += await _renameService.ReorganizeAndRenameModsAsync(
-                    gameDomainPath,
-                    organizeByCategory: false,
-                    folderMoved: folderMoved);
+                    // Category_N folders take the category's name once it is known.
+                    if (byCategory)
+                        await _renameService.RenameCategoryFoldersAsync(game.Path, folderMoved: folderMoved);
+                }
+                else
+                {
+                    StatusMessage = $"Sorting {game.BackendId} mods in {game.Game}...";
+                    var result = await sorter.SortAsync(game.BackendId, game.Path, byCategory);
+                    sorted += result.Moved;
+                    uncategorized += result.Uncategorized.Count;
+                    sortErrors.AddRange(result.Errors);
+                }
             }
 
-            summary.Add(renamedTotal > 0
-                ? $"renamed or moved {renamedTotal} NexusMods mod folder(s)"
-                : "NexusMods mods already organized");
+            summary.Add(sorted > 0 ? $"sorted {sorted} mod folder(s)" : "mods already sorted");
+            if (uncategorized > 0)
+                summary.Add($"{uncategorized} mod(s) left unsorted because their category is unknown");
+            if (sortErrors.Count > 0)
+            {
+                summary.Add($"{sortErrors.Count} mod(s) could not be sorted");
+                await _dialogService.ShowErrorAsync(
+                    "Some mods could not be sorted", string.Join("\n", sortErrors.Take(20)));
+            }
 
             StatusMessage = summary.Count > 0
                 ? char.ToUpperInvariant(summary[0][0]) + string.Join("; ", summary)[1..]
@@ -758,7 +812,7 @@ public partial class LibraryViewModel : ViewModelBase
                 var path = SelectedMod.Path;
                 var node = LibraryTree
                     .SelectMany(b => b.Children)
-                    .SelectMany(g => g.Children)
+                    .SelectMany(g => g.Children.SelectMany(c => c.IsCategory ? c.Children : [c]))
                     .FirstOrDefault(m => m.Mod?.Path == path);
                 if (node?.Parent != null)
                 {
@@ -832,6 +886,9 @@ public class ModFolderItem
     public string Path { get; set; } = string.Empty;
     public int FileCount { get; set; }
     public long TotalSize { get; set; }
+
+    /// <summary>The category folder the mod is in, if any.</summary>
+    public string? Category { get; set; }
 
     public string SizeText => FormatSize(TotalSize);
 
