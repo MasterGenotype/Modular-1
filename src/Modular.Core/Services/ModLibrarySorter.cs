@@ -67,12 +67,18 @@ public sealed record LibrarySortResult(
 /// </para>
 /// <para>
 /// A folder holding files is a mod; a folder holding only folders is a category from an
-/// earlier sort. A mod whose category is unknown stays where it is, so a run without the
-/// network never undoes an earlier sort.
+/// earlier sort. A mod the site has no category for goes in <see cref="Uncategorized"/>;
+/// one whose category could not be looked up at all stays where it is, so a run without
+/// the network never undoes an earlier sort.
 /// </para>
 /// </remarks>
 public sealed class ModLibrarySorter
 {
+    /// <summary>
+    /// Category folder for mods the site files under no category, or no longer lists.
+    /// </summary>
+    public const string Uncategorized = "Uncategorized";
+
     private readonly ILibraryCategoryLookup? _categories;
     private readonly Func<string, string, CancellationToken, Task>? _folderMoved;
     private readonly ILogger? _logger;

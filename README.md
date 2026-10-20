@@ -906,7 +906,10 @@ Every download goes in `<mods_directory>/<backend>/<game>/<mod>/`, sorted into
   game's name reduced to lower-case letters and digits (`baldursgate3`).
 - `<category>` is the category the site files the mod under: the NexusMods category, the
   GameBanana root category, or for mod.io the mod's first tag from the game's first tag group
-  (Baldur's Gate 3's "Type": Classes, Races, Equipment, …).
+  (Baldur's Gate 3's "Type": Classes, Races, Equipment, …). A mod.io mod with no such tag takes
+  the category its other tags' group is named after: Hairstyles is in "Character Customisation",
+  so Customisation; Cleric is in "Classes & Subclasses", so Classes. A mod the site files under
+  no category, or no longer lists, goes in `Uncategorized`.
 - `<mod>` is the mod's name, holding that mod's downloaded files. NexusMods downloads start
   as the mod id and are renamed after the mod once the download finishes.
 - New downloads from every backend are sorted into their category folder once a download
@@ -919,8 +922,8 @@ moves them into the layout above: every NexusMods game's mod-id folders are rena
 mod, loose NexusMods archives go into their mod's folder, and a mod whose name had a `/` in it
 (saved as nested folders) is gathered under its whole name. It then sorts every backend's mods
 into category folders, or takes them out when `organize_by_category` is off. GameBanana and
-mod.io categories come from your subscriptions; a mod whose category cannot be found stays
-where it is. Installed mods are updated to follow their archives. A GameBanana or mod.io mod whose game cannot be found from your
+mod.io categories come from your subscriptions; when the site cannot be reached, mods stay
+where they are rather than going to `Uncategorized`. Installed mods are updated to follow their archives. A GameBanana or mod.io mod whose game cannot be found from your
 subscriptions is left where it is.
 
 ### Configuration Options

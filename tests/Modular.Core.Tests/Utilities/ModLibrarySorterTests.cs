@@ -166,15 +166,37 @@ public sealed class ModLibrarySorterTests : IDisposable
 
     // ── categories from the backends ────────────────────────────────────────
 
+    // Baldur's Gate 3's tag groups, trimmed, in the order mod.io serves them.
+    private static readonly IReadOnlyList<ModIoTagOption> Bg3TagGroups =
+    [
+        Group("Type", "Cheats", "Classes", "Customisation", "Equipment", "Languages", "Quality of Life",
+            "Races", "Spells", "Subclasses", "Characters", "UI"),
+        Group("General", "Available on Mac and Console"),
+        Group("Character Customisation", "Dyes", "Hairstyles", "Tattoos"),
+        Group("Classes & Subclasses", "Bard", "Cleric", "Wizard"),
+        Group("Languages", "English", "French"),
+        Group("Community", "Modathon 2025"),
+        Group("Characters", "Astarion", "Shadowheart")
+    ];
+
     [Theory]
     [InlineData(new[] { "Customisation", "Patch 8 Tested", "Wizard" }, "Customisation")]
     [InlineData(new[] { "Subclasses", "Classes", "English" }, "Classes")]   // the game's order wins
-    [InlineData(new[] { "English", "For Fun" }, null)]
-    public void ModIo_TheCategoryIsTheFirstTagOfTheGamesFirstGroup(string[] modTags, string? expected)
+    // Astarion's Tousled Curls: no Type tag; Hairstyles is in "Character Customisation".
+    [InlineData(new[] { "Available on Mac and Console", "Hairstyles", "Astarion" }, "Customisation")]
+    // Disciple of Darkness: no Type tag; Cleric is in "Classes & Subclasses".
+    [InlineData(new[] { "Cleric", "English" }, "Classes")]
+    [InlineData(new[] { "Astarion" }, "Characters")]
+    [InlineData(new[] { "Modathon 2025", "For Fun" }, null)]                // no group named after a category
+    public void ModIo_TheCategoryComesFromTheTypeTag_OrAGroupNamedAfterOne(string[] modTags, string? expected)
     {
-        string[] type = ["Cheats", "Classes", "Customisation", "Races", "Subclasses"];
+        ModIoBackend.PickCategory(modTags, Bg3TagGroups).Should().Be(expected);
+    }
 
-        ModIoBackend.PickCategory(modTags, type).Should().Be(expected);
+    [Fact]
+    public void ModIo_AGameWithoutTagGroups_GivesNoCategory()
+    {
+        ModIoBackend.PickCategory(["Anything"], []).Should().BeNull();
     }
 
     [Fact]
@@ -207,11 +229,51 @@ public sealed class ModLibrarySorterTests : IDisposable
 
         (await lookup.FindCategoryAsync(BackendIds.GameBanana, "Better_ Link House", null, default)).Should().Be("Maps");
         (await lookup.FindCategoryAsync(BackendIds.GameBanana, "Renamed", "2", default)).Should().Be("Skins");
-        (await lookup.FindCategoryAsync(BackendIds.GameBanana, "Unknown", null, default)).Should().BeNull();
         backend.Calls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Lookup_AModTheListingDoesNotCategorize_IsUncategorized()
+    {
+        // Alfira Joins The Party: no longer on the site, so not among the subscriptions.
+        var backend = new SubscriptionsBackend(BackendIds.ModIo)
+        {
+            Mods = { new BackendMod { ModId = "3", Name = "No Tags" } }
+        };
+
+        var lookup = new BackendLibraryGameLookup([backend], new AppSettings());
+
+        (await lookup.FindCategoryAsync(BackendIds.ModIo, "Alfira Joins The Party", null, default))
+            .Should().Be(ModLibrarySorter.Uncategorized);
+        (await lookup.FindCategoryAsync(BackendIds.ModIo, "No Tags", null, default))
+            .Should().Be(ModLibrarySorter.Uncategorized);
+    }
+
+    [Fact]
+    public async Task Lookup_WhenTheListingCannotBeRead_KnowsNothing()
+    {
+        // Offline: the mod stays where it is rather than being moved to Uncategorized.
+        var backend = new SubscriptionsBackend(BackendIds.ModIo) { Failure = new HttpRequestException("offline") };
+        var lookup = new BackendLibraryGameLookup([backend], new AppSettings());
+
+        (await lookup.FindCategoryAsync(BackendIds.ModIo, "Anything", null, default)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UncategorizedMods_GoInTheirOwnFolder()
+    {
+        WriteFile("Alfira Joins The Party", "alfira.zip");
+
+        await Sorter(new FakeCategories { ["Alfira Joins The Party"] = ModLibrarySorter.Uncategorized })
+            .SortAsync(BackendIds.ModIo, _game, byCategory: true);
+
+        File.Exists(At("Uncategorized", "Alfira Joins The Party", "alfira.zip")).Should().BeTrue();
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    private static ModIoTagOption Group(string name, params string[] tags) =>
+        new() { Name = name, Tags = [.. tags] };
 
     private ModLibrarySorter Sorter(ILibraryCategoryLookup? categories) =>
         new(categories, (from, to, _) =>
@@ -257,6 +319,7 @@ public sealed class ModLibrarySorterTests : IDisposable
     {
         public List<BackendMod> Mods { get; } = [];
         public int Calls { get; private set; }
+        public Exception? Failure { get; init; }
 
         public string Id => id;
         public string DisplayName => id;
@@ -267,7 +330,7 @@ public sealed class ModLibrarySorterTests : IDisposable
         public Task<List<BackendMod>> GetUserModsAsync(string? gameDomain = null, CancellationToken ct = default)
         {
             Calls++;
-            return Task.FromResult(Mods.ToList());
+            return Failure != null ? Task.FromException<List<BackendMod>>(Failure) : Task.FromResult(Mods.ToList());
         }
 
         public Task<List<BackendModFile>> GetModFilesAsync(

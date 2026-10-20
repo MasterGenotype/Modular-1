@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Modular.Core.Configuration;
 using Modular.Core.Downloads;
@@ -49,8 +50,8 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     // Each game's name, for naming its folder in the mods directory.
     private readonly ConcurrentDictionary<long, string> _gameNames = new();
 
-    // Each game's category tags: its first visible tag group, in the game's order.
-    private readonly ConcurrentDictionary<long, IReadOnlyList<string>> _categoryTags = new();
+    // Each game's visible tag groups, in the game's order; the first one is its categories.
+    private readonly ConcurrentDictionary<long, IReadOnlyList<ModIoTagOption>> _tagGroups = new();
 
     /// <summary>
     /// Creates the backend.
@@ -124,7 +125,7 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
             var mapped = Map(mod);
             mapped.CategoryName = PickCategory(
                 mod.Tags?.Select(t => t.Name).OfType<string>() ?? [],
-                await GetCategoryTagsAsync(mod.GameId, ct));
+                await GetTagGroupsAsync(mod.GameId, ct));
             mods.Add(mapped);
         }
 
@@ -132,51 +133,80 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     }
 
     /// <summary>
-    /// Gets the tags a game uses as categories: its first visible tag group.
+    /// Gets a game's visible tag groups, in the game's order.
     /// </summary>
     /// <param name="gameId">The mod.io game id.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>
-    /// The group's tags in the game's order; empty when the game has none or they cannot
-    /// be read.
-    /// </returns>
+    /// <returns>The groups; empty when the game has none or they cannot be read.</returns>
     /// <remarks>
     /// mod.io has no single category per mod, only tags in groups the game defines. The
     /// first group is the game's own primary split; Baldur's Gate 3's is "Type", holding
     /// Classes, Races, Equipment and the like.
     /// </remarks>
-    public async Task<IReadOnlyList<string>> GetCategoryTagsAsync(long gameId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ModIoTagOption>> GetTagGroupsAsync(long gameId, CancellationToken ct = default)
     {
         if (gameId <= 0)
             return [];
 
-        if (_categoryTags.TryGetValue(gameId, out var known))
+        if (_tagGroups.TryGetValue(gameId, out var known))
             return known;
 
-        IReadOnlyList<string> tags = [];
+        IReadOnlyList<ModIoTagOption> groups = [];
         try
         {
-            var groups = await _client.GetAsync<ModIoPage<ModIoTagOption>>(gameId, $"games/{gameId}/tags", ct: ct);
-            tags = groups.Data.FirstOrDefault(g => !g.Hidden && g.Tags.Count > 0)?.Tags ?? [];
+            var page = await _client.GetAsync<ModIoPage<ModIoTagOption>>(gameId, $"games/{gameId}/tags", ct: ct);
+            groups = page.Data.Where(g => !g.Hidden && g.Tags.Count > 0).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger?.LogWarning(ex, "Could not read the tag groups of mod.io game {GameId}", gameId);
         }
 
-        return _categoryTags[gameId] = tags;
+        return _tagGroups[gameId] = groups;
     }
 
     /// <summary>
-    /// Picks a mod's category: the first of the game's category tags that the mod carries.
+    /// Picks a mod's category from its tags.
     /// </summary>
     /// <param name="modTags">The mod's tags.</param>
-    /// <param name="categoryTags">The game's category tags, in order.</param>
-    /// <returns>The category, or <c>null</c> when the mod carries none of them.</returns>
-    public static string? PickCategory(IEnumerable<string> modTags, IReadOnlyList<string> categoryTags)
+    /// <param name="groups">The game's tag groups, in order; the first holds the categories.</param>
+    /// <returns>The category, or <c>null</c> when the tags give none.</returns>
+    /// <remarks>
+    /// <para>
+    /// The category is the first of the first group's tags that the mod carries, in the
+    /// game's order.
+    /// </para>
+    /// <para>
+    /// A mod tagged only in a more specific group still has one when that group is named
+    /// after a category: Baldur's Gate 3's "Character Customisation" group (Hairstyles,
+    /// Tattoos…) gives Customisation, "Classes &amp; Subclasses" (Cleric, Wizard…) gives
+    /// Classes. Groups are tried in the game's order, so the first fitting tag decides.
+    /// </para>
+    /// </remarks>
+    public static string? PickCategory(IEnumerable<string> modTags, IReadOnlyList<ModIoTagOption> groups)
     {
+        if (groups.Count == 0)
+            return null;
+
         var carried = modTags.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return categoryTags.FirstOrDefault(carried.Contains);
+        var categories = groups[0].Tags;
+
+        var direct = categories.FirstOrDefault(carried.Contains);
+        if (direct != null)
+            return direct;
+
+        foreach (var group in groups.Skip(1))
+        {
+            if (!group.Tags.Any(carried.Contains))
+                continue;
+
+            var named = categories.FirstOrDefault(c => Regex.IsMatch(
+                group.Name, $@"\b{Regex.Escape(c)}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+            if (named != null)
+                return named;
+        }
+
+        return null;
     }
 
     /// <inheritdoc />

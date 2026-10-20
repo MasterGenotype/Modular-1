@@ -406,15 +406,24 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup, ILibraryCateg
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// When the subscriptions were listed but say nothing about the mod's category, because
+    /// the mod is not among them or the site files it under none, the answer is
+    /// <see cref="ModLibrarySorter.Uncategorized"/>. Only when the listing could not be
+    /// read is it <c>null</c>, so the mod stays where it is.
+    /// </remarks>
     public async Task<string?> FindCategoryAsync(
         string backendId, string modFolder, string? recordedModId, CancellationToken ct)
     {
         var subscriptions = await SubscriptionsAsync(backendId, ct);
+        if (!subscriptions.Listed)
+            return null;
 
-        if (recordedModId != null && subscriptions.ById.TryGetValue(recordedModId, out var byId))
-            return byId.CategoryName;
+        var mod = recordedModId != null && subscriptions.ById.TryGetValue(recordedModId, out var byId)
+            ? byId
+            : subscriptions.ByFolder.GetValueOrDefault(modFolder);
 
-        return subscriptions.ByFolder.TryGetValue(modFolder, out var byName) ? byName.CategoryName : null;
+        return string.IsNullOrWhiteSpace(mod?.CategoryName) ? ModLibrarySorter.Uncategorized : mod.CategoryName;
     }
 
     // Each subscribed mod, by the folder name a download of it was given and by its id.
@@ -437,6 +446,8 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup, ILibraryCateg
                     if (!string.IsNullOrWhiteSpace(mod.ModId))
                         found.ById.TryAdd(mod.ModId, mod);
                 }
+
+                found.Listed = true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -449,6 +460,9 @@ public sealed class BackendLibraryGameLookup : ILibraryGameLookup, ILibraryCateg
 
     private sealed class Subscriptions
     {
+        // Whether the listing was read; an empty listing that was read still counts.
+        public bool Listed { get; set; }
+
         public Dictionary<string, BackendMod> ByFolder { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, BackendMod> ById { get; } = new(StringComparer.Ordinal);
     }
