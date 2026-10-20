@@ -116,7 +116,9 @@ public class AppSettings
     public bool AutoRename { get; set; } = true;
 
     /// <summary>
-    /// Whether to organize mods into category subdirectories.
+    /// No longer used: downloads are always laid out <c>&lt;backend&gt;/&lt;game&gt;/&lt;mod&gt;</c>,
+    /// with no category level. Kept so existing config files still load;
+    /// <c>modular rename --organize-by-category</c> is the explicit way to sort by category.
     /// </summary>
     [JsonPropertyName("organize_by_category")]
     public bool OrganizeByCategory { get; set; } = true;

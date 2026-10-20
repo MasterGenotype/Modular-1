@@ -84,6 +84,18 @@ public sealed class ModLibraryLayoutTests : IDisposable
             ("gamebanana", "thelegendofzeldatearsofthekingdom"));
     }
 
+    [Fact]
+    public void ListGames_LeavesOutFoldersASlashInAModNameMade()
+    {
+        // "Body type 3/4 patch" was saved as Body type 3/ holding 4 patch/: no files of its
+        // own, but no game is named like that.
+        WriteFile("modio", "Muscular Dragonborn Body type 3", "4 FleshForge patch", "patch.zip");
+        Directory.CreateDirectory(Path.Combine(_root, "modio", "baldursgate3", "Hug"));
+
+        ModLibraryLayout.ListGames(_root).Select(g => (g.BackendId, g.Game)).Should().Equal(
+            ("modio", "baldursgate3"));
+    }
+
     private void WriteFile(params string[] parts)
     {
         var path = Path.Combine([_root, .. parts]);

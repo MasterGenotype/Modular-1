@@ -116,7 +116,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                     : FileFilter.MainAndOptional,
                 VerifyDownloads = services.Settings.VerifyDownloads,
                 AutoRename = services.Settings.AutoRename,
-                OrganizeByCategory = services.Settings.OrganizeByCategory,
+                OrganizeByCategory = false,
                 StatusCallback = status => Console.WriteLine($"[SCAN] {status}")
             };
 
@@ -170,11 +170,9 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                         services.LoggerFactory?.CreateLogger<RenameService>());
                     LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
                     var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
-                    var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, services.Settings.OrganizeByCategory, cts.Token);
+                    // <backend>/<game>/<mod>/, with no category level.
+                    var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, cts.Token);
                     LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
-
-                    var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
-                    LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
                 }
             }
 

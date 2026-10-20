@@ -22,7 +22,7 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
         public string? Domain { get; init; }
 
         [CommandOption("--organize-by-category")]
-        [Description("Create category subdirectories")]
+        [Description("Sort mods into category subdirectories instead of <game>/<mod>")]
         public bool OrganizeByCategory { get; init; }
 
         [CommandOption("--verbose")]
@@ -100,9 +100,12 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
                     gameDomainPath, settings.OrganizeByCategory, cts.Token, changesets.RelocateArchiveFolderAsync);
                 LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
 
-                var catRenamed = await renameService.RenameCategoryFoldersAsync(
-                    gameDomainPath, cts.Token, changesets.RelocateArchiveFolderAsync);
-                LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
+                if (settings.OrganizeByCategory)
+                {
+                    var catRenamed = await renameService.RenameCategoryFoldersAsync(
+                        gameDomainPath, cts.Token, changesets.RelocateArchiveFolderAsync);
+                    LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
+                }
             }
 
             await services.SaveStateAsync();

@@ -257,18 +257,12 @@ public partial class DownloadQueueViewModel : ViewModelBase
                     ? null
                     : _changesets.RelocateArchiveFolderAsync;
 
-                // Reorganize and rename mods
+                // Rename mod-id folders after the mod: <backend>/<game>/<mod>/, no categories.
                 var renamed = await _renameService.ReorganizeAndRenameModsAsync(
                     gameDomainPath,
-                    _settings.OrganizeByCategory,
+                    organizeByCategory: false,
                     folderMoved: folderMoved);
 
-                // Also rename category folders if organizing by category
-                if (_settings.OrganizeByCategory)
-                {
-                    await _renameService.RenameCategoryFoldersAsync(gameDomainPath, folderMoved: folderMoved);
-                }
-                
                 StatusMessage = renamed > 0 
                     ? $"Organized {renamed} mod(s) in {domain}" 
                     : $"Mods in {domain} already organized";

@@ -56,7 +56,7 @@ public sealed class InteractiveCommand : AsyncCommand
                         var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache, null);
                         LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
                         var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
-                        var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, true, CancellationToken.None);
+                        var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, CancellationToken.None);
                         LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
                     }
 
@@ -85,7 +85,7 @@ public sealed class InteractiveCommand : AsyncCommand
         {
             DryRun = false,
             Force = false,
-            OrganizeByCategory = true,
+            OrganizeByCategory = false,
             AutoRename = services.Settings.AutoRename,
             Filter = FileFilter.MainAndOptional
         };
@@ -133,11 +133,9 @@ public sealed class InteractiveCommand : AsyncCommand
             }
 
             LiveProgressDisplay.ShowInfo($"Processing {d}...");
-            var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, true, CancellationToken.None);
+            // <backend>/<game>/<mod>/, with no category level.
+            var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, organizeByCategory: false, CancellationToken.None);
             LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
-
-            var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, CancellationToken.None);
-            LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
         }
 
         await services.SaveStateAsync();

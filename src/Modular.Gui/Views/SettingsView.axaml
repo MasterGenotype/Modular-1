@@ -299,8 +299,6 @@
 
                         <CheckBox IsChecked="{Binding AutoRename}"
                                   Content="Auto-rename mod folders to human-readable names"/>
-                        <CheckBox IsChecked="{Binding OrganizeByCategory}"
-                                  Content="Organize mods into category subdirectories"/>
                         <CheckBox IsChecked="{Binding VerifyDownloads}"
                                   Content="Verify downloads (MD5 checksum)"/>
                         <CheckBox IsChecked="{Binding ValidateTracking}"

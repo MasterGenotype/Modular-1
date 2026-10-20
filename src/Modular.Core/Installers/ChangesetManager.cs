@@ -169,9 +169,10 @@ public class ChangesetManager
     }
 
     /// <summary>
-    /// Points every record of an archive inside a folder at the folder's new location.
+    /// Points every record of an archive inside a folder, or of the archive itself when
+    /// the path is a file, at its new location.
     /// </summary>
-    /// <param name="oldFolder">Where the folder was.</param>
+    /// <param name="oldFolder">Where the folder or archive was.</param>
     /// <param name="newFolder">Where it is now.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes when the rows are updated.</returns>
@@ -195,9 +196,13 @@ public class ChangesetManager
             UPDATE snapshot_entry
                SET archive_path = @new || substr(archive_path, length(@old) + 1)
              WHERE substr(archive_path, 1, length(@old)) = @old;
+            UPDATE changeset SET archive_path = @newExact, updated_at_utc = @now WHERE archive_path = @oldExact;
+            UPDATE snapshot_entry SET archive_path = @newExact WHERE archive_path = @oldExact;
             """;
         cmd.Parameters.AddWithValue("@old", oldPrefix);
         cmd.Parameters.AddWithValue("@new", newPrefix);
+        cmd.Parameters.AddWithValue("@oldExact", Path.TrimEndingDirectorySeparator(oldFolder));
+        cmd.Parameters.AddWithValue("@newExact", Path.TrimEndingDirectorySeparator(newFolder));
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         await cmd.ExecuteNonQueryAsync(ct);
     }

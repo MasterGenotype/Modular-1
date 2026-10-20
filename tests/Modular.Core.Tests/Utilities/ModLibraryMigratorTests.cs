@@ -138,6 +138,34 @@ public sealed class ModLibraryMigratorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AModWithASlashInItsName_IsGatheredUnderItsWholeName()
+    {
+        // Saved before slashes were escaped: "Body type 3/4 FleshForge patch" became nested
+        // folders. Its name is saved with the slash as an underscore now.
+        WriteFile("modio", "Muscular Dragonborn Body type 3", "4 FleshForge patch", "flesh.zip");
+        WriteFile("modio", "Muscular Dragonborn Body type 3", "4 Glow ink patch", "glow.zip");
+        WriteFile("modio", "Skirbie's Comfy Clothie ", " Underwear", "under.zip");
+
+        var games = new FakeLookup
+        {
+            ["modio/Muscular Dragonborn Body type 3_4 FleshForge patch"] = "Baldur's Gate 3",
+            ["modio/Muscular Dragonborn Body type 3_4 Glow ink patch"] = "Baldur's Gate 3",
+            ["modio/Skirbie's Comfy Clothie _ Underwear"] = "Baldur's Gate 3"
+        };
+
+        var result = await Migrator(games).MigrateAsync(_root, DefaultFlat);
+
+        result.Moved.Should().Be(3);
+        File.Exists(At("modio", "baldursgate3", "Muscular Dragonborn Body type 3_4 FleshForge patch", "flesh.zip")).Should().BeTrue();
+        File.Exists(At("modio", "baldursgate3", "Muscular Dragonborn Body type 3_4 Glow ink patch", "glow.zip")).Should().BeTrue();
+        File.Exists(At("modio", "baldursgate3", "Skirbie's Comfy Clothie _ Underwear", "under.zip")).Should().BeTrue();
+
+        Directory.Exists(At("modio", "Muscular Dragonborn Body type 3")).Should().BeFalse();
+        Directory.Exists(At("modio", "Skirbie's Comfy Clothie ")).Should().BeFalse();
+        ModLibraryMigrator.NeedsMigration(_root, DefaultFlat).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task AFlatFolderUnderACustomName_IsEmptiedAndRemoved()
     {
         WriteFile("gb", "Better Link House", "a.zip");

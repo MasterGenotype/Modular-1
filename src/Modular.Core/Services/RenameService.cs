@@ -260,7 +260,10 @@ public class RenameService : IRenameService
         Func<string, string, CancellationToken, Task>? folderMoved = null)
     {
         var gameDomain = Path.GetFileName(gameDomainPath);
-        
+
+        // An archive sitting loose in the game folder belongs in its mod's folder.
+        await GatherLooseArchivesAsync(gameDomainPath, folderMoved, ct);
+
         // Create a lookup function for metadata by directory name
         Func<string, ModMetadata?> metadataLookup = (dirName) => _cache.FindModByDirectoryName(gameDomain, dirName);
         
@@ -375,9 +378,133 @@ public class RenameService : IRenameService
             }
         }
 
+        // Without categories, mods that earlier runs sorted into category folders come back
+        // up to the game folder.
+        if (!organizeByCategory)
+            renamedCount += await FlattenCategoryFoldersAsync(gameDomainPath, gameDomain, folderMoved, ct);
+
         // Persist cache so renamed mods are discoverable in future sessions
         await _cache.SaveAsync();
         return renamedCount;
+    }
+
+    /// <summary>
+    /// Moves archives lying directly in a game folder into the folder of the mod they are from.
+    /// </summary>
+    /// <remarks>
+    /// The mod comes from the NexusMods file name. The archive goes in <c>&lt;mod id&gt;/</c>,
+    /// which the rename that follows names or merges into the mod's named folder. Files the
+    /// downloader keeps beside an archive (its download record) go with it.
+    /// </remarks>
+    private async Task GatherLooseArchivesAsync(
+        string gameDomainPath,
+        Func<string, string, CancellationToken, Task>? folderMoved,
+        CancellationToken ct)
+    {
+        if (!Directory.Exists(gameDomainPath))
+            return;
+
+        foreach (var file in Directory.GetFiles(gameDomainPath))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var name = Path.GetFileName(file);
+            if (name.EndsWith(Dependencies.Conventions.DependencyConventions.DownloadRecordSuffix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (NexusFileName.ParseModId(name) is not { } modId)
+                continue;
+
+            var modFolder = Path.Combine(gameDomainPath, modId);
+
+            try
+            {
+                FileUtils.EnsureDirectoryExists(modFolder);
+
+                foreach (var companion in new[] { file, file + Dependencies.Conventions.DependencyConventions.DownloadRecordSuffix })
+                {
+                    if (!File.Exists(companion))
+                        continue;
+
+                    var destination = Path.Combine(modFolder, Path.GetFileName(companion));
+                    if (File.Exists(destination))
+                        continue;
+
+                    File.Move(companion, destination);
+                    if (folderMoved != null)
+                        await folderMoved(companion, destination, ct);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.LogWarning(ex, "Could not move {File} into {Folder}", file, modFolder);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves the mods in category folders up into the game folder and removes the emptied
+    /// category folders.
+    /// </summary>
+    /// <returns>How many mod folders moved.</returns>
+    /// <remarks>
+    /// Only folders named after one of the game's categories, or <c>Category_N</c>, are
+    /// taken for category folders, so a mod folder is never mistaken for one.
+    /// </remarks>
+    private async Task<int> FlattenCategoryFoldersAsync(
+        string gameDomainPath,
+        string gameDomain,
+        Func<string, string, CancellationToken, Task>? folderMoved,
+        CancellationToken ct)
+    {
+        if (!Directory.Exists(gameDomainPath))
+            return 0;
+
+        var categories = await GetOrFetchGameCategoriesAsync(gameDomain, ct);
+        var categoryNames = categories.Values
+            .Select(FileUtils.SanitizeDirectoryName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var moved = 0;
+
+        foreach (var categoryDir in Directory.GetDirectories(gameDomainPath))
+        {
+            var categoryName = Path.GetFileName(categoryDir);
+            var isCategory = categoryNames.Contains(categoryName) ||
+                             (categoryName.StartsWith("Category_", StringComparison.Ordinal) &&
+                              int.TryParse(categoryName["Category_".Length..], out _));
+
+            // A category folder holds mod folders only; one holding files is a mod.
+            if (!isCategory || Directory.EnumerateFiles(categoryDir).Any())
+                continue;
+
+            foreach (var modDir in Directory.GetDirectories(categoryDir))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var destination = Path.Combine(gameDomainPath, Path.GetFileName(modDir));
+                try
+                {
+                    var complete = FileUtils.MoveDirectory(modDir, destination);
+                    if (folderMoved != null)
+                        await folderMoved(modDir, destination, ct);
+
+                    if (complete)
+                        moved++;
+                    else
+                        _logger?.LogWarning("Could not fully move {OldPath} to {NewPath}", modDir, destination);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger?.LogError(ex, "Failed to move {OldPath} to {NewPath}", modDir, destination);
+                }
+            }
+
+            if (!Directory.EnumerateFileSystemEntries(categoryDir).Any())
+                Directory.Delete(categoryDir);
+        }
+
+        return moved;
     }
 
     /// <summary>

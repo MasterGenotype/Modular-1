@@ -164,24 +164,29 @@ public sealed class ModLibraryMigrator
         // 2. Flat GameBanana and mod.io folders, one mod folder at a time.
         foreach (var (folderName, backendId) in legacyFlatFolders)
         {
-            foreach (var modFolder in LegacyModFolders(root, folderName).ToList())
+            foreach (var oldModFolder in LegacyModFolders(root, folderName).ToList())
             {
-                ct.ThrowIfCancellationRequested();
-
-                var name = Path.GetFileName(modFolder);
-                var game = _games == null
-                    ? null
-                    : await _games.FindGameAsync(backendId, name, RecordedGame(modFolder), ct);
-
-                if (string.IsNullOrWhiteSpace(game))
+                foreach (var (modFolder, name) in ModsIn(oldModFolder, Path.GetFileName(oldModFolder)))
                 {
-                    unresolved.Add($"{folderName}/{name}");
-                    continue;
+                    ct.ThrowIfCancellationRequested();
+
+                    var game = _games == null
+                        ? null
+                        : await _games.FindGameAsync(backendId, name, RecordedGame(modFolder), ct);
+
+                    if (string.IsNullOrWhiteSpace(game))
+                    {
+                        unresolved.Add($"{folderName}/{name}");
+                        continue;
+                    }
+
+                    var destination = Path.Combine(ModLibraryLayout.GameFolder(root, backendId, game), name);
+                    if (await MoveAsync(modFolder, destination, errors, ct))
+                        moved++;
                 }
 
-                var destination = Path.Combine(ModLibraryLayout.GameFolder(root, backendId, game), name);
-                if (await MoveAsync(modFolder, destination, errors, ct))
-                    moved++;
+                // Folders a slash in a mod's name made are empty once the mod has moved.
+                DeleteEmptyFolders(oldModFolder);
             }
 
             // An old folder under another name than the backend's is empty once its mods
@@ -235,6 +240,52 @@ public sealed class ModLibraryMigrator
             .Where(d => !ModLibraryLayout.IsBackendFolder(folderName) ||
                         ModLibraryLayout.IsOldFlatModFolder(folderName, d))
             .OrderBy(d => d, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The mods in an old flat mod folder, each with the folder name it should have.
+    /// </summary>
+    /// <param name="folder">The folder.</param>
+    /// <param name="name">Its name, as the mod's name was saved.</param>
+    /// <remarks>
+    /// A folder holding files is one mod, moved whole. A folder holding only folders is
+    /// what a slash in the mod's name made: "Body type 3/4 patch" was saved as
+    /// <c>Body type 3/4 patch/</c>. Its mods are found further down and named the way the
+    /// name is saved now, with the slash as an underscore: <c>Body type 3_4 patch</c>.
+    /// </remarks>
+    private static IEnumerable<(string Folder, string Name)> ModsIn(string folder, string name)
+    {
+        if (Directory.EnumerateFiles(folder).Any(f => !Path.GetFileName(f).StartsWith('.')))
+        {
+            yield return (folder, name);
+            yield break;
+        }
+
+        foreach (var child in Directory.GetDirectories(folder).OrderBy(d => d, StringComparer.Ordinal))
+        {
+            foreach (var mod in ModsIn(child, $"{name}_{Path.GetFileName(child)}"))
+                yield return mod;
+        }
+    }
+
+    // Removes a folder and the folders beneath it if none of them holds a file.
+    private static void DeleteEmptyFolders(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder))
+                return;
+
+            foreach (var child in Directory.GetDirectories(folder))
+                DeleteEmptyFolders(child);
+
+            if (!Directory.EnumerateFileSystemEntries(folder).Any())
+                Directory.Delete(folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Left behind; the next run tries again.
+        }
     }
 
     // The game a download record in the folder names, for backends whose records carry one.

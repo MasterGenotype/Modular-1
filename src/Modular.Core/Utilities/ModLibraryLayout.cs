@@ -129,15 +129,30 @@ public static class ModLibraryLayout
     /// <param name="backendId">The backend folder it is in.</param>
     /// <param name="folder">The folder.</param>
     /// <remarks>
+    /// <para>
     /// GameBanana and mod.io downloads used to go straight into <c>gamebanana/&lt;mod&gt;/</c>
-    /// and <c>modio/&lt;mod&gt;/</c>. Such a folder holds the mod's archives itself, where a
-    /// game folder holds only mod folders. NexusMods never had that layout, and its game
-    /// folders may hold loose archives, so its folders are always games.
+    /// and <c>modio/&lt;mod&gt;/</c>. Their game folders are named by <see cref="Slug"/>, so a
+    /// folder whose name is not a slug is one of those mods. So is a slug-named folder
+    /// holding archives itself, where a game folder holds only mod folders.
+    /// </para>
+    /// <para>
+    /// A mod whose name had a slash in it, such as "Body type 3/4 patch", was saved as
+    /// nested folders, <c>Body type 3/</c> holding <c>4 patch/</c>; the outer folder holds no
+    /// files, and only its name gives it away.
+    /// </para>
+    /// <para>
+    /// NexusMods never had that layout, and its game folders may hold loose archives, so
+    /// its folders are always games.
+    /// </para>
     /// </remarks>
     public static bool IsOldFlatModFolder(string backendId, string folder)
     {
         if (string.Equals(backendId, BackendIds.NexusMods, StringComparison.OrdinalIgnoreCase))
             return false;
+
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
+        if (!string.Equals(name, Slug(name), StringComparison.Ordinal))
+            return true;
 
         try
         {

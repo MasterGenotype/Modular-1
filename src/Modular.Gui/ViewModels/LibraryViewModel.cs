@@ -473,24 +473,27 @@ public partial class LibraryViewModel : ViewModelBase
         var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(_settings);
         var migrate = ModLibraryMigrator.NeedsMigration(ModsDirectory, legacyFlat);
 
-        // Only NexusMods mods are renamed and sorted by category; the other hubs' folders
-        // are already named after the mod.
+        // Every NexusMods game's mods are renamed from their ids; the other hubs' folders
+        // are named after the mod already. Mods sit straight in the game folder:
+        // <backend>/<game>/<mod>/, with no category level.
         var selected = SelectedDomain;
-        var nexusGame = selected?.BackendId == BackendIds.NexusMods ? selected.Name : null;
+        var nexusGames = GameDomains
+            .Where(g => g.BackendId == BackendIds.NexusMods)
+            .Select(g => g.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        if (!migrate && nexusGame == null)
+        if (!migrate && nexusGames.Count == 0)
         {
-            StatusMessage = selected == null
-                ? "Every download is already in a <backend>/<game> folder. Select a NexusMods game to sort its mods into categories."
-                : $"Mods in {selected.DisplayName} are already organized";
+            StatusMessage = "Every download is already in a <backend>/<game>/<mod> folder";
             return;
         }
 
         var steps = new List<string>();
         if (migrate)
             steps.Add("move downloads into <backend>/<game>/<mod> folders");
-        if (nexusGame != null)
-            steps.Add($"rename the mods in '{nexusGame}' and sort them into category folders");
+        if (nexusGames.Count > 0)
+            steps.Add($"rename the NexusMods mods in {string.Join(", ", nexusGames)} after the mod and take them out of category folders");
 
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Re-organize Mods",
@@ -530,33 +533,28 @@ public partial class LibraryViewModel : ViewModelBase
                 }
             }
 
-            if (nexusGame != null)
+            var renamedTotal = 0;
+            foreach (var nexusGame in _renameService.GetGameDomainNames().ToList())
             {
-                // The game's folder may have just moved under nexusmods/.
+                // Read after the move, which may have just put the game under nexusmods/.
                 var gameDomainPath = _renameService.GetGameDomainPath(nexusGame);
+                if (!Directory.Exists(gameDomainPath))
+                    continue;
 
-                if (Directory.Exists(gameDomainPath))
-                {
-                    // Fetch and cache metadata for all mods first (same as download flow)
-                    StatusMessage = $"Fetching mod metadata for {nexusGame}...";
-                    await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, nexusGame);
+                // Fetch and cache metadata for all mods first (same as download flow)
+                StatusMessage = $"Fetching mod metadata for {nexusGame}...";
+                await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, nexusGame);
 
-                    // Reorganize and rename mods (matches download flow)
-                    StatusMessage = $"Reorganizing mods in {nexusGame}...";
-                    var renamed = await _renameService.ReorganizeAndRenameModsAsync(
-                        gameDomainPath,
-                        _settings.OrganizeByCategory,
-                        folderMoved: folderMoved);
-
-                    // Rename category folders from Category_N to actual names
-                    if (_settings.OrganizeByCategory)
-                        await _renameService.RenameCategoryFoldersAsync(gameDomainPath, folderMoved: folderMoved);
-
-                    summary.Add(renamed > 0
-                        ? $"organized {renamed} mod(s) in {nexusGame}"
-                        : $"mods in {nexusGame} already organized");
-                }
+                StatusMessage = $"Renaming mods in {nexusGame}...";
+                renamedTotal += await _renameService.ReorganizeAndRenameModsAsync(
+                    gameDomainPath,
+                    organizeByCategory: false,
+                    folderMoved: folderMoved);
             }
+
+            summary.Add(renamedTotal > 0
+                ? $"renamed or moved {renamedTotal} NexusMods mod folder(s)"
+                : "NexusMods mods already organized");
 
             StatusMessage = summary.Count > 0
                 ? char.ToUpperInvariant(summary[0][0]) + string.Join("; ", summary)[1..]
