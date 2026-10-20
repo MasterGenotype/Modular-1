@@ -34,6 +34,35 @@ public sealed class CyberpunkGameModule : GameModuleBase
     /// <summary>Launch argument Cyberpunk needs before it will load any REDmod.</summary>
     public const string ModdedLaunchArgument = "-modded";
 
+    /// <summary>Folder holding one subfolder per Cyber Engine Tweaks mod.</summary>
+    public const string CetModsFolder = "bin/x64/plugins/cyber_engine_tweaks/mods/";
+
+    private const string Red4ExtPluginsFolder = "red4ext/plugins/";
+    private const string RedscriptFolder = "r6/scripts/";
+    private const string TweaksFolder = "r6/tweaks/";
+
+    // The top-level game folders mods write into. Only these are scanned for dependencies:
+    // the rest of the install is the game's own and never needs reading.
+    private static readonly string[] ModRootFolders = ["archive", "bin", "engine", "mods", "r6", "red4ext"];
+
+    // The frameworks other mods are built on, each known by a file only it installs. The
+    // names are the ones their NexusMods pages use, so a requirement listed there matches.
+    private static readonly CyberpunkFramework Red4Ext =
+        new("red4ext", "RED4ext", ["red4ext/RED4ext.dll", "bin/x64/winmm.dll"]);
+    private static readonly CyberpunkFramework CyberEngineTweaks =
+        new("cet", "Cyber Engine Tweaks", ["bin/x64/plugins/cyber_engine_tweaks.asi"]);
+    private static readonly CyberpunkFramework Redscript =
+        new("redscript", "redscript", ["engine/tools/scc.exe"]);
+    private static readonly CyberpunkFramework ArchiveXl =
+        new("archivexl", "ArchiveXL", ["red4ext/plugins/ArchiveXL/ArchiveXL.dll"]);
+    private static readonly CyberpunkFramework TweakXl =
+        new("tweakxl", "TweakXL", ["red4ext/plugins/TweakXL/TweakXL.dll"]);
+    private static readonly CyberpunkFramework Codeware =
+        new("codeware", "Codeware", ["red4ext/plugins/Codeware/Codeware.dll"]);
+
+    private static readonly CyberpunkFramework[] Frameworks =
+        [Red4Ext, CyberEngineTweaks, Redscript, ArchiveXl, TweakXl, Codeware];
+
     /// <summary>Creates the module.</summary>
     /// <param name="archiveReaderFactory">Shared archive reader factory.</param>
     public CyberpunkGameModule(IArchiveReaderFactory? archiveReaderFactory = null)
@@ -295,7 +324,7 @@ public sealed class CyberpunkGameModule : GameModuleBase
         }
 
         // Each CET mod is a folder with an init.lua; without it CET skips the folder.
-        const string cetRoot = "bin/x64/plugins/cyber_engine_tweaks/mods/";
+        const string cetRoot = CetModsFolder;
 
         foreach (var modFolder in TopLevelFoldersUnder(gameFiles, cetRoot))
         {
@@ -315,6 +344,215 @@ public sealed class CyberpunkGameModule : GameModuleBase
 
         return diagnostics;
     }
+
+    /// <summary>
+    /// Finds mods on disk whose file types need a framework that is not installed.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>One entry per dependent mod and missing framework.</returns>
+    /// <remarks>
+    /// <para>
+    /// Cyberpunk mods carry no dependency metadata, but most of what they need follows from
+    /// where their files go: a RED4ext plugin needs RED4ext, a CET mod needs Cyber Engine
+    /// Tweaks, <c>.reds</c> sources need redscript, <c>.xl</c> files need ArchiveXL and
+    /// tweak files need TweakXL. Requirements that leave no trace in the files, such as
+    /// Codeware, are only known from the mod's page.
+    /// </para>
+    /// <para>
+    /// The frameworks are themselves RED4ext plugins, so ArchiveXL without RED4ext is
+    /// reported as well.
+    /// </para>
+    /// </remarks>
+    public override IReadOnlyList<UnmetDependency> FindUnmetDependencies(
+        GameInstallation installation)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+
+        var files = ScanModFiles(installation.InstallPath);
+        if (files.Count == 0)
+            return Array.Empty<UnmetDependency>();
+
+        var present = files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return FindDependents(files)
+            .Where(d => !d.Framework.IsPresent(present))
+            .Select(d => new UnmetDependency(d.Name, d.File, d.Framework.Name, d.Framework.Id))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Names the mods present in the game folder, whoever installed them.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>
+    /// The installed frameworks by their NexusMods names, then the folder names of RED4ext
+    /// plugins, CET mods, redscript mods, tweaks and REDmods, and the names of legacy archives.
+    /// </returns>
+    /// <remarks>
+    /// Cyberpunk mods have no name of their own besides their folder or file, which is
+    /// usually the mod's name in some spelling. The caller compares names with case and
+    /// punctuation removed, so <c>input_loader</c> matches "Input Loader".
+    /// </remarks>
+    public override IReadOnlyList<string> ListPresentModNames(GameInstallation installation)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+
+        var files = ScanModFiles(installation.InstallPath);
+        if (files.Count == 0)
+            return Array.Empty<string>();
+
+        var present = files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var names = Frameworks.Where(f => f.IsPresent(present)).Select(f => f.Name).ToList();
+
+        foreach (var folder in new[] { Red4ExtPluginsFolder, CetModsFolder, RedscriptFolder, TweaksFolder, "mods/" })
+            names.AddRange(GroupUnder(files, folder, _ => true).Select(u => u.Name));
+
+        names.AddRange(files
+            .Where(f => IsDirectlyIn(f, LegacyArchiveFolder) &&
+                        f.EndsWith(".archive", StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetFileNameWithoutExtension)
+            .OfType<string>());
+
+        return names
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Every mod on disk that needs a framework, with the framework it needs.
+    /// </summary>
+    /// <param name="files">Root-relative paths under the mod folders, in ordinal order.</param>
+    /// <returns>The dependents, each with one of its files to identify which mod it is.</returns>
+    private static IEnumerable<CyberpunkDependent> FindDependents(IReadOnlyList<string> files)
+    {
+        // A RED4ext plugin is a folder (or a lone DLL) under red4ext/plugins.
+        foreach (var unit in GroupUnder(files, Red4ExtPluginsFolder, f => HasExtension(f, ".dll")))
+            yield return new CyberpunkDependent(unit.Name, unit.File, Red4Ext);
+
+        // A CET mod is a folder with an init.lua; CET's own files sit outside mods/.
+        foreach (var folder in TopLevelFoldersUnder(files, CetModsFolder))
+        {
+            var modFiles = files
+                .Where(f => f.StartsWith($"{CetModsFolder}{folder}/", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!modFiles.Any(f => IsNamed(f, "init.lua")))
+                continue;
+
+            // Every CET mod has an init.lua, so any other file says better which mod it is.
+            var file = modFiles.FirstOrDefault(f => !IsNamed(f, "init.lua")) ?? modFiles[0];
+            yield return new CyberpunkDependent(folder, Path.GetFileName(file), CyberEngineTweaks);
+        }
+
+        foreach (var unit in GroupUnder(files, RedscriptFolder, f => HasExtension(f, ".reds")))
+            yield return new CyberpunkDependent(unit.Name, unit.File, Redscript);
+
+        foreach (var unit in GroupUnder(files, TweaksFolder,
+                     f => HasExtension(f, ".yaml") || HasExtension(f, ".yml") || HasExtension(f, ".tweak")))
+        {
+            yield return new CyberpunkDependent(unit.Name, unit.File, TweakXl);
+        }
+
+        // ArchiveXL reads .xl files beside the archives, usually named <archive>.archive.xl.
+        foreach (var file in files.Where(f =>
+                     IsDirectlyIn(f, LegacyArchiveFolder) && HasExtension(f, ".xl")))
+        {
+            var name = Path.GetFileName(file);
+            var stem = name[..^".xl".Length];
+            if (stem.EndsWith(".archive", StringComparison.OrdinalIgnoreCase))
+                stem = stem[..^".archive".Length];
+
+            yield return new CyberpunkDependent(stem, name, ArchiveXl);
+        }
+    }
+
+    /// <summary>
+    /// Groups the matching files below a folder by the mod they belong to.
+    /// </summary>
+    /// <param name="files">Root-relative paths in ordinal order.</param>
+    /// <param name="prefix">Folder holding one mod per subfolder, ending in a slash.</param>
+    /// <param name="matches">Which files count.</param>
+    /// <returns>
+    /// One entry per subfolder, or per file placed directly in the folder, with the file
+    /// name of its first matching file.
+    /// </returns>
+    private static IEnumerable<(string Name, string File)> GroupUnder(
+        IReadOnlyList<string> files, string prefix, Func<string, bool> matches) =>
+        files
+            .Where(f => f.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                        f.Length > prefix.Length && matches(f))
+            .GroupBy(f =>
+            {
+                var rest = f[prefix.Length..];
+                var slash = rest.IndexOf('/');
+                return slash >= 0 ? rest[..slash] : Path.GetFileNameWithoutExtension(rest);
+            }, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.Key, Path.GetFileName(g.First())));
+
+    /// <summary>
+    /// Lists every file under the folders mods write into.
+    /// </summary>
+    /// <param name="installPath">The game root.</param>
+    /// <returns>Root-relative paths with forward slashes, in ordinal order.</returns>
+    /// <remarks>
+    /// Folder names are matched without case: a mod packed with <c>R6/</c> or
+    /// <c>Red4ext/</c> still works under Proton, so it still counts here.
+    /// </remarks>
+    private static List<string> ScanModFiles(string installPath)
+    {
+        var files = new List<string>();
+
+        try
+        {
+            if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
+                return files;
+
+            foreach (var root in Directory.EnumerateDirectories(installPath))
+            {
+                if (!ModRootFolders.Contains(Path.GetFileName(root), StringComparer.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                    files.Add(Path.GetRelativePath(installPath, file).Replace('\\', '/'));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable folder cannot be checked; the check is advisory.
+        }
+
+        files.Sort(StringComparer.Ordinal);
+        return files;
+    }
+
+    private static bool IsDirectlyIn(string path, string folder)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash >= 0 && string.Equals(path[..slash], folder, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasExtension(string path, string extension) =>
+        path.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsNamed(string path, string name) =>
+        string.Equals(Path.GetFileName(path), name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A framework other mods need, known by the files only it installs.</summary>
+    /// <param name="Id">Identifier reported for the missing framework.</param>
+    /// <param name="Name">The framework's name on NexusMods.</param>
+    /// <param name="Markers">Root-relative files; any one of them means it is installed.</param>
+    private sealed record CyberpunkFramework(string Id, string Name, string[] Markers)
+    {
+        public bool IsPresent(IReadOnlySet<string> files) => Markers.Any(files.Contains);
+    }
+
+    /// <summary>A mod on disk that needs a framework.</summary>
+    /// <param name="Name">The mod's folder or file name.</param>
+    /// <param name="File">File name of one of its files.</param>
+    /// <param name="Framework">The framework it needs.</param>
+    private sealed record CyberpunkDependent(string Name, string File, CyberpunkFramework Framework);
 
     /// <summary>
     /// The deployed <c>.archive</c> filenames in engine priority order.
