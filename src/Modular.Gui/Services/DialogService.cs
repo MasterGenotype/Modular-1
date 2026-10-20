@@ -346,7 +346,8 @@ public class DialogService : IDialogService
     }
 
     public async Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
-        string title, string message, List<string> mainItems, List<string> optionalItems)
+        string title, string message, List<string> mainItems, List<string> optionalItems,
+        int? preselectedMain = null)
     {
         var window = GetMainWindow();
         if (window == null) return null;
@@ -356,10 +357,11 @@ public class DialogService : IDialogService
 
         // Each dialog gets its own group, so radio buttons never couple across windows.
         var group = $"main-{Guid.NewGuid():N}";
-        var radios = mainItems.Select(text => new RadioButton
+        var radios = mainItems.Select((text, index) => new RadioButton
         {
             GroupName = group,
             Content = new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+            IsChecked = index == preselectedMain,
             FontSize = 12
         }).ToList();
 

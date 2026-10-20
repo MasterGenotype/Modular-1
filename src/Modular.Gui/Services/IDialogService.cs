@@ -69,10 +69,12 @@ public interface IDialogService
     /// <param name="message">Description message.</param>
     /// <param name="mainItems">Main files; one of them is required.</param>
     /// <param name="optionalItems">Optional files; any number may be ticked.</param>
+    /// <param name="preselectedMain">The main file picked to begin with, if any.</param>
     /// <returns>
     /// The picked main index (null when there are no main files) and the ticked optional
     /// indices, or null if cancelled.
     /// </returns>
     Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
-        string title, string message, List<string> mainItems, List<string> optionalItems);
+        string title, string message, List<string> mainItems, List<string> optionalItems,
+        int? preselectedMain = null);
 }

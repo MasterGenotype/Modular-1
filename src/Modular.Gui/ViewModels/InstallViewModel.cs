@@ -22,6 +22,7 @@ public partial class InstallViewModel : ViewModelBase
     private readonly IDialogService? _dialogService;
     private readonly AppSettings? _settings;
     private readonly ModMetadataCache? _metadataCache;
+    private readonly Modular.Core.Backends.BackendRegistry? _backends;
 
     [ObservableProperty]
     private ObservableCollection<string> _archivePaths = new();
@@ -88,8 +89,10 @@ public partial class InstallViewModel : ViewModelBase
         SteamGameScanner scanner,
         IDialogService dialogService,
         AppSettings settings,
-        ModMetadataCache metadataCache)
+        ModMetadataCache metadataCache,
+        Modular.Core.Backends.BackendRegistry backends)
     {
+        _backends = backends;
         _installService = installService;
         _scanner = scanner;
         _dialogService = dialogService;
@@ -422,10 +425,20 @@ public partial class InstallViewModel : ViewModelBase
             pathsToInstall = selectedIndices.Select(idx => pathsToInstall[idx]).ToList();
         }
 
+        // Several archives of one mod are usually versions of it, not parts: ask which.
+        (pathsToInstall, var notChosen) = await ChooseArchivesPerModAsync(pathsToInstall);
+        if (pathsToInstall.Count == 0)
+        {
+            StatusMessage = "Installation cancelled";
+            return;
+        }
+
         IsInstalling = true;
         IsAborting = false;
         InstallProgress = 0;
         InstallResults.Clear();
+        if (notChosen.Count > 0)
+            InstallResults.Add($"Not installed (no archive chosen): {string.Join(", ", notChosen)}");
         TotalArchives = pathsToInstall.Count;
         CurrentArchiveIndex = 0;
 
@@ -611,6 +624,144 @@ public partial class InstallViewModel : ViewModelBase
         }
         return $"{size:F1} {suffixes[i]}";
     }
+    /// <summary>
+    /// Asks, for each mod with more than one archive in the list, which of them to install.
+    /// </summary>
+    /// <param name="paths">The archives to install.</param>
+    /// <returns>
+    /// The archives to install, in their original order, and the mods left out because
+    /// nothing was chosen for them.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// A mod page often offers its versions as separate files, "Mod A - Light" beside
+    /// "Mod A - Dark". Installed together, both versions load, or one silently replaces the
+    /// other, so only one should go in. Add-ons offered as optional files can go with it.
+    /// </para>
+    /// <para>
+    /// When the mod's page says what each file is, its versions (main files and old
+    /// versions) are offered as a pick-one, with the main file picked to begin with, and its
+    /// other files as add-ons to tick. Without that, every archive can be ticked and the
+    /// newest one is, to begin with. Cancelling leaves that mod out of the install.
+    /// </para>
+    /// </remarks>
+    private async Task<(List<string> Paths, List<string> NotChosen)> ChooseArchivesPerModAsync(List<string> paths)
+    {
+        if (_dialogService == null || paths.Count < 2)
+            return (paths, []);
+
+        // Only mods with more than one archive have their page read; the rest pass straight through.
+        if (ArchiveGrouper.Identify(paths, _settings?.ModsDirectory).All(g => g.Archives.Count < 2))
+            return (paths, []);
+
+        StatusMessage = "Checking which archives belong to the same mod...";
+
+        IReadOnlyList<ArchiveGroup> groups;
+        try
+        {
+            groups = await new ArchiveGrouper(_backends?.GetAll() ?? [], _settings?.ModsDirectory)
+                .GroupAsync(paths);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (paths, []);
+        }
+
+        var keep = new HashSet<string>(StringComparer.Ordinal);
+        var skipped = new List<string>();
+
+        foreach (var group in groups)
+        {
+            if (group.Archives.Count == 1)
+            {
+                keep.Add(group.Archives[0].Path);
+                continue;
+            }
+
+            var picked = group.KnowsFileTypes
+                ? await ChooseByFileTypeAsync(group)
+                : await ChooseAnyAsync(group);
+
+            if (picked.Count == 0)
+                skipped.Add(group.Name);
+
+            keep.UnionWith(picked);
+        }
+
+        return (paths.Where(keep.Contains).ToList(), skipped);
+    }
+
+    // The page said what each file is: one version, plus any add-ons.
+    private async Task<List<string>> ChooseByFileTypeAsync(ArchiveGroup group)
+    {
+        var versions = group.Archives
+            .Where(a => a.IsVersion)
+            .OrderBy(a => string.Equals(a.Category, "main", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenByDescending(a => File.GetLastWriteTimeUtc(a.Path))
+            .ToList();
+        var addOns = group.Archives.Where(a => !a.IsVersion).ToList();
+
+        // One main file is the obvious pick; with several, the person chooses.
+        var mains = versions.Count(a => string.Equals(a.Category, "main", StringComparison.OrdinalIgnoreCase));
+
+        var choice = await _dialogService!.ShowFileChoiceAsync(
+            "Choose Version",
+            $"'{group.Name}' has {group.Archives.Count} archives queued. Its versions go in the same place, " +
+            "so install one, plus any add-ons you want with it.",
+            versions.Select(Describe).ToList(),
+            addOns.Select(Describe).ToList(),
+            mains == 1 ? 0 : null);
+
+        if (choice == null)
+            return [];
+
+        var picked = new List<string>();
+        if (choice.Value.Main is int main && main >= 0 && main < versions.Count)
+            picked.Add(versions[main].Path);
+        picked.AddRange(choice.Value.Optional
+            .Where(i => i >= 0 && i < addOns.Count)
+            .Select(i => addOns[i].Path));
+
+        return picked;
+    }
+
+    // Nothing says what the files are: any may be ticked, the newest to begin with.
+    private async Task<List<string>> ChooseAnyAsync(ArchiveGroup group)
+    {
+        var archives = group.Archives
+            .OrderByDescending(a => File.GetLastWriteTimeUtc(a.Path))
+            .ToList();
+
+        var picked = await _dialogService!.ShowMultiSelectAsync(
+            "Choose Archives",
+            $"'{group.Name}' has {archives.Count} archives queued. Archives of one mod are usually " +
+            "different versions of it, and installing more than one loads both or lets one replace " +
+            "the other. Tick the version you want, and any add-ons that go with it.",
+            archives.Select(Describe).ToList(),
+            [0]);
+
+        return picked
+            .Where(i => i >= 0 && i < archives.Count)
+            .Select(i => archives[i].Path)
+            .ToList();
+    }
+
+    private static string Describe(QueuedArchive archive)
+    {
+        var name = Path.GetFileName(archive.Path);
+        var size = File.Exists(archive.Path) ? FormatFileSize(new FileInfo(archive.Path).Length) : "missing";
+        var label = !string.IsNullOrWhiteSpace(archive.Label) &&
+                    !string.Equals(archive.Label, name, StringComparison.OrdinalIgnoreCase)
+            ? $"{archive.Label} — {name}"
+            : name;
+
+        return archive.Category switch
+        {
+            null => $"{label}  ({size})",
+            var category => $"{label}  ({size}, {category.Replace('_', ' ')})"
+        };
+    }
+
     // Asks which alternative to install when an archive offers several, such as the same
     // pak in an "Option A" and an "Option B" folder. Cancelling any question cancels the
     // install, since there is no telling which one was wanted.
