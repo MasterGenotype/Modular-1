@@ -896,6 +896,22 @@ Configuration is stored in `~/.config/Modular/config.json`:
 
 **Configuration Precedence:** Environment variables > Config file > Defaults
 
+### Mods directory layout
+
+Every download goes in `<mods_directory>/<backend>/<game>/<mod>/`:
+
+- `<backend>` is `nexusmods`, `gamebanana` or `modio`.
+- `<game>` is the NexusMods game domain (`cyberpunk2077`), or for GameBanana and mod.io the
+  game's name reduced to lower-case letters and digits (`baldursgate3`).
+- `<mod>` is the mod's name. NexusMods downloads start as the mod id and are renamed (and
+  sorted into category folders with `organize_by_category`) once the download finishes.
+
+Downloads from older versions sat in `<mods_directory>/<game>/` (NexusMods) or
+`<mods_directory>/gamebanana/<mod>/` and `<mods_directory>/modio/<mod>/`. **Re-organize** in the
+Library view (or `modular rename`) moves them into the layout above and updates installed mods
+to follow their archives. A GameBanana or mod.io mod whose game cannot be found from your
+subscriptions is left where it is.
+
 ### Configuration Options
 
 | Option | Type | Default | Description |
@@ -905,7 +921,7 @@ Configuration is stored in `~/.config/Modular/config.json`:
 | `modio_access_token` | string | - | mod.io OAuth access token |
 | `modio_api_key` | string | - | mod.io API key |
 | `modio_game_ids` | int[] | `[]` | mod.io game ids used when none is given (Baldur's Gate 3 is 6715) |
-| `modio_download_dir` | string | `modio` | Subdirectory for mod.io downloads |
+| `modio_download_dir` | string | `modio` | Where mod.io downloads went before the backend/game layout; only read by Re-organize |
 | `download_path` | string | `~/Mods` | Base directory for downloads |
 | `organize_by_category` | bool | `false` | Create category subdirectories |
 | `auto_rename` | bool | `true` | Rename mod folders to human-readable names |

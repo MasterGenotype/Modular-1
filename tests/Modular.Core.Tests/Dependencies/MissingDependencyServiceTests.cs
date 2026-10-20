@@ -99,14 +99,19 @@ public sealed class MissingDependencyServiceTests
         item.Notes.Should().BeEquivalentTo("a", "b");
     }
 
-    [Fact]
-    public async Task ARequirementAlreadyDownloaded_NamesItsArchivesInsteadOfBeingFetchedAgain()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARequirementAlreadyDownloaded_NamesItsArchivesInsteadOfBeingFetchedAgain(bool backendLayout)
     {
         var mods = Directory.CreateTempSubdirectory("modular-deps").FullName;
         try
         {
+            // nexusmods/<game>/…, or <game>/… in a mods directory not yet reorganized.
+            var gameRoot = backendLayout ? Path.Combine(mods, "nexusmods", Domain) : Path.Combine(mods, Domain);
+
             // One archive known by its NexusMods name, one renamed and known by its record.
-            var gameDir = Directory.CreateDirectory(Path.Combine(mods, Domain, "Patches")).FullName;
+            var gameDir = Directory.CreateDirectory(Path.Combine(gameRoot, "Patches")).FullName;
             var named = Path.Combine(gameDir, "P4 Patches-353-4-0-1717339071.zip");
             var renamed = Path.Combine(gameDir, "renamed.zip");
             File.WriteAllText(named, string.Empty);
@@ -194,14 +199,16 @@ public sealed class MissingDependencyServiceTests
         report.Errors.Should().ContainSingle().Which.Should().Contain("rate limited");
     }
 
-    [Fact]
-    public async Task WithoutAGameModule_TheDownloadFolderNamesTheGame()
+    [Theory]
+    [InlineData("/mods/nexusmods/skyrimspecialedition/Utilities/Thing/Thing-100-1-0-1700000000.zip")]
+    [InlineData("/mods/skyrimspecialedition/Thing-100-1-0-1700000000.zip")]
+    public async Task WithoutAGameModule_TheDownloadFolderNamesTheGame(string archivePath)
     {
         var record = new ChangesetRecord
         {
             ChangesetId = "c1",
             ModId = "Thing",
-            ArchivePath = "/mods/skyrimspecialedition/Thing-100-1-0-1700000000.zip",
+            ArchivePath = archivePath,
             TargetDirectory = "/games/unknown"
         };
         var backend = new FakeBackend();
@@ -214,6 +221,27 @@ public sealed class MissingDependencyServiceTests
 
         report.Items.Should().ContainSingle().Which.GameDomain.Should().Be("skyrimspecialedition");
         backend.RequestedDomain.Should().Be("skyrimspecialedition");
+    }
+
+    [Fact]
+    public async Task AnotherHubsDownloadFolder_DoesNotNameANexusModsGame()
+    {
+        // modio/<game> is named after the game, not a NexusMods domain; guessing one from
+        // it would look the mod up on the wrong page.
+        var record = new ChangesetRecord
+        {
+            ChangesetId = "c1",
+            ModId = "Thing",
+            ArchivePath = "/mods/modio/baldursgate3/Thing/Thing-100-1-0-1700000000.zip",
+            TargetDirectory = "/games/unknown"
+        };
+
+        var service = new MissingDependencyService(
+            [new FakeBackend()], (_, _) => Task.FromResult<(GameInstallation, IGameModule)?>(null), "/mods");
+
+        var report = await service.FindAsync([record], [record]);
+
+        report.Untraceable.Should().Equal("Thing");
     }
 
     // ── what the mod files declare ──────────────────────────────────────────

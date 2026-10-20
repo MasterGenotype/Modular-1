@@ -42,8 +42,12 @@ public class AppSettings
     public List<int> GameBananaGameIds { get; set; } = [];
 
     /// <summary>
-    /// Subdirectory name for GameBanana downloads (default: "gamebanana").
+    /// Where GameBanana downloads went before they were sorted by game (default: "gamebanana").
     /// </summary>
+    /// <remarks>
+    /// Downloads now always go in <c>gamebanana/&lt;game&gt;/&lt;mod&gt;</c>. This only tells
+    /// Re-organize where to find older downloads to move.
+    /// </remarks>
     [JsonPropertyName("gamebanana_download_dir")]
     public string GameBananaDownloadDir { get; set; } = "gamebanana";
 
@@ -75,8 +79,12 @@ public class AppSettings
     public string ModIoPlatform { get; set; } = "windows";
 
     /// <summary>
-    /// Subdirectory name for mod.io downloads (default: "modio").
+    /// Where mod.io downloads went before they were sorted by game (default: "modio").
     /// </summary>
+    /// <remarks>
+    /// Downloads now always go in <c>modio/&lt;game&gt;/&lt;mod&gt;</c>. This only tells
+    /// Re-organize where to find older downloads to move.
+    /// </remarks>
     [JsonPropertyName("modio_download_dir")]
     public string ModIoDownloadDir { get; set; } = "modio";
 

@@ -54,7 +54,7 @@ public sealed class FetchCommand : AsyncCommand<FetchCommand.Settings>
 
             foreach (var d in domains)
             {
-                var gameDomainPath = Path.Combine(services.Settings.ModsDirectory, d);
+                var gameDomainPath = renameService.GetGameDomainPath(d);
                 if (!Directory.Exists(gameDomainPath))
                 {
                     LiveProgressDisplay.ShowWarning($"Directory not found: {gameDomainPath}");

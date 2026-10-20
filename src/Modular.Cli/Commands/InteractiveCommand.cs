@@ -55,7 +55,7 @@ public sealed class InteractiveCommand : AsyncCommand
                     {
                         var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache, null);
                         LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
-                        var gameDomainPath = Path.Combine(services.Settings.ModsDirectory, gameDomain);
+                        var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
                         var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, true, CancellationToken.None);
                         LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
                     }
@@ -125,7 +125,7 @@ public sealed class InteractiveCommand : AsyncCommand
 
         foreach (var d in domains)
         {
-            var gameDomainPath = Path.Combine(services.Settings.ModsDirectory, d);
+            var gameDomainPath = renameService.GetGameDomainPath(d);
             if (!Directory.Exists(gameDomainPath))
             {
                 LiveProgressDisplay.ShowWarning($"Directory not found: {gameDomainPath}");

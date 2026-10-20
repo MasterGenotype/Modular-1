@@ -47,9 +47,6 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string _gameBananaGameIds = string.Empty;
 
-    [ObservableProperty]
-    private string _gameBananaDownloadDir = BackendIds.GameBanana;
-
     // mod.io settings
     [ObservableProperty]
     private string _modIoApiKey = string.Empty;
@@ -62,9 +59,6 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _modIoGameIds = string.Empty;
-
-    [ObservableProperty]
-    private string _modIoDownloadDir = BackendIds.ModIo;
 
     // Backend settings
     [ObservableProperty]
@@ -218,7 +212,6 @@ public partial class SettingsViewModel : ViewModelBase
         GameBananaGameIds = _settings.GameBananaGameIds.Count > 0
             ? string.Join(", ", _settings.GameBananaGameIds)
             : string.Empty;
-        GameBananaDownloadDir = _settings.GameBananaDownloadDir ?? "gamebanana";
 
         // mod.io
         ModIoApiKey = _settings.ModIoApiKey ?? string.Empty;
@@ -226,7 +219,6 @@ public partial class SettingsViewModel : ViewModelBase
         ModIoGameIds = _settings.ModIoGameIds.Count > 0
             ? string.Join(", ", _settings.ModIoGameIds)
             : string.Empty;
-        ModIoDownloadDir = _settings.ModIoDownloadDir ?? "modio";
 
         // Backends
         NexusModsBackendEnabled = _settings.EnabledBackends.Contains(BackendIds.NexusMods);
@@ -261,13 +253,11 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnNexusSsoEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnGameBananaUserIdChanged(string value) => HasUnsavedChanges = true;
     partial void OnGameBananaGameIdsChanged(string value) => HasUnsavedChanges = true;
-    partial void OnGameBananaDownloadDirChanged(string value) => HasUnsavedChanges = true;
     partial void OnNexusModsBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnGameBananaBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnModIoApiKeyChanged(string value) => HasUnsavedChanges = true;
     partial void OnModIoAccessTokenChanged(string value) => HasUnsavedChanges = true;
     partial void OnModIoGameIdsChanged(string value) => HasUnsavedChanges = true;
-    partial void OnModIoDownloadDirChanged(string value) => HasUnsavedChanges = true;
     partial void OnModIoBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnModsDirectoryChanged(string value) => HasUnsavedChanges = true;
     partial void OnDefaultCategoriesChanged(string value) => HasUnsavedChanges = true;
@@ -364,13 +354,11 @@ public partial class SettingsViewModel : ViewModelBase
             // GameBanana
             _settings.GameBananaUserId = GameBananaUserId;
             _settings.GameBananaGameIds = ParseIntList(GameBananaGameIds);
-            _settings.GameBananaDownloadDir = GameBananaDownloadDir;
 
             // mod.io
             _settings.ModIoApiKey = ModIoApiKey.Trim();
             _settings.ModIoAccessToken = ModIoAccessToken.Trim();
             _settings.ModIoGameIds = ParseIntList(ModIoGameIds);
-            _settings.ModIoDownloadDir = ModIoDownloadDir;
 
             // Backends
             _settings.EnabledBackends = BuildEnabledBackends();

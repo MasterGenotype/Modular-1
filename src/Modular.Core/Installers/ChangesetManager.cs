@@ -169,6 +169,40 @@ public class ChangesetManager
     }
 
     /// <summary>
+    /// Points every record of an archive inside a folder at the folder's new location.
+    /// </summary>
+    /// <param name="oldFolder">Where the folder was.</param>
+    /// <param name="newFolder">Where it is now.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the rows are updated.</returns>
+    /// <remarks>
+    /// Matched on the folder path with a trailing separator, so moving <c>mods/a</c> leaves
+    /// archives under <c>mods/ab</c> alone. Compared with <c>substr</c> rather than
+    /// <c>LIKE</c>, because paths are full of the <c>_</c> and <c>%</c> LIKE treats as wildcards.
+    /// </remarks>
+    public async Task RelocateArchiveFolderAsync(string oldFolder, string newFolder, CancellationToken ct = default)
+    {
+        var oldPrefix = Path.TrimEndingDirectorySeparator(oldFolder) + Path.DirectorySeparatorChar;
+        var newPrefix = Path.TrimEndingDirectorySeparator(newFolder) + Path.DirectorySeparatorChar;
+
+        var connection = await _database.GetConnectionAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE changeset
+               SET archive_path = @new || substr(archive_path, length(@old) + 1), updated_at_utc = @now
+             WHERE substr(archive_path, 1, length(@old)) = @old;
+            UPDATE snapshot_entry
+               SET archive_path = @new || substr(archive_path, length(@old) + 1)
+             WHERE substr(archive_path, 1, length(@old)) = @old;
+            """;
+        cmd.Parameters.AddWithValue("@old", oldPrefix);
+        cmd.Parameters.AddWithValue("@new", newPrefix);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
     /// Gets a changeset by ID.
     /// </summary>
     public async Task<ChangesetRecord?> GetChangesetAsync(string changesetId, CancellationToken ct = default)

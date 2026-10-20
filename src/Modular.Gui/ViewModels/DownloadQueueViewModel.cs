@@ -19,6 +19,7 @@ using Modular.Gui.Models;
 using Modular.Gui.Services;
 using Modular.Sdk.Backends;
 using Modular.Core.Dependencies.Conventions;
+using Modular.Core.Installers;
 
 namespace Modular.Gui.ViewModels;
 
@@ -35,6 +36,7 @@ public partial class DownloadQueueViewModel : ViewModelBase
     private readonly DownloadHistoryService? _historyService;
     private readonly DownloadDatabase? _downloadDatabase;
     private readonly IDialogService? _dialogService;
+    private readonly ChangesetManager? _changesets;
     private readonly ResumableDownloader _downloader;
     private readonly ConcurrentQueue<DownloadItemModel> _pendingQueue = new();
     private readonly SemaphoreSlim _downloadSemaphore = new(1, 1); // Single concurrent download
@@ -104,9 +106,11 @@ public partial class DownloadQueueViewModel : ViewModelBase
         DownloadHistoryService historyService,
         DownloadDatabase downloadDatabase,
         ResumableDownloader downloader,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        ChangesetManager changesets)
     {
         _dialogService = dialogService;
+        _changesets = changesets;
         _nexusBackend = nexusBackend;
         _gameBananaBackend = gameBananaBackend;
         _modIoBackend = modIoBackend;
@@ -243,20 +247,26 @@ public partial class DownloadQueueViewModel : ViewModelBase
             try
             {
                 StatusMessage = $"Organizing mods in {domain}...";
-                var gameDomainPath = Path.Combine(_settings.ModsDirectory, domain);
-                
+                var gameDomainPath = _renameService.GetGameDomainPath(domain);
+
                 if (!Directory.Exists(gameDomainPath))
                     continue;
-                    
+
+                // Installed mods keep the path of the archive they came from; follow moves.
+                Func<string, string, CancellationToken, Task>? folderMoved = _changesets == null
+                    ? null
+                    : _changesets.RelocateArchiveFolderAsync;
+
                 // Reorganize and rename mods
                 var renamed = await _renameService.ReorganizeAndRenameModsAsync(
-                    gameDomainPath, 
-                    _settings.OrganizeByCategory);
-                    
+                    gameDomainPath,
+                    _settings.OrganizeByCategory,
+                    folderMoved: folderMoved);
+
                 // Also rename category folders if organizing by category
                 if (_settings.OrganizeByCategory)
                 {
-                    await _renameService.RenameCategoryFoldersAsync(gameDomainPath);
+                    await _renameService.RenameCategoryFoldersAsync(gameDomainPath, folderMoved: folderMoved);
                 }
                 
                 StatusMessage = renamed > 0 
@@ -327,21 +337,26 @@ public partial class DownloadQueueViewModel : ViewModelBase
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 "Games", "Mods-Lists");
 
+            // <mods>/<backend>/<game>/<mod>. NexusMods mod folders start as the mod id and
+            // are renamed once the batch is done; the other hubs' are named after the mod.
             string modOutputDir;
             if (item.Mod.BackendId == BackendIds.GameBanana)
             {
-                var gbDir = _settings?.GameBananaDownloadDir ?? "gamebanana";
-                modOutputDir = Path.Combine(outputDir, gbDir, FileUtils.SanitizeDirectoryName(item.Mod.Name));
+                modOutputDir = ModLibraryLayout.ModFolder(
+                    outputDir, BackendIds.GameBanana, item.GameDomain ?? item.Mod.GameDomain, item.Mod.Name);
             }
             else if (item.Mod.BackendId == BackendIds.ModIo)
             {
-                var modIoDir = string.IsNullOrEmpty(_settings?.ModIoDownloadDir) ? "modio" : _settings.ModIoDownloadDir;
-                modOutputDir = Path.Combine(outputDir, modIoDir, FileUtils.SanitizeDirectoryName(item.Mod.Name));
+                // mod.io games are numbered; the folder is named after the game.
+                var gameName = _modIoBackend != null
+                    ? await _modIoBackend.GetGameNameAsync(item.GameDomain, itemToken)
+                    : item.GameDomain;
+                modOutputDir = ModLibraryLayout.ModFolder(outputDir, BackendIds.ModIo, gameName, item.Mod.Name);
             }
             else
             {
-                // NexusMods: domain/modId structure
-                modOutputDir = Path.Combine(outputDir, item.GameDomain ?? "unknown", item.Mod.ModId);
+                modOutputDir = ModLibraryLayout.ModFolder(
+                    outputDir, BackendIds.NexusMods, item.GameDomain, item.Mod.ModId);
             }
 
             var fileName = item.File?.FileName ?? $"{item.Mod.ModId}.zip";
@@ -837,12 +852,20 @@ public partial class DownloadQueueViewModel : ViewModelBase
         if (File.Exists(path))
             return path;
 
-        // Reorganizing after a batch renames NexusMods mod folders, so look for the file by name.
+        // Reorganizing renames NexusMods mod folders and moves old-layout folders, so look
+        // for the file by name: in the game's folder for NexusMods, whose ids are per game,
+        // and anywhere in the hub's folder for the others.
         var modsDir = _settings?.ModsDirectory;
-        if (string.IsNullOrEmpty(modsDir) || string.IsNullOrEmpty(item.GameDomain))
+        if (string.IsNullOrEmpty(modsDir))
             return null;
 
-        var domainDir = Path.Combine(modsDir, item.GameDomain);
+        var isNexus = string.IsNullOrEmpty(item.Mod.BackendId) || item.Mod.BackendId == BackendIds.NexusMods;
+        if (isNexus && string.IsNullOrEmpty(item.GameDomain))
+            return null;
+
+        var domainDir = isNexus
+            ? ModLibraryLayout.GameFolder(modsDir, BackendIds.NexusMods, item.GameDomain)
+            : ModLibraryLayout.BackendFolder(modsDir, item.Mod.BackendId);
         if (!Directory.Exists(domainDir))
             return null;
 

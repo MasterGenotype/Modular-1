@@ -166,6 +166,21 @@ public class ModIoDownload
 }
 
 /// <summary>
+/// A game.
+/// </summary>
+public class ModIoGame
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("name_id")]
+    public string? NameId { get; set; }
+}
+
+/// <summary>
 /// A mod another mod depends on.
 /// </summary>
 public class ModIoDependency

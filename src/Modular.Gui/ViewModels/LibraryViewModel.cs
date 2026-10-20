@@ -5,8 +5,12 @@ using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Backends;
+using Modular.Core.Installers;
 using Modular.Core.Services;
+using Modular.Core.Utilities;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 
 namespace Modular.Gui.ViewModels;
 
@@ -21,6 +25,8 @@ public partial class LibraryViewModel : ViewModelBase
     private readonly DownloadDatabase? _downloadDatabase;
     private readonly ModMetadataCache? _metadataCache;
     private readonly ModCollectionRepository? _collectionRepository;
+    private readonly BackendRegistry? _backends;
+    private readonly ChangesetManager? _changesets;
 
     [ObservableProperty]
     private ObservableCollection<GameDomainItem> _gameDomains = new();
@@ -45,6 +51,10 @@ public partial class LibraryViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _statusMessage = "Select a game to view downloaded mods";
+
+    /// <summary>Whether some downloads are still in a layout from before backend folders.</summary>
+    [ObservableProperty]
+    private bool _hasOldLayout;
 
     [ObservableProperty]
     private string _modsDirectory = string.Empty;
@@ -71,8 +81,8 @@ public partial class LibraryViewModel : ViewModelBase
     public LibraryViewModel()
     {
         ModsDirectory = "~/Games/Mods-Lists";
-        GameDomains.Add(new GameDomainItem { Name = "skyrimspecialedition", ModCount = 42 });
-        GameDomains.Add(new GameDomainItem { Name = "fallout4", ModCount = 15 });
+        GameDomains.Add(new GameDomainItem { Name = "skyrimspecialedition", BackendId = BackendIds.NexusMods, ModCount = 42 });
+        GameDomains.Add(new GameDomainItem { Name = "baldursgate3", BackendId = BackendIds.ModIo, ModCount = 15 });
         ModFolders.Add(new ModFolderItem { Name = "SkyUI", Path = "/mods/skyui", FileCount = 3 });
     }
 
@@ -83,8 +93,12 @@ public partial class LibraryViewModel : ViewModelBase
         IDialogService dialogService,
         DownloadDatabase downloadDatabase,
         ModMetadataCache metadataCache,
-        ModCollectionRepository collectionRepository)
+        ModCollectionRepository collectionRepository,
+        BackendRegistry backends,
+        ChangesetManager changesets)
     {
+        _backends = backends;
+        _changesets = changesets;
         _settings = settings;
         _renameService = renameService;
         _dialogService = dialogService;
@@ -98,28 +112,60 @@ public partial class LibraryViewModel : ViewModelBase
 
     private void LoadGameDomains()
     {
-        if (_renameService == null || string.IsNullOrEmpty(ModsDirectory)) return;
+        if (string.IsNullOrEmpty(ModsDirectory)) return;
 
         GameDomains.Clear();
         try
         {
-            var domains = _renameService.GetGameDomainNames();
-            foreach (var domain in domains)
+            // <mods>/<backend>/<game>
+            foreach (var game in ModLibraryLayout.ListGames(ModsDirectory))
             {
-                var domainPath = Path.Combine(ModsDirectory, domain);
-                var modCount = Directory.Exists(domainPath)
-                    ? Directory.GetDirectories(domainPath).Length
-                    : 0;
-
                 GameDomains.Add(new GameDomainItem
                 {
-                    Name = domain,
-                    Path = domainPath,
-                    ModCount = modCount
+                    Name = game.Game,
+                    BackendId = game.BackendId,
+                    Path = game.Path,
+                    ModCount = Directory.GetDirectories(game.Path).Length
                 });
             }
 
-            StatusMessage = $"Found {GameDomains.Count} game domains";
+            // Downloads still in an old layout are listed too, so they can be browsed
+            // until Re-organize moves them.
+            var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(_settings);
+
+            foreach (var folder in ModLibraryMigrator.LegacyNexusFolders(ModsDirectory, legacyFlat))
+            {
+                GameDomains.Add(new GameDomainItem
+                {
+                    Name = Path.GetFileName(folder),
+                    BackendId = BackendIds.NexusMods,
+                    Path = folder,
+                    ModCount = Directory.GetDirectories(folder).Length,
+                    IsOldLayout = true
+                });
+            }
+
+            foreach (var (folderName, backendId) in legacyFlat)
+            {
+                var mods = ModLibraryMigrator.LegacyModFolders(ModsDirectory, folderName).ToList();
+                if (mods.Count == 0)
+                    continue;
+
+                GameDomains.Add(new GameDomainItem
+                {
+                    Name = folderName,
+                    BackendId = backendId,
+                    Path = Path.Combine(ModsDirectory, folderName),
+                    ModCount = mods.Count,
+                    IsOldLayout = true,
+                    OnlyModFolders = mods
+                });
+            }
+
+            HasOldLayout = GameDomains.Any(g => g.IsOldLayout);
+            StatusMessage = HasOldLayout
+                ? $"Found {GameDomains.Count} game folders. Some are in the old layout: Re-organize moves them into <backend>/<game> folders."
+                : $"Found {GameDomains.Count} game folders";
         }
         catch (Exception ex)
         {
@@ -163,6 +209,16 @@ public partial class LibraryViewModel : ViewModelBase
 
         try
         {
+            // An old flat folder also holds new game folders; only its mods belong here.
+            if (domain.OnlyModFolders != null)
+            {
+                foreach (var modDir in domain.OnlyModFolders.Where(Directory.Exists))
+                    AddModFolder(modDir);
+
+                StatusMessage = $"{ModFolders.Count} mods in {domain.DisplayName}";
+                return;
+            }
+
             foreach (var dir in Directory.GetDirectories(domain.Path))
             {
                 var dirName = Path.GetFileName(dir);
@@ -190,7 +246,7 @@ public partial class LibraryViewModel : ViewModelBase
                 }
             }
 
-            StatusMessage = $"{ModFolders.Count} mods in {domain.Name}";
+            StatusMessage = $"{ModFolders.Count} mods in {domain.DisplayName}";
         }
         catch (Exception ex)
         {
@@ -276,7 +332,8 @@ public partial class LibraryViewModel : ViewModelBase
         // Try to extract mod ID from folder name
         var folderName = mod.Name;
         int? modId = null;
-        string? gameDomain = SelectedDomain?.Name;
+        // Mod metadata and download history are kept by NexusMods game domain.
+        string? gameDomain = SelectedDomain?.BackendId == BackendIds.NexusMods ? SelectedDomain.Name : null;
 
         if (int.TryParse(folderName, out var numericId))
         {
@@ -410,49 +467,100 @@ public partial class LibraryViewModel : ViewModelBase
     [RelayCommand]
     private async Task ReorganizeModsAsync()
     {
-        if (SelectedDomain == null || _renameService == null || _dialogService == null || _settings == null) return;
+        if (_renameService == null || _dialogService == null || _settings == null || string.IsNullOrEmpty(ModsDirectory))
+            return;
+
+        var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(_settings);
+        var migrate = ModLibraryMigrator.NeedsMigration(ModsDirectory, legacyFlat);
+
+        // Only NexusMods mods are renamed and sorted by category; the other hubs' folders
+        // are already named after the mod.
+        var selected = SelectedDomain;
+        var nexusGame = selected?.BackendId == BackendIds.NexusMods ? selected.Name : null;
+
+        if (!migrate && nexusGame == null)
+        {
+            StatusMessage = selected == null
+                ? "Every download is already in a <backend>/<game> folder. Select a NexusMods game to sort its mods into categories."
+                : $"Mods in {selected.DisplayName} are already organized";
+            return;
+        }
+
+        var steps = new List<string>();
+        if (migrate)
+            steps.Add("move downloads into <backend>/<game>/<mod> folders");
+        if (nexusGame != null)
+            steps.Add($"rename the mods in '{nexusGame}' and sort them into category folders");
 
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Re-organize Mods",
-            $"This will reorganize mods in '{SelectedDomain.Name}' into category folders and rename them. Continue?");
+            $"This will {string.Join(", then ", steps)}. Installed mods are updated to follow their archives. Continue?");
 
         if (!confirmed) return;
 
-        var gameDomain = SelectedDomain.Name;
-        var gameDomainPath = SelectedDomain.Path;
+        // Installed mods keep the path of the archive they came from; every move updates it.
+        Func<string, string, CancellationToken, Task>? folderMoved = _changesets == null
+            ? null
+            : _changesets.RelocateArchiveFolderAsync;
+
+        var summary = new List<string>();
 
         try
         {
             IsReorganizing = true;
 
-            // Fetch and cache metadata for all mods first (same as download flow)
-            StatusMessage = $"Fetching mod metadata for {gameDomain}...";
-            await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, gameDomain);
-
-            // Reorganize and rename mods (matches download flow)
-            StatusMessage = $"Reorganizing mods in {gameDomain}...";
-            var renamed = await _renameService.ReorganizeAndRenameModsAsync(
-                gameDomainPath,
-                _settings.OrganizeByCategory);
-
-            // Rename category folders from Category_N to actual names
-            if (_settings.OrganizeByCategory)
+            if (migrate)
             {
-                await _renameService.RenameCategoryFoldersAsync(gameDomainPath);
+                StatusMessage = "Moving downloads into backend and game folders...";
+
+                var lookup = _backends == null
+                    ? null
+                    : new BackendLibraryGameLookup(_backends.GetAll(), _settings);
+                var result = await new ModLibraryMigrator(lookup, folderMoved)
+                    .MigrateAsync(ModsDirectory, legacyFlat);
+
+                summary.Add($"moved {result.Moved} folder(s)");
+                if (result.Unresolved.Count > 0)
+                    summary.Add($"{result.Unresolved.Count} mod(s) left in place because their game is unknown");
+                if (result.Errors.Count > 0)
+                {
+                    summary.Add($"{result.Errors.Count} move(s) failed");
+                    await _dialogService.ShowErrorAsync(
+                        "Some folders could not be moved", string.Join("\n", result.Errors.Take(20)));
+                }
             }
 
-            StatusMessage = renamed > 0
-                ? $"Organized {renamed} mod(s) in {gameDomain}"
-                : $"Mods in {gameDomain} already organized";
-
-            // Refresh the mod list to reflect the new structure
-            LoadModFolders(SelectedDomain);
-
-            // Update the mod count on the domain item
-            if (Directory.Exists(gameDomainPath))
+            if (nexusGame != null)
             {
-                SelectedDomain.ModCount = Directory.GetDirectories(gameDomainPath).Length;
+                // The game's folder may have just moved under nexusmods/.
+                var gameDomainPath = _renameService.GetGameDomainPath(nexusGame);
+
+                if (Directory.Exists(gameDomainPath))
+                {
+                    // Fetch and cache metadata for all mods first (same as download flow)
+                    StatusMessage = $"Fetching mod metadata for {nexusGame}...";
+                    await _renameService.FetchAndCacheMetadataAsync(gameDomainPath, nexusGame);
+
+                    // Reorganize and rename mods (matches download flow)
+                    StatusMessage = $"Reorganizing mods in {nexusGame}...";
+                    var renamed = await _renameService.ReorganizeAndRenameModsAsync(
+                        gameDomainPath,
+                        _settings.OrganizeByCategory,
+                        folderMoved: folderMoved);
+
+                    // Rename category folders from Category_N to actual names
+                    if (_settings.OrganizeByCategory)
+                        await _renameService.RenameCategoryFoldersAsync(gameDomainPath, folderMoved: folderMoved);
+
+                    summary.Add(renamed > 0
+                        ? $"organized {renamed} mod(s) in {nexusGame}"
+                        : $"mods in {nexusGame} already organized");
+                }
             }
+
+            StatusMessage = summary.Count > 0
+                ? char.ToUpperInvariant(summary[0][0]) + string.Join("; ", summary)[1..]
+                : "Nothing to re-organize";
         }
         catch (Exception ex)
         {
@@ -463,6 +571,26 @@ public partial class LibraryViewModel : ViewModelBase
         {
             IsReorganizing = false;
         }
+
+        // Folders have moved: list them again and keep the same game selected.
+        var message = StatusMessage;
+        // An old flat folder is no game, so there is nothing to select again.
+        var reselect = selected is { IsOldLayout: true } && selected.BackendId != BackendIds.NexusMods
+            ? null
+            : selected;
+
+        RefreshLibrary();
+        StatusMessage = message;
+
+        if (reselect != null)
+        {
+            SelectedDomain = GameDomains.FirstOrDefault(g =>
+                g.BackendId == reselect.BackendId &&
+                string.Equals(g.Name, reselect.Name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Selecting a game reports its mod count; the outcome matters more.
+        StatusMessage = message;
     }
 
     [RelayCommand]
@@ -520,11 +648,42 @@ public partial class LibraryViewModel : ViewModelBase
 /// </summary>
 public class GameDomainItem
 {
+    /// <summary>The game folder's name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The backend the mods were downloaded from.</summary>
+    public string BackendId { get; set; } = string.Empty;
+
     public string Path { get; set; } = string.Empty;
     public int ModCount { get; set; }
 
-    public override string ToString() => $"{Name} ({ModCount} mods)";
+    /// <summary>Whether the folder is in a layout from before backend folders existed.</summary>
+    public bool IsOldLayout { get; set; }
+
+    /// <summary>
+    /// The mod folders to list, when the folder holds other things too: an old flat
+    /// GameBanana or mod.io folder also holds the new game folders.
+    /// </summary>
+    public IReadOnlyList<string>? OnlyModFolders { get; set; }
+
+    /// <summary>The backend's name as its site writes it.</summary>
+    public string BackendName => BackendId switch
+    {
+        BackendIds.NexusMods => "NexusMods",
+        BackendIds.GameBanana => "GameBanana",
+        BackendIds.ModIo => "mod.io",
+        _ => BackendId
+    };
+
+    /// <summary>The line under the name: backend, and whether it still needs moving.</summary>
+    public string Caption => IsOldLayout
+        ? $"{BackendName} · old layout · {ModCount} mods"
+        : $"{BackendName} · {ModCount} mods";
+
+    /// <summary>The game and the backend it came from.</summary>
+    public string DisplayName => $"{Name} ({BackendName})";
+
+    public override string ToString() => $"{DisplayName} ({ModCount} mods)";
 }
 
 /// <summary>

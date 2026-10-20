@@ -100,3 +100,4 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 - Config file: `~/.config/Modular/config.json`
 - Plugins directory: `~/.config/Modular/plugins/`
 - Default download path: `~/Mods`
+- Downloads are laid out `<mods>/<backend>/<game>/<mod>` (`ModLibraryLayout`); `ModLibraryMigrator` moves older layouts, driven by Library → Re-organize and `modular rename`

@@ -8,6 +8,7 @@ using Modular.Core.GameDetection;
 using Modular.Core.Installers;
 using Modular.Core.Snapshots;
 using Modular.Core.Utilities;
+using Modular.Sdk.Backends;
 using Modular.Gui.Services;
 using Modular.Sdk.Collections;
 using Modular.Sdk.Installers;
@@ -249,7 +250,8 @@ public partial class InstallViewModel : ViewModelBase
         var archives = new List<string>();
         if (string.IsNullOrEmpty(modsDir) || !Directory.Exists(modsDir)) return archives;
 
-        var gameDomainPath = Path.Combine(modsDir, collection.GameId);
+        // Collections are NexusMods collections, downloaded under nexusmods/<game>.
+        var gameDomainPath = ModLibraryLayout.GameFolder(modsDir, BackendIds.NexusMods, collection.GameId);
         if (!Directory.Exists(gameDomainPath)) return archives;
 
         // Build a modId → directory path map that includes both numeric

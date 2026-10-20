@@ -39,7 +39,8 @@ modular download --backend modio 6715       # subscriptions for Baldur's Gate 3
 modular search -b modio -g 6715 "party limit"
 ```
 
-Downloads land in `{mods_directory}/{modio_download_dir}/{mod name}/`.
+Downloads land in `{mods_directory}/modio/{game}/{mod name}/`, where `{game}` is the game's name
+reduced to lower-case letters and digits (`baldursgate3`). See "Mods directory layout" in the README.
 
 In the GUI, the **mod.io** page has a Subscriptions tab and a Search tab; credentials and
 game ids are under Settings → mod.io.

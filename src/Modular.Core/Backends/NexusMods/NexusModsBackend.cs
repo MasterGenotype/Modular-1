@@ -310,7 +310,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                 continue;
             }
 
-            var modOutputDir = Path.Combine(outputDirectory, gameDomain, mod.ModId);
+            var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, gameDomain, mod.ModId);
             var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
 
             if (options.DryRun)

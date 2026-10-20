@@ -141,7 +141,7 @@ public class ModCollectionService
             }
 
             var fileName = entry.FileName ?? $"{entry.ModId}_{fileId}";
-            var modDir = Path.Combine(outputDirectory, collection.GameId, entry.ModId);
+            var modDir = ModLibraryLayout.ModFolder(outputDirectory, _backend.Id, collection.GameId, entry.ModId);
             var outputPath = Path.Combine(modDir, FileUtils.SanitizeFilename(fileName));
 
             try
@@ -182,7 +182,7 @@ public class ModCollectionService
         CancellationToken ct = default)
     {
         var results = new List<(ModCollectionEntry entry, bool exists, bool md5Match)>();
-        var gameDomainPath = Path.Combine(outputDirectory, collection.GameId);
+        var gameDomainPath = ModLibraryLayout.GameFolder(outputDirectory, _backend.Id, collection.GameId);
 
         // Build a modId → directory path map that includes renamed/categorized directories
         var modDirMap = BuildModDirectoryMap(collection.GameId, outputDirectory);
@@ -203,7 +203,9 @@ public class ModCollectionService
             // Fallback: original numeric path
             if (!exists)
             {
-                filePath = Path.Combine(outputDirectory, collection.GameId, entry.ModId, sanitizedFileName);
+                filePath = Path.Combine(
+                    ModLibraryLayout.ModFolder(outputDirectory, _backend.Id, collection.GameId, entry.ModId),
+                    sanitizedFileName);
                 exists = File.Exists(filePath);
             }
 
@@ -267,7 +269,7 @@ public class ModCollectionService
     private Dictionary<string, string> BuildModDirectoryMap(string gameId, string outputDirectory)
     {
         var map = new Dictionary<string, string>();
-        var gameDomainPath = Path.Combine(outputDirectory, gameId);
+        var gameDomainPath = ModLibraryLayout.GameFolder(outputDirectory, _backend.Id, gameId);
         if (!Directory.Exists(gameDomainPath)) return map;
 
         ModMetadata? MetadataLookup(string dirName) =>

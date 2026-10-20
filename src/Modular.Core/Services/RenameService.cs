@@ -7,6 +7,7 @@ using Modular.Core.RateLimiting;
 using Modular.Core.Utilities;
 using Modular.FluentHttp.Implementation;
 using Modular.FluentHttp.Interfaces;
+using Modular.Sdk.Backends;
 
 namespace Modular.Core.Services;
 
@@ -38,12 +39,16 @@ public class RenameService : IRenameService
     }
 
     /// <summary>
-    /// Gets all game domain directories.
+    /// Gets the NexusMods game domains that have a folder under <c>nexusmods/</c>.
     /// </summary>
-    public IEnumerable<string> GetGameDomainNames()
-    {
-        return FileUtils.GetGameDomains(_settings.ModsDirectory);
-    }
+    public IEnumerable<string> GetGameDomainNames() =>
+        FileUtils.GetGameDomains(ModLibraryLayout.BackendFolder(_settings.ModsDirectory, BackendIds.NexusMods));
+
+    /// <summary>
+    /// Gets the folder holding a NexusMods game's downloads.
+    /// </summary>
+    public string GetGameDomainPath(string gameDomain) =>
+        ModLibraryLayout.GameFolder(_settings.ModsDirectory, BackendIds.NexusMods, gameDomain);
 
     /// <summary>
     /// Gets all mod ID directories within a game domain.
@@ -248,7 +253,11 @@ public class RenameService : IRenameService
     /// Searches both top-level directories and inside category subdirectories.
     /// Supports both numeric (unrenamed) and named (already renamed) directories.
     /// </summary>
-    public async Task<int> ReorganizeAndRenameModsAsync(string gameDomainPath, bool organizeByCategory = true, CancellationToken ct = default)
+    public async Task<int> ReorganizeAndRenameModsAsync(
+        string gameDomainPath,
+        bool organizeByCategory = true,
+        CancellationToken ct = default,
+        Func<string, string, CancellationToken, Task>? folderMoved = null)
     {
         var gameDomain = Path.GetFileName(gameDomainPath);
         
@@ -339,7 +348,13 @@ public class RenameService : IRenameService
             {
                 try
                 {
-                    if (FileUtils.MoveDirectory(oldPath, newPath))
+                    var complete = FileUtils.MoveDirectory(oldPath, newPath);
+
+                    // Installed mods keep their archive's path, which this just changed.
+                    if (folderMoved != null)
+                        await folderMoved(oldPath, newPath, ct);
+
+                    if (complete)
                     {
                         _logger?.LogInformation("{Action}: {OldName} -> {Category}/{ModName}",
                             isRenamed ? "Reorganized" : "Renamed",
@@ -415,7 +430,10 @@ public class RenameService : IRenameService
     /// <summary>
     /// Renames category folders from Category_N to actual category names.
     /// </summary>
-    public async Task<int> RenameCategoryFoldersAsync(string gameDomainPath, CancellationToken ct = default)
+    public async Task<int> RenameCategoryFoldersAsync(
+        string gameDomainPath,
+        CancellationToken ct = default,
+        Func<string, string, CancellationToken, Task>? folderMoved = null)
     {
         var gameDomain = Path.GetFileName(gameDomainPath);
         var categories = await GetOrFetchGameCategoriesAsync(gameDomain, ct);
@@ -433,7 +451,12 @@ public class RenameService : IRenameService
                     {
                         try
                         {
-                            if (FileUtils.MoveDirectory(dir, newPath))
+                            var complete = FileUtils.MoveDirectory(dir, newPath);
+
+                            if (folderMoved != null)
+                                await folderMoved(dir, newPath, ct);
+
+                            if (complete)
                             {
                                 _logger?.LogInformation("Renamed category: {OldName} -> {NewName}", dirName, catName);
                                 renamedCount++;

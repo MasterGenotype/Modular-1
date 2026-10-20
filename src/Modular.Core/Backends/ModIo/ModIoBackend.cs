@@ -46,6 +46,9 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     // enough once the mod has been seen.
     private readonly ConcurrentDictionary<string, long> _gameOfMod = new(StringComparer.Ordinal);
 
+    // Each game's name, for naming its folder in the mods directory.
+    private readonly ConcurrentDictionary<long, string> _gameNames = new();
+
     /// <summary>
     /// Creates the backend.
     /// </summary>
@@ -170,7 +173,7 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     /// <remarks>
     /// Downloads the live file of every subscribed mod, which is what the game's own mod
     /// manager would install. Archives land in
-    /// <c>{output}/{modio_download_dir}/{mod name}/</c>.
+    /// <c>{output}/modio/{game}/{mod name}/</c>; see <see cref="ModLibraryLayout"/>.
     /// </remarks>
     public async Task DownloadModsAsync(
         string outputDirectory,
@@ -206,7 +209,6 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
 
         options.StatusCallback?.Invoke($"Ready to download {work.Count} files.");
 
-        var downloadDir = string.IsNullOrEmpty(_settings.ModIoDownloadDir) ? "modio" : _settings.ModIoDownloadDir;
         var completed = 0;
         var total = work.Count;
 
@@ -214,7 +216,8 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         {
             ct.ThrowIfCancellationRequested();
 
-            var modOutputDir = Path.Combine(outputDirectory, downloadDir, FileUtils.SanitizeDirectoryName(mod.Name));
+            var gameName = await GetGameNameAsync(mod.GameDomain, ct);
+            var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, gameName, mod.Name);
             var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
 
             // Partial downloads live in a separate .part file, so an existing file is complete.
@@ -447,6 +450,41 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
 
         _logger?.LogInformation("Fetched {Count} subscribed mods from mod.io", mods.Count);
         return mods;
+    }
+
+    /// <summary>
+    /// Gets a game's name, which names its folder in the mods directory.
+    /// </summary>
+    /// <param name="gameDomain">The mod.io game id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The name, or the id itself when the game cannot be looked up, so a download is
+    /// never held up by it.
+    /// </returns>
+    public async Task<string?> GetGameNameAsync(string? gameDomain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(gameDomain) ||
+            !long.TryParse(gameDomain.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var gameId) ||
+            gameId <= 0)
+        {
+            return gameDomain;
+        }
+
+        if (_gameNames.TryGetValue(gameId, out var known))
+            return known;
+
+        try
+        {
+            var game = await _client.GetAsync<ModIoGame>(gameId, $"games/{gameId}", ct: ct);
+            if (!string.IsNullOrWhiteSpace(game.Name))
+                return _gameNames[gameId] = game.Name;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Could not look up mod.io game {GameId}", gameId);
+        }
+
+        return gameDomain;
     }
 
     private async Task<ModIoMod?> GetModAsync(string modId, string? gameDomain, CancellationToken ct)

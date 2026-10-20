@@ -177,8 +177,9 @@ public sealed class MissingDependencyService
     /// Resolves the game an installed changeset belongs to, or <c>null</c> when it cannot.
     /// </param>
     /// <param name="modsDirectory">
-    /// The download directory, laid out as <c>&lt;root&gt;/&lt;game domain&gt;/…</c>. Used to
-    /// tell which game an archive is for when no game module claims it.
+    /// The download directory, laid out as <c>&lt;root&gt;/&lt;backend&gt;/&lt;game&gt;/…</c> (see
+    /// <see cref="ModLibraryLayout"/>). Used to find archives already downloaded, and to tell
+    /// which game an archive is for when no game module claims it.
     /// </param>
     /// <param name="logger">Optional logger.</param>
     /// <param name="archiveReaderFactory">Opens mod archives to read the metadata packed in them.</param>
@@ -539,8 +540,9 @@ public sealed class MissingDependencyService
             if (string.IsNullOrEmpty(item.GameDomain) || item.BackendId == null || item.ModId == null)
                 continue;
 
-            if (!downloads.TryGetValue(item.GameDomain, out var index))
-                downloads[item.GameDomain] = index = IndexDownloads(item.GameDomain);
+            var downloadsKey = $"{item.BackendId}|{item.GameDomain}";
+            if (!downloads.TryGetValue(downloadsKey, out var index))
+                downloads[downloadsKey] = index = IndexDownloads(item.BackendId, item.GameDomain);
 
             if (index.TryGetValue((item.BackendId.ToLowerInvariant(), item.ModId), out var archives))
                 item.DownloadedArchives = archives;
@@ -648,18 +650,42 @@ public sealed class MissingDependencyService
 
     // Lists a game's downloaded archives by the hub mod each came from, newest first. The
     // download record beside a file says which mod; failing that, a NexusMods file name does.
-    private Dictionary<(string Backend, string ModId), List<string>> IndexDownloads(string gameDomain)
+    private Dictionary<(string Backend, string ModId), List<string>> IndexDownloads(string backendId, string gameDomain)
     {
         var index = new Dictionary<(string Backend, string ModId), List<string>>();
         if (string.IsNullOrEmpty(_modsDirectory))
             return index;
 
-        var root = Path.Combine(_modsDirectory, gameDomain);
-        if (!Directory.Exists(root))
-            return index;
+        // NexusMods ids are per game, so only that game's folder can hold the mod; the
+        // folder of a mods directory not yet reorganized is looked in too. Other hubs'
+        // ids are site-wide, and their game folders are named after the game rather than
+        // its id, so all of the hub's folder is looked in.
+        var roots = string.Equals(backendId, NexusBackendId, StringComparison.OrdinalIgnoreCase)
+            ? new[]
+            {
+                ModLibraryLayout.GameFolder(_modsDirectory, NexusBackendId, gameDomain),
+                Path.Combine(_modsDirectory, gameDomain)
+            }
+            : [ModLibraryLayout.BackendFolder(_modsDirectory, backendId)];
 
         var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
 
+        foreach (var root in roots.Where(Directory.Exists))
+        {
+            IndexDownloadsIn(root, options, index);
+        }
+
+        foreach (var archives in index.Values)
+            archives.Sort((a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
+
+        return index;
+    }
+
+    private void IndexDownloadsIn(
+        string root,
+        EnumerationOptions options,
+        Dictionary<(string Backend, string ModId), List<string>> index)
+    {
         try
         {
             foreach (var file in Directory.EnumerateFiles(root, "*", options))
@@ -679,16 +705,11 @@ public sealed class MissingDependencyService
 
                 archives.Add(file);
             }
-
-            foreach (var archives in index.Values)
-                archives.Sort((a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _logger?.LogDebug(ex, "Could not list downloads in {Root}", root);
         }
-
-        return index;
     }
 
     // Records and partial data the downloader keeps beside a file, which are not mods.
@@ -763,12 +784,23 @@ public sealed class MissingDependencyService
         if (string.IsNullOrEmpty(_modsDirectory) || string.IsNullOrEmpty(archivePath))
             return null;
 
+        if (ModLibraryLayout.Locate(_modsDirectory, archivePath) is { } located)
+        {
+            return string.Equals(located.BackendId, NexusBackendId, StringComparison.OrdinalIgnoreCase)
+                ? located.Game
+                : null;
+        }
+
+        // A mods directory not yet reorganized keeps NexusMods games in the root.
+
         var relative = Path.GetRelativePath(Path.GetFullPath(_modsDirectory), Path.GetFullPath(archivePath));
         if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
             return null;
 
         var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return parts.Length > 1 ? parts[0] : null;
+        return parts.Length > 1 && !parts[0].StartsWith('.') && !ModLibraryLayout.IsBackendFolder(parts[0])
+            ? parts[0]
+            : null;
     }
 
     private static bool SameGame(ChangesetRecord a, ChangesetRecord b) =>

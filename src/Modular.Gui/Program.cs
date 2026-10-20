@@ -237,7 +237,12 @@ sealed class Program
         services.AddSingleton(sp =>
         {
             var db = sp.GetRequiredService<ModularDatabase>();
-            var changesetManager = new ChangesetManager(db);
+            return new ChangesetManager(db, sp.GetService<ILogger<ChangesetManager>>());
+        });
+        services.AddSingleton(sp =>
+        {
+            var db = sp.GetRequiredService<ModularDatabase>();
+            var changesetManager = sp.GetRequiredService<ChangesetManager>();
             var logger = sp.GetService<ILogger<SnapshotManager>>();
             return new SnapshotManager(db, changesetManager, logger);
         });

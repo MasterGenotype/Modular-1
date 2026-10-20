@@ -491,11 +491,8 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
                 continue;
             }
 
-            // Use mod name as directory (sanitized)
-            var downloadDir = string.IsNullOrEmpty(_settings.GameBananaDownloadDir)
-                ? "gamebanana"
-                : _settings.GameBananaDownloadDir;
-            var modOutputDir = Path.Combine(outputDirectory, downloadDir, FileUtils.SanitizeDirectoryName(mod.Name));
+            // GameBanana names the game a mod is for; the mod's name names its folder.
+            var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, mod.GameDomain, mod.Name);
             var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
 
             // Check if file exists (simple check - no database tracking for GameBanana yet).

@@ -169,7 +169,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                     var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache,
                         services.LoggerFactory?.CreateLogger<RenameService>());
                     LiveProgressDisplay.ShowInfo($"Auto-organizing and renaming mods in {gameDomain}...");
-                    var gameDomainPath = Path.Combine(services.Settings.ModsDirectory, gameDomain);
+                    var gameDomainPath = renameService.GetGameDomainPath(gameDomain);
                     var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, services.Settings.OrganizeByCategory, cts.Token);
                     LiveProgressDisplay.ShowSuccess($"Successfully processed {renamed} mods in {gameDomain}");
 

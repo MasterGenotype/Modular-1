@@ -2,13 +2,16 @@ using System.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Modular.Cli.Infrastructure;
 using Modular.Cli.UI;
+using Modular.Core.Database;
+using Modular.Core.Installers;
 using Modular.Core.Services;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands;
 
 /// <summary>
-/// Renames mod folders to human-readable names.
+/// Moves downloads into <c>&lt;backend&gt;/&lt;game&gt;/&lt;mod&gt;</c> folders, then renames
+/// NexusMods mod folders to human-readable names.
 /// </summary>
 public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
 {
@@ -46,6 +49,33 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
             var renameService = new RenameService(services.Settings, services.RateLimiter, services.MetadataCache,
                 services.LoggerFactory?.CreateLogger<RenameService>());
 
+            // Installed mods keep the path of the archive they came from; every move updates it.
+            var dbPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config", "Modular", "modular.db");
+            var db = new ModularDatabase(dbPath);
+            await db.InitializeAsync();
+            var changesets = new ChangesetManager(db);
+
+            // Downloads from before backend folders existed move first, so the NexusMods
+            // games among them are found below.
+            var legacyFlat = ModLibraryMigrator.LegacyFlatFolders(services.Settings);
+            if (ModLibraryMigrator.NeedsMigration(services.Settings.ModsDirectory, legacyFlat))
+            {
+                LiveProgressDisplay.ShowInfo("Moving downloads into <backend>/<game> folders...");
+                var migration = await new ModLibraryMigrator(
+                        new BackendLibraryGameLookup(services.CreateBackendRegistry().GetAll(), services.Settings),
+                        changesets.RelocateArchiveFolderAsync,
+                        services.LoggerFactory?.CreateLogger<ModLibraryMigrator>())
+                    .MigrateAsync(services.Settings.ModsDirectory, legacyFlat, cts.Token);
+
+                LiveProgressDisplay.ShowSuccess($"Moved {migration.Moved} folder(s)");
+                foreach (var unresolved in migration.Unresolved)
+                    LiveProgressDisplay.ShowWarning($"Left in place, game unknown: {unresolved}");
+                foreach (var error in migration.Errors)
+                    LiveProgressDisplay.ShowError(error);
+            }
+
             IEnumerable<string> domains;
             if (!string.IsNullOrEmpty(settings.Domain))
             {
@@ -58,7 +88,7 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
 
             foreach (var d in domains)
             {
-                var gameDomainPath = Path.Combine(services.Settings.ModsDirectory, d);
+                var gameDomainPath = renameService.GetGameDomainPath(d);
                 if (!Directory.Exists(gameDomainPath))
                 {
                     LiveProgressDisplay.ShowWarning($"Directory not found: {gameDomainPath}");
@@ -66,10 +96,12 @@ public sealed class RenameCommand : AsyncCommand<RenameCommand.Settings>
                 }
 
                 LiveProgressDisplay.ShowInfo($"Processing {d}...");
-                var renamed = await renameService.ReorganizeAndRenameModsAsync(gameDomainPath, settings.OrganizeByCategory, cts.Token);
+                var renamed = await renameService.ReorganizeAndRenameModsAsync(
+                    gameDomainPath, settings.OrganizeByCategory, cts.Token, changesets.RelocateArchiveFolderAsync);
                 LiveProgressDisplay.ShowSuccess($"Renamed {renamed} mods in {d}");
 
-                var catRenamed = await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
+                var catRenamed = await renameService.RenameCategoryFoldersAsync(
+                    gameDomainPath, cts.Token, changesets.RelocateArchiveFolderAsync);
                 LiveProgressDisplay.ShowSuccess($"Renamed {catRenamed} category folders");
             }
 

@@ -522,6 +522,9 @@ public List<int> GameBananaGameIds { get; set; } = [];
 public string GameBananaDownloadDir { get; set; } = "gamebanana";
 ```
 
+Downloads go in `{mods_directory}/gamebanana/{game}/{mod name}/`. `gamebanana_download_dir` only
+names where older downloads were, for Re-organize to move them.
+
 Config file entry (`~/.config/Modular/config.json`):
 
 ```json

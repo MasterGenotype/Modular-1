@@ -5,6 +5,7 @@ using Modular.Cli.UI;
 using Modular.Core.Configuration;
 using Modular.Core.Dependencies;
 using Modular.Core.Profiles;
+using Modular.Core.Utilities;
 using Spectre.Console.Cli;
 
 namespace Modular.Cli.Commands.Profile;
@@ -49,15 +50,13 @@ public sealed class ProfileExportCommand : AsyncCommand<ProfileExportCommand.Set
                 Mods = new List<ProfileMod>()
             };
 
-            // Scan the mods directory for installed mods
+            // Scan the mods directory, laid out as <backend>/<game>/<mod>
             if (Directory.Exists(appSettings.ModsDirectory))
             {
-                foreach (var gameDir in Directory.GetDirectories(appSettings.ModsDirectory))
+                foreach (var game in ModLibraryLayout.ListGames(appSettings.ModsDirectory))
                 {
-                    var gameDomain = Path.GetFileName(gameDir);
-                    if (gameDomain.StartsWith('.'))
-                        continue;
-                    foreach (var modDir in Directory.GetDirectories(gameDir))
+                    var gameDomain = game.Game;
+                    foreach (var modDir in Directory.GetDirectories(game.Path))
                     {
                         var modName = Path.GetFileName(modDir);
                         profile.Mods.Add(new ProfileMod

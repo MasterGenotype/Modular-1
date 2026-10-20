@@ -46,10 +46,7 @@
                                     <mi:MaterialIcon Kind="Folder" Width="16" Height="16" Opacity="0.7"/>
                                     <StackPanel>
                                         <TextBlock Text="{Binding Name}"/>
-                                        <TextBlock FontSize="11" Opacity="0.6">
-                                            <Run Text="{Binding ModCount}"/>
-                                            <Run Text=" mods"/>
-                                        </TextBlock>
+                                        <TextBlock FontSize="11" Opacity="0.6" Text="{Binding Caption}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </DataTemplate>
@@ -66,9 +63,8 @@
                         <TextBlock Grid.Column="0" Text="Mods" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         <Button Grid.Column="1"
                                 Command="{Binding ReorganizeModsCommand}"
-                                IsVisible="{Binding SelectedDomain, Converter={x:Static ObjectConverters.IsNotNull}}"
                                 IsEnabled="{Binding !IsReorganizing}"
-                                ToolTip.Tip="Reorganize mods into category folders"
+                                ToolTip.Tip="Move downloads into &lt;backend&gt;/&lt;game&gt;/&lt;mod&gt; folders, and sort the selected NexusMods game's mods into category folders"
                                 Padding="6,4">
                             <StackPanel Orientation="Horizontal" Spacing="5">
                                 <mi:MaterialIcon Kind="FolderSwap" Width="14" Height="14"/>

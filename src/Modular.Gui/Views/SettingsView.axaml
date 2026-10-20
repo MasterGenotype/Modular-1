@@ -182,13 +182,6 @@
                                      ToolTip.Tip="Filter subscriptions by game ID. Leave empty for all games."/>
                         </StackPanel>
 
-                        <StackPanel>
-                            <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
-                            <TextBox Text="{Binding GameBananaDownloadDir}"
-                                     Width="200" HorizontalAlignment="Left"
-                                     Watermark="gamebanana"/>
-                        </StackPanel>
-
                         <TextBlock Text="Find your user ID in your GameBanana profile URL"
                                    FontSize="12" Opacity="0.6"/>
                     </StackPanel>
@@ -242,13 +235,6 @@
                                      Width="300" HorizontalAlignment="Left"
                                      Watermark="e.g., 6715"
                                      ToolTip.Tip="mod.io game ids to use for subscriptions and search. Baldur's Gate 3 is 6715."/>
-                        </StackPanel>
-
-                        <StackPanel>
-                            <TextBlock Text="Download Subdirectory" Margin="0,0,0,5"/>
-                            <TextBox Text="{Binding ModIoDownloadDir}"
-                                     Width="200" HorizontalAlignment="Left"
-                                     Watermark="modio"/>
                         </StackPanel>
 
                         <TextBlock Text="Create a token or key at mod.io/me/access. Subscriptions need the OAuth access token."
