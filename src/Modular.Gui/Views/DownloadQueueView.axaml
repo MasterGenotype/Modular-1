@@ -15,25 +15,24 @@
 
     <Grid RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,*">
         <!-- History Statistics -->
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+        <Border Classes="card" Grid.Row="0" Grid.ColumnSpan="2" Padding="12" Margin="0,0,0,10">
             <Grid ColumnDefinitions="*,*,*,*,Auto">
                 <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding TotalHistoryDownloads}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalHistoryDownloads}" Classes="stat" HorizontalAlignment="Center"/>
                     <TextBlock Text="Total Downloads" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding SuccessfulHistoryDownloads}" FontSize="24" FontWeight="Bold" 
-                               Foreground="Green" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding SuccessfulHistoryDownloads}" Classes="stat" 
+                               Foreground="{DynamicResource SuccessBrush}" HorizontalAlignment="Center"/>
                     <TextBlock Text="Successful" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding FailedHistoryDownloads}" FontSize="24" FontWeight="Bold" 
-                               Foreground="Red" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding FailedHistoryDownloads}" Classes="stat" 
+                               Foreground="{DynamicResource DangerBrush}" HorizontalAlignment="Center"/>
                     <TextBlock Text="Failed" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="3" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding TotalBytesDownloadedFormatted}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalBytesDownloadedFormatted}" Classes="stat" HorizontalAlignment="Center"/>
                     <TextBlock Text="Total Size" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
                 </StackPanel>
                 <Button Grid.Column="4" Command="{Binding ResetStatisticsCommand}" VerticalAlignment="Center"
@@ -49,9 +48,9 @@
         <!-- Active Downloads Header -->
         <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto" Margin="0,0,8,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                <mi:MaterialIcon Kind="Download" Width="20" Height="20"/>
-                <TextBlock Text="Active Downloads" FontSize="18" FontWeight="SemiBold"/>
-                <Border Background="{DynamicResource SystemAccentColor}" CornerRadius="10" Padding="8,2"
+                <mi:MaterialIcon Kind="Download" Classes="glyph"/>
+                <TextBlock Text="Active Downloads" Classes="h2"/>
+                <Border Classes="badge"
                         IsVisible="{Binding QueuedCount}">
                     <TextBlock Text="{Binding QueuedCount}" FontSize="12"/>
                 </Border>
@@ -61,14 +60,12 @@
         </Grid>
 
         <!-- Active Downloads List -->
-        <Border Grid.Row="2" Grid.Column="0" Margin="0,0,8,0"
-                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="10" MinHeight="150" DragDrop.AllowDrop="True">
+        <Border Classes="card" Grid.Row="2" Grid.Column="0" Margin="0,0,8,0" Padding="10" MinHeight="150" DragDrop.AllowDrop="True">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding ActiveDownloads}" x:Name="ActiveDownloadsList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:DownloadItemModel">
-                            <Border Margin="0,0,0,10" Padding="15" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                            <Border Margin="0,0,0,10" Padding="10,8" Background="{DynamicResource SurfaceRaisedBrush}"
                                     CornerRadius="6"
                                     PointerPressed="OnItemPointerPressed"
                                     Cursor="Hand">
@@ -127,9 +124,9 @@
         <!-- Completed Downloads Header -->
         <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="8,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                <mi:MaterialIcon Kind="CheckCircle" Width="20" Height="20"/>
-                <TextBlock Text="Completed" FontSize="18" FontWeight="SemiBold"/>
-                <Border Background="{DynamicResource SystemAccentColor}" CornerRadius="10" Padding="8,2"
+                <mi:MaterialIcon Kind="CheckCircle" Classes="glyph"/>
+                <TextBlock Text="Completed" Classes="h2"/>
+                <Border Classes="badge"
                         IsVisible="{Binding CompletedCount}">
                     <TextBlock Text="{Binding CompletedCount}" FontSize="12"/>
                 </Border>
@@ -141,23 +138,21 @@
         </Grid>
 
         <!-- Completed Downloads List -->
-        <Border Grid.Row="2" Grid.Column="1" Margin="8,0,0,0"
-                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="10" MinHeight="150">
+        <Border Classes="card" Grid.Row="2" Grid.Column="1" Margin="8,0,0,0" Padding="10" MinHeight="150">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding CompletedDownloads}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:DownloadItemModel">
-                            <Border Margin="0,0,0,5" Padding="15" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                            <Border Margin="0,0,0,5" Padding="10,8" Background="{DynamicResource SurfaceRaisedBrush}"
                                     CornerRadius="6">
                                 <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
                                     <!-- Status icon -->
                                     <Panel Grid.Column="0" Margin="0,0,15,0">
-                                        <mi:MaterialIcon Kind="CheckCircle" Foreground="Green" Width="24" Height="24"
+                                        <mi:MaterialIcon Kind="CheckCircle" Foreground="{DynamicResource SuccessBrush}" Width="24" Height="24"
                                                          IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Completed}}"/>
-                                        <mi:MaterialIcon Kind="AlertCircle" Foreground="Red" Width="24" Height="24"
+                                        <mi:MaterialIcon Kind="AlertCircle" Foreground="{DynamicResource DangerBrush}" Width="24" Height="24"
                                                          IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Failed}}"/>
-                                        <mi:MaterialIcon Kind="Cancel" Foreground="Gray" Width="24" Height="24"
+                                        <mi:MaterialIcon Kind="Cancel" Foreground="{DynamicResource MutedBrush}" Width="24" Height="24"
                                                          IsVisible="{Binding State, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:DownloadItemState.Cancelled}}"/>
                                     </Panel>
 
@@ -167,7 +162,7 @@
                                                    TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Text="{Binding ModName}" FontSize="12" Opacity="0.7"
                                                    TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="Red"
+                                        <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="{DynamicResource DangerBrush}"
                                                    TextWrapping="Wrap"
                                                    IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                     </StackPanel>

@@ -12,15 +12,14 @@
         <vm:TotkViewModel/>
     </Design.DataContext>
 
-    <StackPanel Spacing="20">
+    <StackPanel Spacing="12">
         <!-- Mods in the current profile -->
-        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="20">
-            <StackPanel Spacing="15">
+        <Border Classes="card" Padding="14">
+            <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="*,Auto,Auto">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="LayersTriple" Width="24" Height="24"/>
-                        <TextBlock Text="Mods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="LayersTriple" Classes="glyph"/>
+                        <TextBlock Text="Mods" Classes="h2" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Mods.Count, StringFormat='({0})'}"
                                    VerticalAlignment="Center" Opacity="0.6"/>
                     </StackPanel>
@@ -41,7 +40,7 @@
                 <ItemsControl ItemsSource="{Binding Mods}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:TotkModItem">
-                            <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                     CornerRadius="4" Padding="10,8" Margin="0,2">
                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}"
@@ -95,12 +94,11 @@
         </Border>
 
         <!-- Merge and deploy -->
-        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="20">
+        <Border Classes="card" Padding="14">
             <StackPanel Spacing="12">
                 <StackPanel Orientation="Horizontal" Spacing="10">
-                    <mi:MaterialIcon Kind="SourceMerge" Width="24" Height="24"/>
-                    <TextBlock Text="Merge" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <mi:MaterialIcon Kind="SourceMerge" Classes="glyph"/>
+                    <TextBlock Text="Merge" Classes="h2" VerticalAlignment="Center"/>
                 </StackPanel>
                 <TextBlock Text="{Binding MergeOutputFolder, StringFormat='Output: {0}'}" Opacity="0.6" TextWrapping="Wrap"/>
                 <Grid ColumnDefinitions="*,10,Auto">

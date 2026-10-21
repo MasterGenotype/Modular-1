@@ -1,0 +1,229 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mi="using:Material.Icons.Avalonia">
+
+    <!--
+        Shared styles for the compact "Ember" look. Colours come from
+        Themes/Palette.axaml so light and dark stay in step.
+    -->
+
+    <!-- Base -->
+    <Style Selector="Window">
+        <Setter Property="Background" Value="{DynamicResource CanvasBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <!-- Typography -->
+    <Style Selector="TextBlock.title">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="LetterSpacing" Value="-0.3"/>
+    </Style>
+    <Style Selector="TextBlock.h2">
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.eyebrow">
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="LetterSpacing" Value="1.6"/>
+        <Setter Property="Foreground" Value="{DynamicResource FaintBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.caption">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.stat">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="LetterSpacing" Value="-0.4"/>
+    </Style>
+
+    <!-- Section icon next to an h2 -->
+    <Style Selector="mi|MaterialIcon.glyph">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+    </Style>
+
+    <!-- Cards -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="14"/>
+    </Style>
+    <Style Selector="Border.callout">
+        <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+        <Setter Property="BorderThickness" Value="1,1,1,1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="14"/>
+    </Style>
+    <Style Selector="Border.pill">
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="999"/>
+        <Setter Property="Padding" Value="8,1"/>
+    </Style>
+    <Style Selector="Border.pill TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Border.badge">
+        <Setter Property="Background" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="CornerRadius" Value="999"/>
+        <Setter Property="Padding" Value="7,1"/>
+    </Style>
+    <Style Selector="Border.badge TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- Buttons: accent is the signature gradient -->
+    <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="Button.accent">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}"/>
+        <Setter Property="Opacity" Value="0.9"/>
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}"/>
+        <Setter Property="Opacity" Value="0.8"/>
+    </Style>
+    <Style Selector="Button.accent:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Opacity" Value="0.4"/>
+    </Style>
+
+    <!-- Sidebar navigation -->
+    <Style Selector="Button.nav">
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding" Value="12,7"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Panel>
+                    <Border Name="PART_Background"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="7">
+                        <Border.Transitions>
+                            <Transitions>
+                                <BrushTransition Property="Background" Duration="0:0:0.12"/>
+                            </Transitions>
+                        </Border.Transitions>
+                    </Border>
+                    <Border Name="PART_Indicator"
+                            Width="3" Height="16" CornerRadius="2"
+                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Background="{DynamicResource AccentGradientVerticalBrush}"
+                            Opacity="0">
+                        <Border.Transitions>
+                            <Transitions>
+                                <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+                            </Transitions>
+                        </Border.Transitions>
+                    </Border>
+                    <ContentPresenter Name="PART_ContentPresenter"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      Padding="{TemplateBinding Padding}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="Center"
+                                      Foreground="{TemplateBinding Foreground}"/>
+                </Panel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button.nav mi|MaterialIcon">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+    </Style>
+    <Style Selector="Button.nav:pointerover">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ Border#PART_Background">
+        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.active">
+        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.active /template/ Border#PART_Background">
+        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.active /template/ Border#PART_Indicator">
+        <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <Style Selector="Button.nav.active mi|MaterialIcon">
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.active TextBlock">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- Tabs: small labels with a gradient underline -->
+    <Style Selector="TabControl">
+        <Setter Property="Padding" Value="0,8,0,0"/>
+    </Style>
+    <Style Selector="TabItem">
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+    </Style>
+    <Style Selector="TabItem:pointerover">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+    </Style>
+    <Style Selector="TabItem:selected">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
+        <Setter Property="Background" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="Height" Value="2"/>
+        <Setter Property="CornerRadius" Value="1"/>
+    </Style>
+    <!-- "TabItem > StackPanel" is the header; tab content is a view, so it stays untouched -->
+    <Style Selector="TabItem > StackPanel > mi|MaterialIcon">
+        <Setter Property="Width" Value="14"/>
+        <Setter Property="Height" Value="14"/>
+    </Style>
+    <Style Selector="TabItem:selected > StackPanel > mi|MaterialIcon">
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+    </Style>
+
+    <!-- Data grids: quiet headers, hairline rows -->
+    <Style Selector="DataGrid">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="RowBackground" Value="Transparent"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource StrokeBrush}"/>
+        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource StrokeBrush}"/>
+    </Style>
+    <Style Selector="DataGridColumnHeader">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+        <Setter Property="MinHeight" Value="30"/>
+    </Style>
+
+    <!-- Progress: gradient fill -->
+    <Style Selector="ProgressBar">
+        <Setter Property="Foreground" Value="{DynamicResource AccentGradientBrush}"/>
+        <Setter Property="MinHeight" Value="3"/>
+    </Style>
+
+    <!-- Separators -->
+    <Style Selector="Separator">
+        <Setter Property="Background" Value="{DynamicResource StrokeBrush}"/>
+    </Style>
+</Styles>

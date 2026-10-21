@@ -21,13 +21,39 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly System.Timers.Timer? _rateLimitTimer;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PageGroup))]
+    [NotifyPropertyChangedFor(nameof(PageCaption))]
     private string _selectedPage = "NexusMods";
+
+    /// <summary>Sidebar group of the current page, shown above the page title.</summary>
+    public string PageGroup => SelectedPage switch
+    {
+        "NexusMods" or "GameBanana" or "mod.io" => "SOURCES",
+        "Downloads" or "Library" => "LIBRARY",
+        "Games" or "Mod Manager" or "Backups" => "MANAGE",
+        _ => "PREFERENCES"
+    };
+
+    /// <summary>One-line description of the current page, shown beside the title.</summary>
+    public string PageCaption => SelectedPage switch
+    {
+        "NexusMods" => "Search, track and collect mods from Nexus",
+        "GameBanana" => "Subscriptions and search on GameBanana",
+        "mod.io" => "Subscriptions and search on mod.io",
+        "Downloads" => "Queue, progress and history",
+        "Library" => "Everything you have downloaded",
+        "Games" => "Detected game installations",
+        "Mod Manager" => "Install archives into games and emulators",
+        "Backups" => "Snapshots of game folders",
+        "Settings" => "Accounts, paths and preferences",
+        _ => string.Empty
+    };
 
     [ObservableProperty]
     private string _statusText = "Ready";
 
     [ObservableProperty]
-    private string _rateLimitInfo = "Rate Limit: --";
+    private string _rateLimitInfo = "Rate limit --";
 
     [ObservableProperty]
     private bool _isConfigured;
@@ -236,7 +262,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_rateLimiter is NexusRateLimiter nexusLimiter)
         {
-            RateLimitInfo = $"Daily: {nexusLimiter.DailyRemaining}/{nexusLimiter.DailyLimit} | Hourly: {nexusLimiter.HourlyRemaining}/{nexusLimiter.HourlyLimit}";
+            RateLimitInfo = $"Daily {nexusLimiter.DailyRemaining}/{nexusLimiter.DailyLimit} · Hourly {nexusLimiter.HourlyRemaining}/{nexusLimiter.HourlyLimit}";
         }
     }
 

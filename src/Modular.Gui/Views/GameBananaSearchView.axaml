@@ -15,7 +15,7 @@
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Search bar -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,15">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
                 <TextBlock Text="Game ID:" VerticalAlignment="Center"/>
                 <AutoCompleteBox ItemsSource="{Binding AvailableGameIds}"
@@ -37,7 +37,7 @@
                 </TextBox.KeyBindings>
             </TextBox>
 
-            <Button Grid.Column="2" Command="{Binding ExecuteSearchCommand}"
+            <Button Grid.Column="2" Classes="accent" Command="{Binding ExecuteSearchCommand}"
                     ToolTip.Tip="Search">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
@@ -67,8 +67,7 @@
         </StackPanel>
 
         <!-- Results grid -->
-        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="1">
+        <Border Classes="card" Grid.Row="2" Padding="1">
             <Grid>
                 <!-- Loading indicator -->
                 <StackPanel IsVisible="{Binding IsLoading}"
@@ -130,7 +129,7 @@
         </Border>
 
         <!-- Footer -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
                 <Run Text="{Binding TotalResults}"/>
                 <Run Text=" results found"/>
@@ -139,7 +138,7 @@
             <Button Grid.Column="1"
                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
                     IsEnabled="{Binding SelectedCount}"
-                    Padding="16,10">
+                    Classes="accent" Padding="14,7">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
                     <TextBlock VerticalAlignment="Center">

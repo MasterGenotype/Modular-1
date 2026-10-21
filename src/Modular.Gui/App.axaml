@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Modular.Gui.App"
              xmlns:local="using:Modular.Gui"
+             xmlns:mi="using:Material.Icons.Avalonia"
              RequestedThemeVariant="Default">
 
     <Application.DataTemplates>
@@ -9,16 +10,44 @@
     </Application.DataTemplates>
 
     <Application.Styles>
-        <FluentTheme />
+        <FluentTheme DensityStyle="Compact">
+            <!-- Tint Fluent's own controls with the Ember palette (Themes/Palette.axaml) -->
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark"
+                                       Accent="#FF8A5B"
+                                       RegionColor="#15141B"
+                                       AltHigh="#15141B"
+                                       ChromeLow="#100F15"
+                                       ChromeMedium="#1A1922"
+                                       ChromeMediumLow="#1C1B24"
+                                       ChromeHigh="#3A3847"
+                                       ListLow="#12FFFFFF"
+                                       ListMedium="#24FF8A5B"
+                                       BaseHigh="#EEEBF4"/>
+                <ColorPaletteResources x:Key="Light"
+                                       Accent="#E2622F"
+                                       RegionColor="#F6F3EE"
+                                       AltHigh="#FFFFFF"
+                                       ChromeLow="#EDE8E0"
+                                       ChromeMedium="#F1EDE6"
+                                       ChromeMediumLow="#FFFFFF"
+                                       ChromeHigh="#D3CCC0"
+                                       ListLow="#0E000000"
+                                       ListMedium="#1CE2622F"
+                                       BaseHigh="#221E28"/>
+            </FluentTheme.Palettes>
+        </FluentTheme>
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+        <!-- Required by Material.Icons 2.x; without it every MaterialIcon renders blank -->
+        <mi:MaterialIconStyles/>
+        <StyleInclude Source="avares://Modular.Gui/Themes/Modular.axaml"/>
     </Application.Styles>
 
     <Application.Resources>
         <ResourceDictionary>
-            <Color x:Key="PrimaryColor">#0078D4</Color>
-            <Color x:Key="SuccessColor">#107C10</Color>
-            <Color x:Key="WarningColor">#FFB900</Color>
-            <Color x:Key="ErrorColor">#D83B01</Color>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Modular.Gui/Themes/Palette.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

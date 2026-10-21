@@ -13,15 +13,14 @@
     </Design.DataContext>
 
     <ScrollViewer>
-        <StackPanel Spacing="20" MaxWidth="700">
+        <StackPanel Spacing="12" MaxWidth="700">
             <!-- Archive Selection -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
+            <Border Classes="card" Padding="14">
+                <StackPanel Spacing="10">
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Archive" Width="24" Height="24"/>
-                            <TextBlock Text="Mod Archives" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Archive" Classes="glyph"/>
+                            <TextBlock Text="Mod Archives" Classes="h2" VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding ArchivePaths.Count, StringFormat='({0})'}"
                                        VerticalAlignment="Center" Opacity="0.6"/>
                         </StackPanel>
@@ -64,7 +63,7 @@
                                   IsVisible="{Binding ArchivePaths.Count}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                         CornerRadius="4" Padding="8,6" Margin="0,2">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Grid.Column="0" Text="{Binding}"
@@ -86,13 +85,12 @@
             </Border>
 
             <!-- Target Game/Directory -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
+            <Border Classes="card" Padding="14">
+                <StackPanel Spacing="10">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="FolderAccount" Width="24" Height="24"/>
-                            <TextBlock Text="Target" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="FolderAccount" Classes="glyph"/>
+                            <TextBlock Text="Target" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
                         <Button Grid.Column="1" Command="{Binding ScanGamesCommand}"
                                 ToolTip.Tip="Scan for installed games">
@@ -129,12 +127,11 @@
             </Border>
 
             <!-- Install Options -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
+            <Border Classes="card" Padding="14">
                 <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
-                        <TextBlock Text="Options" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="Cog" Classes="glyph"/>
+                        <TextBlock Text="Options" Classes="h2" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <CheckBox IsChecked="{Binding AllowOverwrite}"
@@ -150,11 +147,12 @@
             <StackPanel Spacing="10">
                 <Button Command="{Binding InstallModsCommand}"
                         IsEnabled="{Binding !IsInstalling}"
+                        Classes="accent"
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Center"
-                        Padding="15,12">
+                        Padding="14,9">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <mi:MaterialIcon Kind="PackageDown" Width="20" Height="20"/>
+                        <mi:MaterialIcon Kind="PackageDown" Width="18" Height="18"/>
                         <Panel>
                             <TextBlock FontWeight="SemiBold" IsVisible="{Binding !DryRun}">
                                 <TextBlock.Text>
@@ -197,8 +195,7 @@
             </StackPanel>
 
             <!-- Results -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="15"
+            <Border Classes="card" Padding="12"
                     IsVisible="{Binding InstallResults.Count}">
                 <StackPanel Spacing="5">
                     <TextBlock Text="Results" FontWeight="SemiBold" Margin="0,0,0,5"/>
