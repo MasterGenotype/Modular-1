@@ -1,0 +1,163 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        "Ember" palette. Warm ember accent fading into orchid, on ink (dark) or
+        paper (light). Views use these semantic brushes, not literal colours.
+    -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="CanvasBrush" Color="#15141B"/>
+            <SolidColorBrush x:Key="SidebarBrush" Color="#100F15"/>
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#1C1B24"/>
+            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#24232E"/>
+            <SolidColorBrush x:Key="StrokeBrush" Color="#2B2936"/>
+            <SolidColorBrush x:Key="StrokeStrongBrush" Color="#3A3847"/>
+            <SolidColorBrush x:Key="TextBrush" Color="#EEEBF4"/>
+            <SolidColorBrush x:Key="MutedBrush" Color="#9C97AB"/>
+            <SolidColorBrush x:Key="FaintBrush" Color="#6A6578"/>
+            <SolidColorBrush x:Key="HoverBrush" Color="#12FFFFFF"/>
+            <SolidColorBrush x:Key="AccentBrush" Color="#FF8A5B"/>
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#24FF8A5B"/>
+            <SolidColorBrush x:Key="AccentForegroundBrush" Color="#1B1216"/>
+            <SolidColorBrush x:Key="SuccessBrush" Color="#58D39A"/>
+            <SolidColorBrush x:Key="WarningBrush" Color="#F2B85B"/>
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#1FF2B85B"/>
+            <SolidColorBrush x:Key="DangerBrush" Color="#FF6F7D"/>
+            <SolidColorBrush x:Key="InfoBrush" Color="#6FB7FF"/>
+
+
+            <!-- Fluent control chrome, softened to sit on the palette -->
+            <SolidColorBrush x:Key="ButtonBackground" Color="#262530"/>
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#2F2D3A"/>
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#22212B"/>
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#262530"/>
+            <SolidColorBrush x:Key="ButtonBorderBrush" Color="#34323F"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#45424F"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#45424F"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#34323F"/>
+            <SolidColorBrush x:Key="ToggleButtonBackground" Color="#262530"/>
+            <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#2F2D3A"/>
+            <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#22212B"/>
+            <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="#34323F"/>
+            <SolidColorBrush x:Key="RepeatButtonBackground" Color="#262530"/>
+            <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="#2F2D3A"/>
+            <SolidColorBrush x:Key="RepeatButtonBorderBrush" Color="#34323F"/>
+            <SolidColorBrush x:Key="TextControlBackground" Color="#121117"/>
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#121117"/>
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#34323F"/>
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#4A4756"/>
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#121117"/>
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#121117"/>
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#34323F"/>
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#4A4756"/>
+            <!-- Signature gradients: ember to orchid -->
+            <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Offset="0" Color="#FF8A5B"/>
+                <GradientStop Offset="1" Color="#C56CF0"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentGradientVerticalBrush" StartPoint="50%,0%" EndPoint="50%,100%">
+                <GradientStop Offset="0" Color="#FF8A5B"/>
+                <GradientStop Offset="1" Color="#C56CF0"/>
+            </LinearGradientBrush>
+            <!-- Hairline under the page header, fading out to the right -->
+            <LinearGradientBrush x:Key="HairlineBrush" StartPoint="0%,50%" EndPoint="100%,50%">
+                <GradientStop Offset="0" Color="#FF8A5B"/>
+                <GradientStop Offset="0.25" Color="#C56CF0"/>
+                <GradientStop Offset="0.7" Color="Transparent"/>
+            </LinearGradientBrush>
+            <!-- Soft light in two corners of the canvas -->
+            <RadialGradientBrush x:Key="CanvasGlowBrush" Center="100%,0%" GradientOrigin="100%,0%"
+                                 RadiusX="55%" RadiusY="70%">
+                <GradientStop Offset="0" Color="#2EFF8A5B"/>
+                <GradientStop Offset="1" Color="Transparent"/>
+            </RadialGradientBrush>
+            <RadialGradientBrush x:Key="CanvasGlow2Brush" Center="0%,100%" GradientOrigin="0%,100%"
+                                 RadiusX="45%" RadiusY="60%">
+                <GradientStop Offset="0" Color="#1FC56CF0"/>
+                <GradientStop Offset="1" Color="Transparent"/>
+            </RadialGradientBrush>
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="CanvasBrush" Color="#F6F3EE"/>
+            <SolidColorBrush x:Key="SidebarBrush" Color="#EDE8E0"/>
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FBF9F5"/>
+            <SolidColorBrush x:Key="StrokeBrush" Color="#E4DED4"/>
+            <SolidColorBrush x:Key="StrokeStrongBrush" Color="#D3CCC0"/>
+            <SolidColorBrush x:Key="TextBrush" Color="#221E28"/>
+            <SolidColorBrush x:Key="MutedBrush" Color="#6D6778"/>
+            <SolidColorBrush x:Key="FaintBrush" Color="#9C96A3"/>
+            <SolidColorBrush x:Key="HoverBrush" Color="#0E000000"/>
+            <SolidColorBrush x:Key="AccentBrush" Color="#E2622F"/>
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#1CE2622F"/>
+            <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="SuccessBrush" Color="#1F9D63"/>
+            <SolidColorBrush x:Key="WarningBrush" Color="#B9740A"/>
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#1FC27C0E"/>
+            <SolidColorBrush x:Key="DangerBrush" Color="#D23B4C"/>
+            <SolidColorBrush x:Key="InfoBrush" Color="#2F7BD8"/>
+
+
+            <!-- Fluent control chrome, softened to sit on the palette -->
+            <SolidColorBrush x:Key="ButtonBackground" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F4EFE8"/>
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#ECE6DD"/>
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ButtonBorderBrush" Color="#DDD6CB"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#CBC3B6"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#CBC3B6"/>
+            <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#DDD6CB"/>
+            <SolidColorBrush x:Key="ToggleButtonBackground" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#F4EFE8"/>
+            <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#ECE6DD"/>
+            <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="#DDD6CB"/>
+            <SolidColorBrush x:Key="RepeatButtonBackground" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="#F4EFE8"/>
+            <SolidColorBrush x:Key="RepeatButtonBorderBrush" Color="#DDD6CB"/>
+            <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#D6CFC4"/>
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#BDB4A6"/>
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#D6CFC4"/>
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#BDB4A6"/>
+            <!-- Signature gradients: ember to orchid -->
+            <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Offset="0" Color="#E2622F"/>
+                <GradientStop Offset="1" Color="#9A4FD8"/>
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentGradientVerticalBrush" StartPoint="50%,0%" EndPoint="50%,100%">
+                <GradientStop Offset="0" Color="#E2622F"/>
+                <GradientStop Offset="1" Color="#9A4FD8"/>
+            </LinearGradientBrush>
+            <!-- Hairline under the page header, fading out to the right -->
+            <LinearGradientBrush x:Key="HairlineBrush" StartPoint="0%,50%" EndPoint="100%,50%">
+                <GradientStop Offset="0" Color="#E2622F"/>
+                <GradientStop Offset="0.25" Color="#9A4FD8"/>
+                <GradientStop Offset="0.7" Color="Transparent"/>
+            </LinearGradientBrush>
+            <!-- Soft light in two corners of the canvas -->
+            <RadialGradientBrush x:Key="CanvasGlowBrush" Center="100%,0%" GradientOrigin="100%,0%"
+                                 RadiusX="55%" RadiusY="70%">
+                <GradientStop Offset="0" Color="#26E2622F"/>
+                <GradientStop Offset="1" Color="Transparent"/>
+            </RadialGradientBrush>
+            <RadialGradientBrush x:Key="CanvasGlow2Brush" Center="0%,100%" GradientOrigin="0%,100%"
+                                 RadiusX="45%" RadiusY="60%">
+                <GradientStop Offset="0" Color="#1A9A4FD8"/>
+                <GradientStop Offset="1" Color="Transparent"/>
+            </RadialGradientBrush>
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!-- Compact Fluent metrics -->
+    <x:Double x:Key="ControlContentThemeFontSize">13</x:Double>
+    <x:Double x:Key="TabItemHeaderFontSize">13</x:Double>
+    <x:Double x:Key="TabItemMinHeight">32</x:Double>
+    <Thickness x:Key="TabItemHeaderMargin">12,0,12,0</Thickness>
+    <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
+</ResourceDictionary>

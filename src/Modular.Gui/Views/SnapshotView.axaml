@@ -14,8 +14,7 @@
 
     <Grid ColumnDefinitions="200,*,300">
         <!-- Left panel: Game selector + Create -->
-        <Border Grid.Column="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Margin="0,0,10,0" Padding="10">
+        <Border Classes="card" Grid.Column="0" Margin="0,0,10,0" Padding="10">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Games" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
 
@@ -45,8 +44,7 @@
         </Border>
 
         <!-- Center panel: Calendar + Day snapshots -->
-        <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Margin="0,0,10,0" Padding="10">
+        <Border Classes="card" Grid.Column="1" Margin="0,0,10,0" Padding="10">
             <DockPanel>
                 <!-- Month navigation -->
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
@@ -92,7 +90,7 @@
                                                Opacity="{Binding DayOpacity}"
                                                FontWeight="{Binding DayFontWeight}"/>
                                     <!-- Snapshot indicator dot -->
-                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource SystemAccentColor}"
+                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource AccentBrush}"
                                              HorizontalAlignment="Center"
                                              IsVisible="{Binding HasSnapshots}"/>
                                 </StackPanel>
@@ -126,8 +124,7 @@
         </Border>
 
         <!-- Right panel: Snapshot detail -->
-        <Border Grid.Column="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                CornerRadius="8" Padding="10">
+        <Border Classes="card" Grid.Column="2" Padding="10">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Snapshot Detail" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
 
@@ -166,7 +163,7 @@
                     <TextBlock Text="{Binding SnapshotSummary}" FontSize="12" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding RestoreSummary}" FontSize="12" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding RestoreWarning}" FontSize="12" TextWrapping="Wrap"
-                               Foreground="Orange"
+                               Foreground="{DynamicResource WarningBrush}"
                                IsVisible="{Binding RestoreWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
 

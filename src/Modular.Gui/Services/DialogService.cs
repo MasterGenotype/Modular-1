@@ -486,11 +486,11 @@ public class DialogService : IDialogService
         var listBorder = new Border
         {
             BorderThickness = new Thickness(1),
-            BorderBrush = Avalonia.Media.Brushes.Gray,
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(6),
             Child = list
         };
+        listBorder.Bind(Border.BorderBrushProperty, listBorder.GetResourceObservable("StrokeBrush"));
         Grid.SetRow(listBorder, 2);
         grid.Children.Add(listBorder);
 

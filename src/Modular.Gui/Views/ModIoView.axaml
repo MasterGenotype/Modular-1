@@ -15,17 +15,15 @@
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Configuration Warning -->
-        <Border Grid.Row="0" IsVisible="{Binding !IsConfigured}"
-                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                CornerRadius="8" Padding="15" Margin="0,0,0,15">
+        <Border Classes="callout" Grid.Row="0" IsVisible="{Binding !IsConfigured}" Padding="12" Margin="0,0,0,10">
             <StackPanel Orientation="Horizontal" Spacing="10">
-                <mi:MaterialIcon Kind="AlertCircle" Width="20" Height="20" Foreground="Orange"/>
+                <mi:MaterialIcon Kind="AlertCircle" Width="20" Height="20" Foreground="{DynamicResource WarningBrush}"/>
                 <TextBlock Text="{Binding ConfigurationError}" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
 
         <!-- Header -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,15">
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
             <TextBlock Grid.Column="0" Text="Subscribed Mods" FontSize="16" VerticalAlignment="Center" Opacity="0.7"/>
             <Button Grid.Column="1" Command="{Binding RefreshModsCommand}" ToolTip.Tip="Refresh subscribed mods"
                     IsEnabled="{Binding IsConfigured}">
@@ -59,8 +57,7 @@
             </Grid>
 
             <!-- Mod list -->
-            <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-                    CornerRadius="8" Padding="1">
+            <Border Classes="card" Grid.Row="1" Padding="1">
                 <Grid>
                     <!-- Loading indicator -->
                     <StackPanel IsVisible="{Binding IsLoading}" 
@@ -100,7 +97,7 @@
         </Grid>
 
         <!-- Footer -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Opacity="0.7">
                 <Run Text="{Binding TotalMods}"/>
                 <Run Text=" mods total"/>

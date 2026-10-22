@@ -14,14 +14,13 @@
     </Design.DataContext>
 
     <ScrollViewer>
-        <StackPanel Spacing="20" MaxWidth="700">
+        <StackPanel Spacing="12" MaxWidth="700">
             <!-- Game: picks the installer -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
+            <Border Classes="card" Padding="14">
                 <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="NintendoSwitch" Width="24" Height="24"/>
-                        <TextBlock Text="Game" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="NintendoSwitch" Classes="glyph"/>
+                        <TextBlock Text="Game" Classes="h2" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
                               HorizontalAlignment="Stretch"/>
@@ -31,12 +30,11 @@
             </Border>
 
             <!-- Yuzu Path Setting -->
-            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    CornerRadius="8" Padding="20">
-                <StackPanel Spacing="15">
+            <Border Classes="card" Padding="14">
+                <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <mi:MaterialIcon Kind="FolderCog" Width="24" Height="24"/>
-                        <TextBlock Text="Yuzu Data Directory" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="FolderCog" Classes="glyph"/>
+                        <TextBlock Text="Yuzu Data Directory" Classes="h2" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <TextBlock Text="Path to Yuzu's data directory (contains the 'load' folder for LayeredFS mods)"
@@ -54,15 +52,14 @@
             <!-- Tears of the Kingdom -->
             <views:TotkView DataContext="{Binding Totk}" IsVisible="{Binding $parent[UserControl].((vm:SwitchInstallViewModel)DataContext).IsTotkSelected}"/>
 
-            <StackPanel Spacing="20" IsVisible="{Binding !IsTotkSelected}">
+            <StackPanel Spacing="12" IsVisible="{Binding !IsTotkSelected}">
                 <!-- Source Folder & Scan -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="FolderSearch" Width="24" Height="24"/>
-                                <TextBlock Text="Install from Folder" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="FolderSearch" Classes="glyph"/>
+                                <TextBlock Text="Install from Folder" Classes="h2" VerticalAlignment="Center"/>
                             </StackPanel>
                             <Button Grid.Column="1" Command="{Binding ScanFolderCommand}"
                                     IsEnabled="{Binding !IsScanning}">
@@ -88,14 +85,13 @@
                 </Border>
 
                 <!-- Discovered Mods -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20"
+                <Border Classes="card" Padding="14"
                         IsVisible="{Binding DiscoveredMods.Count}">
-                    <StackPanel Spacing="15">
+                    <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="*,Auto,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="GamepadVariant" Width="24" Height="24"/>
-                                <TextBlock Text="Discovered Mods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="GamepadVariant" Classes="glyph"/>
+                                <TextBlock Text="Discovered Mods" Classes="h2" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding DiscoveredMods.Count, StringFormat='({0})'}"
                                            VerticalAlignment="Center" Opacity="0.6"/>
                             </StackPanel>
@@ -112,7 +108,7 @@
                         <ItemsControl ItemsSource="{Binding DiscoveredMods}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SwitchModDisplayModel">
-                                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                    <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                             CornerRadius="4" Padding="10,8" Margin="0,2">
                                         <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
@@ -127,7 +123,7 @@
                                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
                                                     <TextBlock Text="{Binding Version}" Opacity="0.6" FontSize="12"
                                                                VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding OverlapWarning}" Foreground="Orange"
+                                                    <TextBlock Text="{Binding OverlapWarning}" Foreground="{DynamicResource WarningBrush}"
                                                                FontSize="11" VerticalAlignment="Center"
                                                                IsVisible="{Binding OverlapWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                                 </StackPanel>
@@ -180,8 +176,7 @@
                 </Border>
 
                 <!-- Install Results -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="15"
+                <Border Classes="card" Padding="12"
                         IsVisible="{Binding InstallResults.Count}">
                     <StackPanel Spacing="5">
                         <TextBlock Text="Results" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -200,13 +195,12 @@
                 </Border>
 
                 <!-- Installed Switch Mods -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="PackageCheck" Width="24" Height="24"/>
-                                <TextBlock Text="Installed Switch Mods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="PackageCheck" Classes="glyph"/>
+                                <TextBlock Text="Installed Switch Mods" Classes="h2" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding InstalledMods.Count, StringFormat='({0})'}"
                                            VerticalAlignment="Center" Opacity="0.6"/>
                             </StackPanel>
@@ -225,7 +219,7 @@
                                       IsVisible="{Binding InstalledMods.Count}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SwitchModDisplayModel">
-                                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                    <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                             CornerRadius="4" Padding="10,8" Margin="0,2">
                                         <Grid ColumnDefinitions="*,Auto">
                                             <StackPanel Grid.Column="0" Spacing="2">

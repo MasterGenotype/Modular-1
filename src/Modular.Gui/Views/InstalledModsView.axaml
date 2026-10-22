@@ -14,7 +14,7 @@
 
     <Grid RowDefinitions="Auto,*,Auto">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,15">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <ComboBox ItemsSource="{Binding Games}"
                           SelectedItem="{Binding SelectedGame}"
@@ -120,6 +120,6 @@
         </DataGrid>
 
         <!-- Status Bar -->
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,15,0,0" Opacity="0.7"/>
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,10,0,0" Opacity="0.7"/>
     </Grid>
 </UserControl>

@@ -16,45 +16,44 @@
     <Grid>
         <!-- Sub-page: Profiles -->
         <DockPanel IsVisible="{Binding ShowProfilesPage}">
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,15">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
                 <Button Command="{Binding NavigateBackCommand}" Padding="8,6">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <mi:MaterialIcon Kind="ArrowLeft" Width="18" Height="18"/>
                         <TextBlock Text="Back to Settings" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <TextBlock Text="Profiles" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="Profiles" Classes="h2" VerticalAlignment="Center"/>
             </StackPanel>
             <views:ProfilesView DataContext="{Binding ProfilesViewModel}"/>
         </DockPanel>
 
         <!-- Sub-page: Plugins (Developer) -->
         <DockPanel IsVisible="{Binding ShowPluginsPage}">
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,15">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
                 <Button Command="{Binding NavigateBackCommand}" Padding="8,6">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <mi:MaterialIcon Kind="ArrowLeft" Width="18" Height="18"/>
                         <TextBlock Text="Back to Settings" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <TextBlock Text="Plugins (Developer)" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="Plugins (Developer)" Classes="h2" VerticalAlignment="Center"/>
             </StackPanel>
             <views:PluginsView DataContext="{Binding PluginsViewModel}"/>
         </DockPanel>
 
         <!-- Main Settings Page -->
         <ScrollViewer IsVisible="{Binding ShowMainSettings}">
-            <StackPanel Spacing="25" MaxWidth="600">
+            <StackPanel Spacing="12" MaxWidth="600">
                 <!-- Profiles Navigation -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
+                <Border Classes="card" Padding="14">
                     <Button Command="{Binding NavigateToSubPageCommand}" CommandParameter="Profiles"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                             Background="Transparent" BorderThickness="0" Padding="0">
                         <Grid ColumnDefinitions="Auto,*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="AccountGroup" Width="24" Height="24"/>
-                                <TextBlock Text="Profiles" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="AccountGroup" Classes="glyph"/>
+                                <TextBlock Text="Profiles" Classes="h2" VerticalAlignment="Center"/>
                             </StackPanel>
                             <TextBlock Grid.Column="1" Text="Manage per-game mod profiles and loadouts"
                                        FontSize="12" Opacity="0.6" VerticalAlignment="Center" Margin="15,0,0,0"/>
@@ -64,15 +63,14 @@
                 </Border>
 
                 <!-- Plugins Navigation (Developer) -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
+                <Border Classes="card" Padding="14">
                     <Button Command="{Binding NavigateToSubPageCommand}" CommandParameter="Plugins"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                             Background="Transparent" BorderThickness="0" Padding="0">
                         <Grid ColumnDefinitions="Auto,*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="Puzzle" Width="24" Height="24"/>
-                                <TextBlock Text="Plugins" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="Puzzle" Classes="glyph"/>
+                                <TextBlock Text="Plugins" Classes="h2" VerticalAlignment="Center"/>
                             </StackPanel>
                             <TextBlock Grid.Column="1" Text="Developer: manage plugin extensions"
                                        FontSize="12" Opacity="0.6" VerticalAlignment="Center" Margin="15,0,0,0"/>
@@ -84,12 +82,11 @@
                 <Separator Opacity="0.3"/>
 
                 <!-- NexusMods Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Web" Width="24" Height="24"/>
-                            <TextBlock Text="NexusMods" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Web" Classes="glyph"/>
+                            <TextBlock Text="NexusMods" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
@@ -159,12 +156,11 @@
                 </Border>
 
                 <!-- GameBanana Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Gamepad" Width="24" Height="24"/>
-                            <TextBlock Text="GameBanana" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Gamepad" Classes="glyph"/>
+                            <TextBlock Text="GameBanana" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel>
@@ -188,12 +184,11 @@
                 </Border>
 
                 <!-- mod.io Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Puzzle" Width="24" Height="24"/>
-                            <TextBlock Text="mod.io" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Puzzle" Classes="glyph"/>
+                            <TextBlock Text="mod.io" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel>
@@ -243,12 +238,11 @@
                 </Border>
 
                 <!-- Backends Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Server" Width="24" Height="24"/>
-                            <TextBlock Text="Enabled Backends" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Server" Classes="glyph"/>
+                            <TextBlock Text="Enabled Backends" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <CheckBox IsChecked="{Binding NexusModsBackendEnabled}"
@@ -264,12 +258,11 @@
                 </Border>
 
                 <!-- Downloads Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Download" Width="24" Height="24"/>
-                            <TextBlock Text="Downloads" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Download" Classes="glyph"/>
+                            <TextBlock Text="Downloads" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel>
@@ -310,12 +303,11 @@
                 </Border>
 
                 <!-- Appearance Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Palette" Width="24" Height="24"/>
-                            <TextBlock Text="Appearance" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Palette" Classes="glyph"/>
+                            <TextBlock Text="Appearance" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel>
@@ -328,12 +320,11 @@
                 </Border>
 
                 <!-- Advanced Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="Cog" Width="24" Height="24"/>
-                            <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="Cog" Classes="glyph"/>
+                            <TextBlock Text="Advanced" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <CheckBox IsChecked="{Binding Verbose}"
@@ -370,13 +361,12 @@
                 </Border>
 
                 <!-- Diagnostics Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                                <mi:MaterialIcon Kind="Stethoscope" Width="24" Height="24"/>
-                                <TextBlock Text="Diagnostics" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <mi:MaterialIcon Kind="Stethoscope" Classes="glyph"/>
+                                <TextBlock Text="Diagnostics" Classes="h2" VerticalAlignment="Center"/>
                             </StackPanel>
                             <Button Grid.Column="1" Command="{Binding RunDiagnosticsCommand}"
                                     IsEnabled="{Binding !IsRunningDiagnostics}">
@@ -413,12 +403,11 @@
                 </Border>
 
                 <!-- Telemetry Section -->
-                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                        CornerRadius="8" Padding="20">
-                    <StackPanel Spacing="15">
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <mi:MaterialIcon Kind="ChartBar" Width="24" Height="24"/>
-                            <TextBlock Text="Telemetry" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="ChartBar" Classes="glyph"/>
+                            <TextBlock Text="Telemetry" Classes="h2" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="10">
@@ -451,9 +440,10 @@
                 <Grid ColumnDefinitions="*,Auto,Auto">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                         <TextBlock Text="{Binding StatusMessage}" Opacity="0.7"/>
-                        <Border Background="Orange" CornerRadius="4" Padding="8,4"
+                        <Border Classes="pill" Background="{DynamicResource WarningSoftBrush}"
+                                BorderBrush="{DynamicResource WarningBrush}"
                                 IsVisible="{Binding HasUnsavedChanges}">
-                            <TextBlock Text="Unsaved changes" FontSize="12"/>
+                            <TextBlock Text="Unsaved changes" Foreground="{DynamicResource WarningBrush}"/>
                         </Border>
                     </StackPanel>
 
