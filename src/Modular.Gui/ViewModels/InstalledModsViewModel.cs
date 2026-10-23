@@ -24,7 +24,8 @@ public partial class InstalledModsViewModel : ViewModelBase
     private readonly List<ChangesetRecord> _allRecords = new();
     private readonly Dictionary<string, string> _gameKeyOf = new(StringComparer.Ordinal);
 
-    // The records behind the rows, which carry what a dependency check needs.
+    // The selected game's records, which carry what a dependency check needs. The search
+    // only narrows the rows, so this keeps every mod of the game.
     private readonly Dictionary<string, ChangesetRecord> _records = new(StringComparer.Ordinal);
 
     [ObservableProperty]
@@ -45,7 +46,27 @@ public partial class InstalledModsViewModel : ViewModelBase
     private string _statusMessage = "Ready";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CountSummary))]
     private int _totalInstalled;
+
+    // How many mods the selected game has, before the search narrows them.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CountSummary))]
+    private int _gameTotal;
+
+    /// <summary>Text the rows are narrowed to; empty shows every mod of the selected game.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CountSummary))]
+    [NotifyPropertyChangedFor(nameof(IsSearching))]
+    private string _searchText = string.Empty;
+
+    /// <summary>Whether the search is narrowing the rows.</summary>
+    public bool IsSearching => !string.IsNullOrWhiteSpace(SearchText);
+
+    /// <summary>The row count beside the game selector.</summary>
+    public string CountSummary => IsSearching
+        ? $"{TotalInstalled} of {GameTotal} installed mod(s)"
+        : $"{TotalInstalled} installed mod(s)";
 
     /// <summary>Whether the selected game has mods whose deployment can be re-applied.</summary>
     public bool CanReapply => !IsLoading && SelectedGame is { IsAllGames: false, ModCount: > 0 };
@@ -68,6 +89,7 @@ public partial class InstalledModsViewModel : ViewModelBase
             State = "Active"
         });
         TotalInstalled = 1;
+        GameTotal = 1;
     }
 
     // DI constructor
@@ -86,6 +108,11 @@ public partial class InstalledModsViewModel : ViewModelBase
     }
 
     partial void OnSelectedGameChanged(GameFilterOption? value) => ApplyGameFilter();
+
+    partial void OnSearchTextChanged(string value) => ApplyGameFilter();
+
+    [RelayCommand]
+    private void ClearSearch() => SearchText = string.Empty;
 
     [RelayCommand]
     private async Task RefreshInstalledAsync()
@@ -235,6 +262,7 @@ public partial class InstalledModsViewModel : ViewModelBase
         var selected = SelectedGame;
         var names = Games.Where(g => !g.IsAllGames)
             .ToDictionary(g => g.Key!, g => g.DisplayName, StringComparer.OrdinalIgnoreCase);
+        var terms = SplitSearchTerms(SearchText);
 
         foreach (var record in _allRecords)
         {
@@ -246,6 +274,10 @@ public partial class InstalledModsViewModel : ViewModelBase
             }
 
             _records[record.ChangesetId] = record;
+
+            if (!MatchesSearch(record, terms))
+                continue;
+
             Changesets.Add(new ChangesetDisplayModel
             {
                 ChangesetId = record.ChangesetId,
@@ -259,9 +291,34 @@ public partial class InstalledModsViewModel : ViewModelBase
         }
 
         TotalInstalled = Changesets.Count;
-        StatusMessage = selected is { IsAllGames: false }
-            ? $"{TotalInstalled} installed mod(s) for {selected.DisplayName}"
-            : $"{TotalInstalled} installed mod(s)";
+        GameTotal = _records.Count;
+
+        var scope = selected is { IsAllGames: false } ? $" for {selected.DisplayName}" : string.Empty;
+        StatusMessage = terms.Length > 0
+            ? $"{TotalInstalled} of {GameTotal} installed mod(s){scope} match \"{SearchText.Trim()}\""
+            : $"{TotalInstalled} installed mod(s){scope}";
+    }
+
+    private static string[] SplitSearchTerms(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? []
+            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+    // Every term has to appear, in any order and any case, in the mod's name, the archive
+    // it was installed from, or its changeset id. Words rather than one phrase, because mod
+    // ids join their words with spaces, dashes or underscores ("Highlight North v2.0.0-7613").
+    private static bool MatchesSearch(ChangesetRecord record, string[] terms)
+    {
+        if (terms.Length == 0)
+            return true;
+
+        var haystack = string.Join(
+            '\n',
+            record.ModId ?? string.Empty,
+            Path.GetFileName(record.ArchivePath ?? string.Empty),
+            record.ChangesetId);
+
+        return terms.All(t => haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
     }
 
     // Drops removed changesets from the full list and the game counts, so the selector
@@ -273,7 +330,12 @@ public partial class InstalledModsViewModel : ViewModelBase
 
         _allRecords.RemoveAll(r => changesetIds.Contains(r.ChangesetId));
         foreach (var id in changesetIds)
+        {
             _gameKeyOf.Remove(id);
+            _records.Remove(id);
+        }
+
+        GameTotal = _records.Count;
 
         foreach (var game in Games)
         {
@@ -394,9 +456,16 @@ public partial class InstalledModsViewModel : ViewModelBase
             return;
 
         var scope = SelectedGame is { IsAllGames: false } game ? $" for {game.DisplayName}" : string.Empty;
+
+        // Only the rows on screen go, so a search narrows what this removes.
+        var what = IsSearching
+            ? $"the {Changesets.Count} installed mod(s){scope} matching \"{SearchText.Trim()}\"" +
+              $" (of {GameTotal}; the others are kept)"
+            : $"all {Changesets.Count} installed mod(s){scope}";
+
         var confirmed = await _dialogService.ShowConfirmationAsync(
             "Remove All Mods",
-            $"Are you sure you want to uninstall all {Changesets.Count} installed mod(s){scope}?\n\nThis action cannot be undone.");
+            $"Are you sure you want to uninstall {what}?\n\nThis action cannot be undone.");
 
         if (!confirmed) return;
 

@@ -190,6 +190,17 @@ public sealed class DependencyConventionsTests : IDisposable
         DependencyConventions.Read(archive, _factory).Should().BeEquivalentTo(ArchiveDeclarations.None);
     }
 
+    [Fact]
+    public void AnArchiveThatIsNotWhatItsExtensionSays_StillYieldsWhatItsNameSays()
+    {
+        // SharpCompress throws its own exception type for these, not an IOException.
+        var archive = Path.Combine(NewDir(), "Broken-1234-1-0-1700000000.7z");
+        File.WriteAllText(archive, "<html>not an archive</html>");
+
+        DependencyConventions.Read(archive, _factory).Source
+            .Should().Be(new DeclaredSource("nexusmods", "1234"));
+    }
+
     private string Zip(string name, params (string Path, string Content)[] entries)
     {
         var path = Path.Combine(NewDir(), name);

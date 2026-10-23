@@ -45,6 +45,12 @@ public sealed class CyberpunkInstallLayout
     /// </summary>
     public List<FrameworkFileHint> FrameworkHints { get; init; } = new();
 
+    /// <summary>
+    /// Why the archive must not be installed into the game at all, such as a Windows
+    /// program shipped on its own; null for an installable archive.
+    /// </summary>
+    public string? Rejection { get; init; }
+
     /// <summary>True when a single type flag covers the entire archive.</summary>
     public bool IsSingleType => (Types & (Types - 1)) == 0 && Types != CyberpunkInstallType.Unknown;
 

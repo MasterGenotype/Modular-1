@@ -101,7 +101,9 @@ public class InstallerManager
         {
             try
             {
-                var result = await installer.DetectAsync(archivePath, ct);
+                var result = installer is IGameAwareInstaller gameAware
+                    ? await gameAware.DetectAsync(archivePath, gameId, ct)
+                    : await installer.DetectAsync(archivePath, ct);
                 if (result.CanHandle)
                 {
                     detectionResults.Add((installer, result));

@@ -529,7 +529,20 @@ public partial class InstallViewModel : ViewModelBase
                         InstallResults.Add($"! {diagnostic.Code}: {diagnostic.Message}");
 
                     if (!result.DryRun && result.ArchivePath != archivePath)
+                    {
                         InstallResults.Add($"  Archive kept at: {result.ArchivePath}");
+
+                        // The install moved the archive into the store, so point the list at
+                        // its new home or the next run reports it as not found.
+                        var listIndex = ArchivePaths.IndexOf(archivePath);
+                        if (listIndex >= 0)
+                        {
+                            if (ArchivePaths.Contains(result.ArchivePath))
+                                ArchivePaths.RemoveAt(listIndex);
+                            else
+                                ArchivePaths[listIndex] = result.ArchivePath;
+                        }
+                    }
 
                     foreach (var warning in result.Warnings)
                         InstallResults.Add($"! {warning}");
@@ -763,8 +776,9 @@ public partial class InstallViewModel : ViewModelBase
     }
 
     // Asks which alternative to install when an archive offers several, such as the same
-    // pak in an "Option A" and an "Option B" folder. Cancelling any question cancels the
-    // install, since there is no telling which one was wanted.
+    // pak in an "Option A" and an "Option B" folder, or a FOMOD wizard's options. Each
+    // choice's title is its whole question. Cancelling any question cancels the install,
+    // since there is no telling which one was wanted.
     private async Task<IReadOnlyDictionary<string, string>?> AskInstallChoicesAsync(
         IReadOnlyList<InstallChoice> choices, CancellationToken ct)
     {
@@ -780,8 +794,8 @@ public partial class InstallViewModel : ViewModelBase
             // The install runs off the UI thread once it starts doing I/O.
             var index = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 _dialogService.ShowListPickerAsync(
-                    "Choose Version",
-                    choice.Title + " The archive contains more than one, and only one can be installed.",
+                    "Choose an Option",
+                    choice.Title,
                     choice.Options.Select(o => $"{o.Label} ({o.FileCount} file(s))").ToList()));
 
             if (index < 0 || index >= choice.Options.Count)

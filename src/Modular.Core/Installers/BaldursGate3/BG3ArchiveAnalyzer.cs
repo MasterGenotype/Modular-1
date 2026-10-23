@@ -233,8 +233,9 @@ public static class BG3ArchiveAnalyzer
             {
                 Id = id,
                 Title = names.Count == 1
-                    ? $"Which version of {names[0]}?"
-                    : $"Which version of {names[0]} and {names.Count - 1} other pak(s)?",
+                    ? $"Which version of {names[0]}? The archive holds several and only one can be installed."
+                    : $"Which version of {names[0]} and {names.Count - 1} other pak(s)? " +
+                      "The archive holds several and only one can be installed.",
                 Options = options.Select(folder => new InstallChoiceOption
                 {
                     Id = folder,

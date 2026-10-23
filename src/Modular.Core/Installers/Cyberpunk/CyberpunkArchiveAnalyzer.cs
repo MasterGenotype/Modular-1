@@ -43,6 +43,19 @@ public static class CyberpunkArchiveAnalyzer
     private static readonly string[] AsiPluginPrefixes =
         { "bin/x64/plugins/", "bin\\x64\\plugins\\" };
 
+    /// <summary>
+    /// Top-level folders of the game directory. A file under one of them already says
+    /// where it goes, so no extension rule may move it.
+    /// </summary>
+    private static readonly HashSet<string> GameRootFolders =
+        new(StringComparer.OrdinalIgnoreCase) { "archive", "bin", "engine", "mods", "r6", "red4ext", "tools" };
+
+    /// <summary>Subfolders of a REDmod next to its <c>info.json</c>.</summary>
+    private static readonly string[] RedModContentFolders =
+        { "archives/", "customsounds/", "scripts/", "tweaks/" };
+
+    private const string CetModsRoot = "bin/x64/plugins/cyber_engine_tweaks/mods/";
+
     // ── Framework root markers ───────────────────────────────────────────
 
     /// <summary>Files that indicate a framework/engine-level install.</summary>
@@ -52,9 +65,11 @@ public static class CyberpunkArchiveAnalyzer
         ("bin/x64/winmm.dll", "red4ext", true),
         ("bin\\x64\\winmm.dll", "red4ext", true),
 
-        // CET core
+        // CET core (current releases load through version.dll, older ones through d3d11.dll)
         ("bin/x64/plugins/cyber_engine_tweaks.asi", "cet", true),
         ("bin\\x64\\plugins\\cyber_engine_tweaks.asi", "cet", true),
+        ("bin/x64/version.dll", "cet", true),
+        ("bin\\x64\\version.dll", "cet", true),
         ("bin/x64/d3d11.dll", "cet", true),
         ("bin\\x64\\d3d11.dll", "cet", true),
 
@@ -70,7 +85,20 @@ public static class CyberpunkArchiveAnalyzer
     /// describing every detected installation type and per-file routing.
     /// </summary>
     /// <param name="entries">Archive entries (from <see cref="IArchiveReader.Entries"/>).</param>
-    public static CyberpunkInstallLayout Analyze(IReadOnlyList<ArchiveEntry> entries)
+    /// <param name="modName">
+    /// Name to give a mod folder the archive does not name itself, such as a CET mod whose
+    /// <c>init.lua</c> sits at the archive root. Usually the archive's file name.
+    /// </param>
+    /// <param name="isCyberpunk">
+    /// Whether the archive is known to be installed into Cyberpunk 2077. Loose layouts —
+    /// a bare <c>.archive</c>, a folder with an <c>init.lua</c>, a plugin DLL — are only
+    /// routed when this is set or the archive holds a path unique to Cyberpunk, because
+    /// on their own they could belong to any game.
+    /// </param>
+    public static CyberpunkInstallLayout Analyze(
+        IReadOnlyList<ArchiveEntry> entries,
+        string? modName = null,
+        bool isCyberpunk = false)
     {
         var files = entries.Where(e => !e.IsDirectory).ToList();
         if (files.Count == 0)
@@ -99,6 +127,9 @@ public static class CyberpunkArchiveAnalyzer
                 .ToList();
         }
 
+        var wrapperName = strippedPrefix.Length > 0 ? strippedPrefix.TrimEnd('/') : null;
+        var folderName = wrapperName ?? NullIfBlank(modName);
+
         // ── Phase 1: pre-scan for Cyberpunk-specific anchors ─────────────
         //
         // Extension-only signals (.ini, .reds, .archive, .asi, .exe, .xml,
@@ -109,8 +140,10 @@ public static class CyberpunkArchiveAnalyzer
         // Cyberpunk's modding layout:
         //   r6/*, red4ext/*, archive/pc/mod/*, bin/x64/plugins/cyber_engine_tweaks/*,
         //   engine/config/*, engine/tools/*, mods/*/info.json, known framework DLLs.
+        // When the caller knows the game is Cyberpunk, no anchor is needed.
 
-        var allLower = normalized.Select(n => n.Normalized.ToLowerInvariant()).ToList();
+        var allPaths = normalized.Select(n => n.Normalized).ToList();
+        var allLower = allPaths.Select(p => p.ToLowerInvariant()).ToList();
         bool hasCyberpunkAnchor = allLower.Any(p =>
             StartsWithAny(p, Red4ExtPluginPrefixes) ||
             StartsWithAny(p, CetModPrefixes) ||
@@ -124,15 +157,52 @@ public static class CyberpunkArchiveAnalyzer
                 p == m.path.ToLowerInvariant() ||
                 p.EndsWith("/" + m.path.ToLowerInvariant())) ||
             // REDmod: mods/{name}/info.json
-            (StartsWithAny(p, RedModPrefixes) &&
-             HasRedModStructure(p, normalized.Select(n => n.Normalized).ToList())));
+            (StartsWithAny(p, RedModPrefixes) && HasRedModStructure(p, allPaths)));
 
-        // ── Phase 2: classify each entry ─────────────────────────────────
+        var lenient = hasCyberpunkAnchor || isCyberpunk;
+
+        // ── Phase 2: find the mod folders of loose layouts ───────────────
+        //
+        // A file outside the game's own top-level folders carries no destination, so
+        // it is routed by the mod folder it sits in: the nearest folder holding a
+        // REDmod info.json, a CET init.lua, or a RED4ext plugin DLL. "" is the archive
+        // root once any wrapper folder has been stripped.
+
+        var loosePaths = allLower.Where(p => !IsUnderGameRootFolder(p)).ToList();
+        var redModRoots = lenient ? FindRedModRoots(loosePaths) : new List<string>();
+        var cetRoots = lenient
+            ? FoldersContaining(loosePaths, p => FileName(p) == "init.lua")
+            : new List<string>();
+
+        // A loose .exe is a program, and the DLLs in its folder and below are its own:
+        // a setup tool with a bundled runtime is not a RED4ext plugin. Nor is a folder of
+        // Windows or .NET runtime DLLs, wherever it sits.
+        var programRoots = FoldersContaining(loosePaths, p => p.EndsWith(".exe"));
+        var red4ExtRoots = lenient
+            ? FoldersContaining(loosePaths, p =>
+                    p.EndsWith(".dll") &&
+                    !IsRuntimeDll(FileName(p)) &&
+                    FindRoot(p, programRoots) == null)
+            : new List<string>();
+
+        var rootDlls = loosePaths.Where(p => !p.Contains('/') && p.EndsWith(".dll")).ToList();
+        var rootDllName = rootDlls.Count == 1
+            ? Path.GetFileNameWithoutExtension(allPaths[allLower.IndexOf(rootDlls[0])])
+            : null;
+
+        // ── Phase 3: classify each entry ─────────────────────────────────
 
         var detectedTypes = CyberpunkInstallType.Unknown;
         var fileRoutes = new Dictionary<string, FileRoute>(StringComparer.OrdinalIgnoreCase);
         var frameworkHints = new List<FrameworkFileHint>();
         var signalConfidences = new List<double>();
+
+        void Route(ArchiveEntry entry, CyberpunkInstallType type, FileRoute route, double confidence)
+        {
+            detectedTypes |= type;
+            fileRoutes[entry.FullName] = route;
+            signalConfidences.Add(confidence);
+        }
 
         foreach (var (entry, path) in normalized)
         {
@@ -145,8 +215,8 @@ public static class CyberpunkArchiveAnalyzer
                 if (lowerPath == marker.ToLowerInvariant() ||
                     lowerPath.EndsWith("/" + marker.ToLowerInvariant()))
                 {
-                    detectedTypes |= CyberpunkInstallType.FrameworkRoot;
-                    fileRoutes[entry.FullName] = FileRoute.Declared(marker, PackageTypes.Cp77Framework);
+                    Route(entry, CyberpunkInstallType.FrameworkRoot,
+                        FileRoute.Declared(marker, PackageTypes.Cp77Framework), 0.98);
                     frameworkHints.Add(new FrameworkFileHint
                     {
                         SourceEntry = entry.FullName,
@@ -154,189 +224,98 @@ public static class CyberpunkArchiveAnalyzer
                         FrameworkId = fwId,
                         IsCritical = critical
                     });
-                    signalConfidences.Add(0.98);
                     matchedFramework = true;
                     break;
                 }
             }
             if (matchedFramework) continue;
 
-            // ── 2. RED4ext plugin ────────────────────────────────────
+            // ── 2. Loose files: routed by mod folder or extension ────
+            if (!IsUnderGameRootFolder(lowerPath))
+            {
+                if (TryRouteLoose(entry, path, lowerPath) is { } loose)
+                    Route(entry, loose.Type, loose.Route, loose.Confidence);
+                else
+                    fileRoutes[entry.FullName] = FileRoute.Declared(path, PackageTypes.Unknown);
+                continue;
+            }
+
+            // ── 3. RED4ext plugin ────────────────────────────────────
             if (StartsWithAny(lowerPath, Red4ExtPluginPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.Red4ExtPlugin;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.Red4ExtPlugin, FileRoute.Declared(
                     EnsurePrefix("red4ext/plugins/", path, Red4ExtPluginPrefixes),
-                    PackageTypes.Cp77Red4ExtPlugin);
-                signalConfidences.Add(0.95);
+                    PackageTypes.Cp77Red4ExtPlugin), 0.95);
                 continue;
             }
 
-            // ── 3. CET mod ──────────────────────────────────────────
+            // ── 4. CET mod ──────────────────────────────────────────
             if (StartsWithAny(lowerPath, CetModPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.CetMod;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
-                    EnsurePrefix(
-                        "bin/x64/plugins/cyber_engine_tweaks/mods/", path, CetModPrefixes),
-                    PackageTypes.Cp77CetMod);
-                signalConfidences.Add(0.95);
+                Route(entry, CyberpunkInstallType.CetMod, FileRoute.Declared(
+                    EnsurePrefix(CetModsRoot, path, CetModPrefixes),
+                    PackageTypes.Cp77CetMod), 0.95);
                 continue;
             }
 
-            // ── 4. redscript mod ─────────────────────────────────────
-            //    Path-anchored match: r6/scripts/**/*.reds — always accepted.
+            // ── 5. redscript mod ─────────────────────────────────────
             if (StartsWithAny(lowerPath, RedscriptPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.RedscriptMod;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.RedscriptMod, FileRoute.Declared(
                     EnsurePrefix("r6/scripts/", path, RedscriptPrefixes),
-                    PackageTypes.Cp77Redscript);
-                signalConfidences.Add(lowerPath.EndsWith(".reds") ? 0.95 : 0.80);
-                continue;
-            }
-            //    Extension-only match: bare .reds file — only with anchor.
-            if (hasCyberpunkAnchor &&
-                lowerPath.EndsWith(".reds") &&
-                !StartsWithAny(lowerPath, RedscriptPrefixes))
-            {
-                detectedTypes |= CyberpunkInstallType.RedscriptMod;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "r6/scripts/" + path, PackageTypes.Cp77Redscript);
-                signalConfidences.Add(0.80);
+                    PackageTypes.Cp77Redscript), lowerPath.EndsWith(".reds") ? 0.95 : 0.80);
                 continue;
             }
 
-            // ── 5. Legacy archive ────────────────────────────────────
-            //    Path-anchored: archive/pc/mod/** — always accepted.
+            // ── 6. Legacy archive ────────────────────────────────────
             if (StartsWithAny(lowerPath, LegacyArchivePrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.LegacyArchive, FileRoute.Declared(
                     EnsurePrefix("archive/pc/mod/", path, LegacyArchivePrefixes),
-                    PackageTypes.Cp77LegacyArchive);
-                signalConfidences.Add(0.90);
-                continue;
-            }
-            //    .archive.xl is Cyberpunk-specific (ArchiveXL format) — always accepted.
-            if (lowerPath.EndsWith(".archive.xl"))
-            {
-                detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "archive/pc/mod/" + Path.GetFileName(path),
-                    PackageTypes.Cp77LegacyArchive);
-                signalConfidences.Add(0.90);
-                continue;
-            }
-            //    Extension-only .archive — only with anchor.
-            if (hasCyberpunkAnchor &&
-                lowerPath.EndsWith(".archive") &&
-                !StartsWithAny(lowerPath, RedModPrefixes))
-            {
-                detectedTypes |= CyberpunkInstallType.LegacyArchive;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "archive/pc/mod/" + Path.GetFileName(path),
-                    PackageTypes.Cp77LegacyArchive);
-                signalConfidences.Add(0.85);
+                    PackageTypes.Cp77LegacyArchive), 0.90);
                 continue;
             }
 
-            // ── 6. REDmod ────────────────────────────────────────────
-            if (StartsWithAny(lowerPath, RedModPrefixes) &&
-                HasRedModStructure(lowerPath, normalized.Select(n => n.Normalized).ToList()))
+            // ── 7. REDmod ────────────────────────────────────────────
+            if (StartsWithAny(lowerPath, RedModPrefixes) && HasRedModStructure(lowerPath, allPaths))
             {
-                detectedTypes |= CyberpunkInstallType.RedMod;
-                fileRoutes[entry.FullName] = FileRoute.FromMetadata(path, PackageTypes.Cp77RedMod);
-                signalConfidences.Add(0.90);
+                Route(entry, CyberpunkInstallType.RedMod,
+                    FileRoute.FromMetadata(path, PackageTypes.Cp77RedMod), 0.90);
                 continue;
             }
 
-            // ── 7. Tweak mod ─────────────────────────────────────────
-            //    Path-anchored: r6/tweaks/** — always accepted.
+            // ── 8. Tweak mod ─────────────────────────────────────────
             if (StartsWithAny(lowerPath, TweakPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.TweakMod;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.TweakMod, FileRoute.Declared(
                     EnsurePrefix("r6/tweaks/", path, TweakPrefixes),
-                    PackageTypes.Cp77Tweak);
-                signalConfidences.Add(0.85);
+                    PackageTypes.Cp77Tweak), 0.85);
                 continue;
             }
 
-            // ── 8. ini/config tweak ──────────────────────────────────
-            //    Path-anchored: engine/config/** — always accepted.
+            // ── 9. ini/config tweak ──────────────────────────────────
             if (StartsWithAny(lowerPath, IniConfigPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.IniTweak;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
-                    path, PackageTypes.Cp77IniTweak);
-                signalConfidences.Add(0.85);
-                continue;
-            }
-            //    Extension-only .ini — only with anchor.
-            if (hasCyberpunkAnchor && lowerPath.EndsWith(".ini"))
-            {
-                detectedTypes |= CyberpunkInstallType.IniTweak;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "engine/config/platform/pc/" + Path.GetFileName(path),
-                    PackageTypes.Cp77IniTweak);
-                signalConfidences.Add(0.70);
+                Route(entry, CyberpunkInstallType.IniTweak,
+                    FileRoute.Declared(path, PackageTypes.Cp77IniTweak), 0.85);
                 continue;
             }
 
-            // ── 9. Input mapping XML ─────────────────────────────────
-            //    Path-anchored: r6/input/** — always accepted.
+            // ── 10. Input mapping XML ────────────────────────────────
             if (StartsWithAny(lowerPath, InputMappingPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.InputMapping;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.InputMapping, FileRoute.Declared(
                     EnsurePrefix("r6/input/", path, InputMappingPrefixes),
-                    PackageTypes.Cp77InputMapping);
-                signalConfidences.Add(0.85);
-                continue;
-            }
-            //    Extension-only .xml with "input" in name — only with anchor.
-            if (hasCyberpunkAnchor &&
-                lowerPath.EndsWith(".xml") && lowerPath.Contains("input"))
-            {
-                detectedTypes |= CyberpunkInstallType.InputMapping;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "r6/input/" + Path.GetFileName(path), PackageTypes.Cp77InputMapping);
-                signalConfidences.Add(0.70);
+                    PackageTypes.Cp77InputMapping), 0.85);
                 continue;
             }
 
-            // ── 10. ASI plugin ───────────────────────────────────────
-            //    Path-anchored: bin/x64/plugins/*.asi — always accepted.
+            // ── 11. ASI plugin ───────────────────────────────────────
             if (lowerPath.EndsWith(".asi") && StartsWithAny(lowerPath, AsiPluginPrefixes))
             {
-                detectedTypes |= CyberpunkInstallType.AsiPlugin;
-                fileRoutes[entry.FullName] = FileRoute.Declared(
+                Route(entry, CyberpunkInstallType.AsiPlugin, FileRoute.Declared(
                     EnsurePrefix("bin/x64/plugins/", path, AsiPluginPrefixes),
-                    PackageTypes.Cp77AsiPlugin);
-                signalConfidences.Add(0.90);
-                continue;
-            }
-            //    Extension-only .asi — only with anchor.
-            if (hasCyberpunkAnchor && lowerPath.EndsWith(".asi"))
-            {
-                detectedTypes |= CyberpunkInstallType.AsiPlugin;
-                fileRoutes[entry.FullName] = FileRoute.Heuristic(
-                    "bin/x64/plugins/" + Path.GetFileName(path), PackageTypes.Cp77AsiPlugin);
-                signalConfidences.Add(0.75);
-                continue;
-            }
-
-            // ── 11. Standalone exe ───────────────────────────────────
-            //    Only claim loose .exe files when the archive already has
-            //    a Cyberpunk anchor (prevents claiming random tool zips).
-            if (hasCyberpunkAnchor &&
-                lowerPath.EndsWith(".exe") &&
-                !StartsWithAny(lowerPath, new[] { "bin/", "engine/" }))
-            {
-                detectedTypes |= CyberpunkInstallType.StandaloneExe;
-                fileRoutes[entry.FullName] = FileRoute.Declared(path);
-                signalConfidences.Add(0.70);
+                    PackageTypes.Cp77AsiPlugin), 0.90);
                 continue;
             }
 
@@ -373,6 +352,26 @@ public static class CyberpunkArchiveAnalyzer
             _ => $"Multi-path mod: {string.Join(" + ", typeNames)}"
         };
 
+        // Nothing but a program and its own files: a tool to run, not a mod to install.
+        // Copied into the game it would load nothing, and its DLLs could be mistaken for
+        // the game's.
+        string? rejection = null;
+        if (detectedTypes == CyberpunkInstallType.StandaloneExe)
+        {
+            // Shallowest first, so the program itself is named before its helpers.
+            var programs = allPaths.Where(p => p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(p => p.Count(c => c == '/'))
+                .Select(Path.GetFileName)
+                .ToList();
+            var named = string.Join(", ", programs.Take(2)) +
+                        (programs.Count > 2 ? $" and {programs.Count - 2} more" : string.Empty);
+            rejection =
+                $"This archive is a Windows program ({named}), not a mod: " +
+                "it holds nothing the game loads. Run it with Proton or Wine if it is an installer, " +
+                "or download the mod's own files instead.";
+            reason = "Standalone Windows program, not a mod";
+        }
+
         return new CyberpunkInstallLayout
         {
             Types = detectedTypes,
@@ -380,8 +379,94 @@ public static class CyberpunkArchiveAnalyzer
             Reason = reason,
             FileRoutes = fileRoutes,
             StrippedPrefix = strippedPrefix,
-            FrameworkHints = frameworkHints
+            FrameworkHints = frameworkHints,
+            Rejection = rejection
         };
+
+        // Routes a file that is not under any of the game's top-level folders, or
+        // returns null to leave it at the game root as-is.
+        (CyberpunkInstallType Type, FileRoute Route, double Confidence)? TryRouteLoose(
+            ArchiveEntry entry, string path, string lowerPath)
+        {
+            // .archive.xl is Cyberpunk-specific (ArchiveXL format) — always accepted.
+            if (lowerPath.EndsWith(".archive.xl") && FindRoot(lowerPath, redModRoots) == null)
+            {
+                return (CyberpunkInstallType.LegacyArchive, FileRoute.Heuristic(
+                    "archive/pc/mod/" + Path.GetFileName(path), PackageTypes.Cp77LegacyArchive), 0.90);
+            }
+
+            if (!lenient)
+                return null;
+
+            // A REDmod folder: info.json beside archives/, scripts/, tweaks/ or customSounds/.
+            if (FindRoot(lowerPath, redModRoots) is { } redModRoot &&
+                RootFolderName(path, redModRoot, folderName) is { } redModName)
+            {
+                return (CyberpunkInstallType.RedMod, FileRoute.FromMetadata(
+                    $"mods/{redModName}/{RelativeTo(path, redModRoot)}", PackageTypes.Cp77RedMod), 0.85);
+            }
+
+            // A CET mod folder: anything beside an init.lua.
+            if (FindRoot(lowerPath, cetRoots) is { } cetRoot &&
+                RootFolderName(path, cetRoot, folderName) is { } cetName)
+            {
+                return (CyberpunkInstallType.CetMod, FileRoute.Heuristic(
+                    $"{CetModsRoot}{cetName}/{RelativeTo(path, cetRoot)}", PackageTypes.Cp77CetMod), 0.85);
+            }
+
+            // .archive and .xl: the game and ArchiveXL only read archive/pc/mod directly.
+            if (lowerPath.EndsWith(".archive") || lowerPath.EndsWith(".xl"))
+            {
+                return (CyberpunkInstallType.LegacyArchive, FileRoute.Heuristic(
+                    "archive/pc/mod/" + Path.GetFileName(path), PackageTypes.Cp77LegacyArchive), 0.85);
+            }
+
+            if (lowerPath.EndsWith(".reds"))
+            {
+                return (CyberpunkInstallType.RedscriptMod, FileRoute.Heuristic(
+                    "r6/scripts/" + InModFolder(path, folderName), PackageTypes.Cp77Redscript), 0.80);
+            }
+
+            if (lowerPath.EndsWith(".tweak") || lowerPath.EndsWith(".yaml") || lowerPath.EndsWith(".yml"))
+            {
+                return (CyberpunkInstallType.TweakMod, FileRoute.Heuristic(
+                    "r6/tweaks/" + InModFolder(path, folderName), PackageTypes.Cp77Tweak), 0.80);
+            }
+
+            if (lowerPath.EndsWith(".ini"))
+            {
+                return (CyberpunkInstallType.IniTweak, FileRoute.Heuristic(
+                    "engine/config/platform/pc/" + Path.GetFileName(path), PackageTypes.Cp77IniTweak), 0.70);
+            }
+
+            if (lowerPath.EndsWith(".xml") && lowerPath.Contains("input"))
+            {
+                return (CyberpunkInstallType.InputMapping, FileRoute.Heuristic(
+                    "r6/input/" + Path.GetFileName(path), PackageTypes.Cp77InputMapping), 0.70);
+            }
+
+            if (lowerPath.EndsWith(".asi"))
+            {
+                return (CyberpunkInstallType.AsiPlugin, FileRoute.Heuristic(
+                    "bin/x64/plugins/" + Path.GetFileName(path), PackageTypes.Cp77AsiPlugin), 0.75);
+            }
+
+            // A RED4ext plugin folder: anything beside a plugin DLL. At the archive root
+            // the DLL's own name is a better folder name than the archive's.
+            if (FindRoot(lowerPath, red4ExtRoots) is { } pluginRoot &&
+                RootFolderName(path, pluginRoot, wrapperName ?? rootDllName ?? folderName) is { } pluginName)
+            {
+                return (CyberpunkInstallType.Red4ExtPlugin, FileRoute.Heuristic(
+                    $"red4ext/plugins/{pluginName}/{RelativeTo(path, pluginRoot)}",
+                    PackageTypes.Cp77Red4ExtPlugin), 0.75);
+            }
+
+            // Standalone tools are extracted as-is.
+            if (lowerPath.EndsWith(".exe"))
+                return (CyberpunkInstallType.StandaloneExe, FileRoute.Declared(path), 0.70);
+
+            return null;
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -451,6 +536,98 @@ public static class CyberpunkArchiveAnalyzer
         return allPaths.Any(p =>
             p.Replace('\\', '/').Equals(expectedInfoJson, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Whether a path lies under one of the game directory's own top-level folders.
+    /// </summary>
+    private static bool IsUnderGameRootFolder(string path)
+    {
+        var slash = path.IndexOf('/');
+        return slash > 0 && GameRootFolders.Contains(path[..slash]);
+    }
+
+    /// <summary>
+    /// Folders, outside the game's top-level folders, that hold a REDmod: an
+    /// <c>info.json</c> with at least one REDmod content folder beside it.
+    /// </summary>
+    /// <param name="loosePaths">Lower-case paths not under a game root folder.</param>
+    private static List<string> FindRedModRoots(List<string> loosePaths) =>
+        FoldersContaining(loosePaths, p => FileName(p) == "info.json")
+            .Where(root =>
+            {
+                var prefix = root.Length == 0 ? string.Empty : root + "/";
+                return loosePaths.Any(p =>
+                    p.StartsWith(prefix) &&
+                    RedModContentFolders.Any(folder => p[prefix.Length..].StartsWith(folder)));
+            })
+            .ToList();
+
+    /// <summary>
+    /// The distinct folders holding a file that matches <paramref name="isMarker"/>.
+    /// </summary>
+    private static List<string> FoldersContaining(List<string> paths, Func<string, bool> isMarker) =>
+        paths
+            .Where(isMarker)
+            .Select(p => p.Contains('/') ? p[..p.LastIndexOf('/')] : string.Empty)
+            .Distinct()
+            .ToList();
+
+    /// <summary>
+    /// The deepest of <paramref name="roots"/> that contains <paramref name="lowerPath"/>,
+    /// or null when none does.
+    /// </summary>
+    private static string? FindRoot(string lowerPath, List<string> roots) =>
+        roots
+            .Where(root => root.Length == 0 || lowerPath.StartsWith(root + "/"))
+            .OrderByDescending(root => root.Length)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The name of a mod folder: its own name, or for the archive root the
+    /// <paramref name="fallback"/>. Null when the root has no name to give.
+    /// </summary>
+    /// <param name="path">Original-case path of a file under the root.</param>
+    /// <param name="root">Lower-case root folder, "" for the archive root.</param>
+    /// <param name="fallback">Name for the archive root.</param>
+    private static string? RootFolderName(string path, string root, string? fallback)
+    {
+        if (root.Length == 0)
+            return fallback;
+
+        var original = path[..root.Length];
+        return original.Contains('/') ? original[(original.LastIndexOf('/') + 1)..] : original;
+    }
+
+    /// <summary>The part of <paramref name="path"/> below <paramref name="root"/>.</summary>
+    private static string RelativeTo(string path, string root) =>
+        root.Length == 0 ? path : path[(root.Length + 1)..];
+
+    /// <summary>
+    /// A file at the archive root gets its own folder, so its mod's files stay together;
+    /// a file already in a folder keeps it.
+    /// </summary>
+    private static string InModFolder(string path, string? folderName) =>
+        path.Contains('/') || folderName == null ? path : $"{folderName}/{path}";
+
+    private static string FileName(string path) =>
+        path.Contains('/') ? path[(path.LastIndexOf('/') + 1)..] : path;
+
+    /// <summary>
+    /// Whether a lower-case DLL name belongs to the Windows C runtime, the Visual C++
+    /// runtime or .NET, which programs bundle and no RED4ext plugin is named after.
+    /// </summary>
+    private static bool IsRuntimeDll(string fileName) =>
+        fileName.StartsWith("api-ms-win-") ||
+        fileName.StartsWith("system.") ||
+        fileName.StartsWith("microsoft.") ||
+        fileName.StartsWith("vcruntime") ||
+        fileName.StartsWith("msvcp") ||
+        fileName is "ucrtbase.dll" or "concrt140.dll" or "hostfxr.dll" or "hostpolicy.dll" or
+            "coreclr.dll" or "clrjit.dll" or "mscorlib.dll" or "netstandard.dll" or
+            "mscordaccore.dll" or "mscordbi.dll" or "windowsbase.dll";
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static bool StartsWithAny(string path, string[] prefixes)
     {

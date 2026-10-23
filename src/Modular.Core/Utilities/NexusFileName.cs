@@ -19,6 +19,28 @@ public static partial class NexusFileName
     /// </remarks>
     public static string? ParseModId(string? archivePath)
     {
+        var match = Match(archivePath);
+        if (match == null)
+            return null;
+
+        var id = match.Groups["id"].Value.TrimStart('0');
+        return id.Length > 0 ? id : null;
+    }
+
+    /// <summary>
+    /// Reads the mod's name out of a downloaded archive's file name.
+    /// </summary>
+    /// <param name="archivePath">Path or file name of the archive, with or without extension.</param>
+    /// <returns>The name, or <c>null</c> when the file name is not in NexusMods' form.</returns>
+    /// <remarks>
+    /// NexusMods replaces spaces with underscores in some downloads; the name is returned
+    /// as it appears.
+    /// </remarks>
+    public static string? ParseModName(string? archivePath) =>
+        Match(archivePath)?.Groups["name"].Value;
+
+    private static Match? Match(string? archivePath)
+    {
         if (string.IsNullOrWhiteSpace(archivePath))
             return null;
 
@@ -33,11 +55,7 @@ public static partial class NexusFileName
         }
 
         var match = Pattern().Match(name);
-        if (!match.Success)
-            return null;
-
-        var id = match.Groups["id"].Value.TrimStart('0');
-        return id.Length > 0 ? id : null;
+        return match.Success ? match : null;
     }
 
     // Stripped by hand rather than with Path: a mod name ending "2.0" would otherwise
@@ -45,6 +63,6 @@ public static partial class NexusFileName
     private static readonly string[] ArchiveExtensions =
         [".tar.gz", ".zip", ".rar", ".7z", ".tar", ".pak"];
 
-    [GeneratedRegex(@"^.+?-(?<id>\d+)-.+-\d{9,11}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<name>.+?)-(?<id>\d+)-.+-\d{9,11}$", RegexOptions.CultureInvariant)]
     private static partial Regex Pattern();
 }

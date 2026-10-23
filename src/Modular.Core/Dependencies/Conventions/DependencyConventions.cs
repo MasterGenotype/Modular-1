@@ -6,6 +6,7 @@ using Modular.Core.Metadata;
 using Modular.Core.Utilities;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Backends;
+using SharpCompress.Common;
 
 namespace Modular.Core.Dependencies.Conventions;
 
@@ -93,9 +94,11 @@ public static class DependencyConventions
                         .MergedWith(ReadBg3Info(reader));
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                                           or NotSupportedException or SharpCompressException)
             {
-                // An archive that cannot be opened has nothing to add.
+                // An archive that cannot be opened (corrupt, truncated, or not the format its
+                // extension says) has nothing to add.
             }
         }
 

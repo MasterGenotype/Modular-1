@@ -12,7 +12,7 @@
         <vm:InstalledModsViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Header -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -27,7 +27,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock Text="{Binding TotalInstalled, StringFormat='{}{0} installed mod(s)'}"
+                <TextBlock Text="{Binding CountSummary}"
                            VerticalAlignment="Center" Opacity="0.7"/>
             </StackPanel>
             <Button Grid.Column="2" Command="{Binding ReapplyGameCommand}"
@@ -66,12 +66,30 @@
             </Button>
         </Grid>
 
+        <!-- Search -->
+        <TextBox Grid.Row="1"
+                 Classes="clearButton"
+                 Text="{Binding SearchText}"
+                 Watermark="Search installed mods by name or archive"
+                 MaxWidth="480"
+                 HorizontalAlignment="Left"
+                 MinWidth="320"
+                 Margin="0,0,0,10"
+                 ToolTip.Tip="Show only the mods whose name, archive or changeset contains every word typed">
+            <TextBox.InnerLeftContent>
+                <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.6"/>
+            </TextBox.InnerLeftContent>
+            <TextBox.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding ClearSearchCommand}"/>
+            </TextBox.KeyBindings>
+        </TextBox>
+
         <!-- Loading Indicator -->
-        <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+        <ProgressBar Grid.Row="2" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
                      VerticalAlignment="Top" Margin="0,0,0,10"/>
 
         <!-- Installed Mods DataGrid -->
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Changesets}"
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Changesets}"
                   IsVisible="{Binding !IsLoading}"
                   AutoGenerateColumns="False"
                   CanUserReorderColumns="True"
@@ -120,6 +138,6 @@
         </DataGrid>
 
         <!-- Status Bar -->
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,10,0,0" Opacity="0.7"/>
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,10,0,0" Opacity="0.7"/>
     </Grid>
 </UserControl>

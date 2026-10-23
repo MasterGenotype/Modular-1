@@ -60,6 +60,32 @@ public sealed class GameModuleHookTests : IDisposable
     }
 
     [Fact]
+    public async Task Cyberpunk_NoArchivesLeft_RemovesItsOwnModList()
+    {
+        // After the last mod is uninstalled an empty list would be all that is left.
+        var game = NewGameDir();
+        var module = new CyberpunkGameModule();
+        WriteGameFile(game, "archive/pc/mod/a.archive", "a");
+        await module.WriteLoadOrderAsync(Installation(game), [DeployedArchive("mod-a", 0, "a.archive")]);
+        File.Delete(Path.Combine(game, "archive", "pc", "mod", "a.archive"));
+
+        await module.WriteLoadOrderAsync(Installation(game), []);
+
+        File.Exists(Path.Combine(game, "archive", "pc", "mod", "modlist.txt")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Cyberpunk_NoArchivesLeft_KeepsAModListTheUserWrote()
+    {
+        var game = NewGameDir();
+        WriteGameFile(game, "archive/pc/mod/modlist.txt", "mine.archive");
+
+        await new CyberpunkGameModule().WriteLoadOrderAsync(Installation(game), []);
+
+        File.ReadAllText(Path.Combine(game, "archive", "pc", "mod", "modlist.txt")).Should().Be("mine.archive");
+    }
+
+    [Fact]
     public async Task Cyberpunk_NoArchiveFolder_WritesNothing()
     {
         var game = NewGameDir(createArchiveFolder: false);

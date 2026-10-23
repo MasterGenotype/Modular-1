@@ -31,6 +31,10 @@ public sealed class CyberpunkGameModule : GameModuleBase
     /// <summary>Path of the load-order manifest, relative to the game root.</summary>
     public const string ModListPath = "archive/pc/mod/modlist.txt";
 
+    // First line of every modlist.txt Modular writes, which is how it knows its own.
+    private const string ModListHeader =
+        "# Written by Modular. Highest priority first: for legacy archives the first";
+
     /// <summary>Launch argument Cyberpunk needs before it will load any REDmod.</summary>
     public const string ModdedLaunchArgument = "-modded";
 
@@ -158,9 +162,24 @@ public sealed class CyberpunkGameModule : GameModuleBase
             .ToList();
 
         var manifestPath = Path.Combine(archiveDir, "modlist.txt");
+
+        // With no archive left there is no order to keep, and an empty list would be the
+        // last thing in the game's mod folder after every mod is gone. Only a list this
+        // method wrote is removed; one the user wrote is theirs.
+        if (managed.Count == 0 && unmanaged.Count == 0)
+        {
+            if (File.Exists(manifestPath) &&
+                (await File.ReadAllTextAsync(manifestPath, ct)).StartsWith(ModListHeader, StringComparison.Ordinal))
+            {
+                File.Delete(manifestPath);
+            }
+
+            return;
+        }
+
         var lines = new List<string>
         {
-            "# Written by Modular. Highest priority first: for legacy archives the first",
+            ModListHeader,
             "# entry loaded wins, so this is Modular's load order reversed.",
         };
 

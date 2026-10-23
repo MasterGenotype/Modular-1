@@ -221,7 +221,7 @@ public class ModInstallationService
         var module = installation != null
             ? _gameResolver.GetModule(installation)
             : _moduleRegistry.Resolve(options.GameId, null, targetDirectory);
-        var gameId = options.GameId ?? installation?.GameId;
+        var gameId = options.GameId ?? installation?.GameId ?? module?.GameIds.FirstOrDefault();
         var gameKey = installation?.GameKey ?? DeriveGameKey(targetDirectory);
 
         result.GameId = gameId;
@@ -311,20 +311,29 @@ public class ModInstallationService
             {
                 if (options.ChoiceResolver != null)
                 {
-                    var answers = await options.ChoiceResolver(plan.Choices, ct);
-                    if (answers == null)
+                    // An answer can uncover another question, such as a FOMOD page shown
+                    // only for one pick, so ask until nothing new turns up. Each choice is
+                    // asked once; one left open again keeps the installer's default.
+                    var asked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    while (plan.Choices.Any(c => !c.IsResolved && !asked.Contains(c.Id)))
                     {
-                        result.Cancelled = true;
-                        result.Error = "Installation cancelled";
-                        await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.RolledBack, ct: ct);
-                        return result;
+                        asked.UnionWith(plan.Choices.Where(c => !c.IsResolved).Select(c => c.Id));
+
+                        var answers = await options.ChoiceResolver(plan.Choices, ct);
+                        if (answers == null)
+                        {
+                            result.Cancelled = true;
+                            result.Error = "Installation cancelled";
+                            await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.RolledBack, ct: ct);
+                            return result;
+                        }
+
+                        foreach (var (choiceId, optionId) in answers)
+                            context.Selections[choiceId] = optionId;
+
+                        plan = await _installerManager.CreateInstallPlanAsync(
+                            readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
                     }
-
-                    foreach (var (choiceId, optionId) in answers)
-                        context.Selections[choiceId] = optionId;
-
-                    plan = await _installerManager.CreateInstallPlanAsync(
-                        readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
                 }
 
                 foreach (var choice in plan.Choices.Where(c => !c.IsResolved))

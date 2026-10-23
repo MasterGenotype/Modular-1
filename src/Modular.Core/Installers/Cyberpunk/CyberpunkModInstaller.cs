@@ -18,7 +18,7 @@ namespace Modular.Core.Installers.Cyberpunk;
 /// Detection priority is 90 — above generic loose-file (1) and BepInEx (80),
 /// but below FOMOD (100) since FOMOD archives carry an explicit manifest.
 /// </summary>
-public class CyberpunkModInstaller : IModInstaller
+public class CyberpunkModInstaller : IModInstaller, IGameAwareInstaller
 {
     private readonly IArchiveReaderFactory _archiveReaderFactory;
     private readonly ILogger<CyberpunkModInstaller>? _logger;
@@ -40,8 +40,24 @@ public class CyberpunkModInstaller : IModInstaller
     /// Opens the archive, runs <see cref="CyberpunkArchiveAnalyzer.Analyze"/>,
     /// and returns a detection result reflecting the confidence and type.
     /// </summary>
+    /// <remarks>
+    /// With no game to go on, loose layouts are only claimed when the archive also holds
+    /// a path unique to Cyberpunk.
+    /// </remarks>
+    public Task<InstallDetectionResult> DetectAsync(
+        string archivePath, CancellationToken ct = default) =>
+        DetectAsync(archivePath, gameId: null, ct);
+
+    /// <summary>
+    /// Detects the archive's layout, claiming loose layouts — a bare <c>.archive</c>, a
+    /// folder with an <c>init.lua</c> — when <paramref name="gameId"/> is Cyberpunk 2077.
+    /// </summary>
+    /// <param name="archivePath">Archive to analyse.</param>
+    /// <param name="gameId">Game identifier, or <c>null</c> when unknown.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The detection result.</returns>
     public async Task<InstallDetectionResult> DetectAsync(
-        string archivePath, CancellationToken ct = default)
+        string archivePath, string? gameId, CancellationToken ct = default)
     {
         try
         {
@@ -56,7 +72,21 @@ public class CyberpunkModInstaller : IModInstaller
                 };
             }
 
-            var layout = CyberpunkArchiveAnalyzer.Analyze(reader.Entries);
+            var layout = CyberpunkArchiveAnalyzer.Analyze(
+                reader.Entries, ModNameOf(archivePath), IsCyberpunk(gameId));
+
+            // Claimed, so no lower-priority installer copies the program into the game,
+            // and refused when planned, with the reason.
+            if (layout.Rejection != null)
+            {
+                return new InstallDetectionResult
+                {
+                    CanHandle = true,
+                    Confidence = layout.Confidence,
+                    InstallerType = "not-a-mod",
+                    Reason = layout.Reason
+                };
+            }
 
             if (layout.Types == CyberpunkInstallType.Unknown)
             {
@@ -108,7 +138,13 @@ public class CyberpunkModInstaller : IModInstaller
         using var reader = _archiveReaderFactory.Open(archivePath)
             ?? throw new InvalidOperationException($"Unable to open archive: {archivePath}");
 
-        var layout = CyberpunkArchiveAnalyzer.Analyze(reader.Entries);
+        var layout = CyberpunkArchiveAnalyzer.Analyze(
+            reader.Entries,
+            ModNameOf(archivePath),
+            IsCyberpunk(context.GameId) || IsCyberpunk(context.Game?.GameId));
+
+        if (layout.Rejection != null)
+            throw new InvalidOperationException(layout.Rejection);
 
         var plan = new InstallPlan
         {
@@ -195,6 +231,16 @@ public class CyberpunkModInstaller : IModInstaller
             _archiveReaderFactory, plan, InstallerId, BuildProgressLabel(plan), _logger, progress, ct);
 
     // ── Private helpers ──────────────────────────────────────────────────
+
+    private bool IsCyberpunk(string? gameId) =>
+        gameId != null && SupportedGameIds.Contains(gameId, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The name for a mod folder the archive does not name itself: the mod's name from a
+    /// NexusMods download name, or else the archive's file name.
+    /// </summary>
+    private static string ModNameOf(string archivePath) =>
+        NexusFileName.ParseModName(archivePath) ?? Path.GetFileNameWithoutExtension(archivePath);
 
     /// <summary>
     /// A file is critical if it's a framework loader DLL, an ASI plugin,

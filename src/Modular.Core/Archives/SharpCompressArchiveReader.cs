@@ -42,7 +42,7 @@ public class SharpCompressArchiveReader : IArchiveReader
                 LastWriteTime = entry.LastModifiedTime.HasValue
                     ? new DateTimeOffset(entry.LastModifiedTime.Value)
                     : null,
-                Crc32 = entry.Crc != 0 ? (uint)entry.Crc : null
+                Crc32 = CrcOf(entry)
             };
 
             _entries.Add(archiveEntry);
@@ -110,6 +110,21 @@ public class SharpCompressArchiveReader : IArchiveReader
 
         ResetForwardReader();
         return false;
+    }
+
+    // RAR5 entries need not carry a CRC32 (directories, files hashed with BLAKE2), and
+    // SharpCompress throws rather than returning 0 for them. The CRC is only a hint, so
+    // a missing one is left null instead of failing the whole archive.
+    private static uint? CrcOf(IArchiveEntry entry)
+    {
+        try
+        {
+            return entry.Crc != 0 ? (uint)entry.Crc : null;
+        }
+        catch (ArgumentNullException)
+        {
+            return null;
+        }
     }
 
     private void ResetForwardReader()
