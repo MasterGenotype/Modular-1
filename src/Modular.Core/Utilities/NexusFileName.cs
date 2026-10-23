@@ -39,6 +39,16 @@ public static partial class NexusFileName
     public static string? ParseModName(string? archivePath) =>
         Match(archivePath)?.Groups["name"].Value;
 
+    /// <summary>
+    /// Reads when the file was uploaded out of a downloaded archive's file name.
+    /// </summary>
+    /// <param name="archivePath">Path or file name of the archive, with or without extension.</param>
+    /// <returns>The upload time, or <c>null</c> when the file name is not in NexusMods' form.</returns>
+    public static DateTimeOffset? ParseUploadTime(string? archivePath) =>
+        Match(archivePath) is { } match && long.TryParse(match.Groups["time"].Value, out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
+
     private static Match? Match(string? archivePath)
     {
         if (string.IsNullOrWhiteSpace(archivePath))
@@ -63,6 +73,6 @@ public static partial class NexusFileName
     private static readonly string[] ArchiveExtensions =
         [".tar.gz", ".zip", ".rar", ".7z", ".tar", ".pak"];
 
-    [GeneratedRegex(@"^(?<name>.+?)-(?<id>\d+)-.+-\d{9,11}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<name>.+?)-(?<id>\d+)-.+-(?<time>\d{9,11})$", RegexOptions.CultureInvariant)]
     private static partial Regex Pattern();
 }

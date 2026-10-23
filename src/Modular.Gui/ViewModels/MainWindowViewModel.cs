@@ -355,6 +355,17 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (DownloadQueueViewModel == null) return;
 
+        // In the library, "download" means fetching newer files for the selected mod or
+        // for every mod in the selected folder.
+        if (CurrentViewModel is LibraryViewModel library)
+        {
+            if (library.CheckForUpdatesCommand.CanExecute(null))
+                await library.CheckForUpdatesCommand.ExecuteAsync(null);
+            else
+                StatusText = "Select a mod or a folder in the library to check it for updates";
+            return;
+        }
+
         // Unwrap wrapper VMs to get the active child VM
         ViewModelBase? activeVm = CurrentViewModel;
         if (activeVm is NexusModsViewModel nexusPanel)

@@ -2,15 +2,19 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
+using Modular.Core.Downloads;
 using Modular.Core.Backends;
 using Modular.Core.Installers;
 using Modular.Core.Services;
 using Modular.Core.Utilities;
+using Modular.Gui.Messages;
 using Modular.Gui.Services;
 using Modular.Sdk.Backends;
+using Modular.Sdk.Backends.Common;
 
 namespace Modular.Gui.ViewModels;
 
@@ -40,7 +44,22 @@ public partial class LibraryViewModel : ViewModelBase
 
     /// <summary>The node selected in the tree.</summary>
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
+    [NotifyPropertyChangedFor(nameof(UpdateCheckTip))]
     private LibraryNode? _selectedNode;
+
+    /// <summary>Whether an update check is running.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
+    private bool _isCheckingUpdates;
+
+    /// <summary>What "Check for updates" would cover, for its tooltip.</summary>
+    public string UpdateCheckTip => SelectedNode switch
+    {
+        null => "Select a mod or a folder to check it for updates",
+        { IsMod: true } node => $"Check {node.Name} for newer files",
+        var node => $"Check every mod in {node.Name} for newer files"
+    };
 
     [ObservableProperty]
     private GameDomainItem? _selectedDomain;
@@ -58,6 +77,7 @@ public partial class LibraryViewModel : ViewModelBase
     private bool _isLoading;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
     private bool _isReorganizing;
 
     [ObservableProperty]
@@ -276,6 +296,134 @@ public partial class LibraryViewModel : ViewModelBase
             });
         }
     }
+
+    private bool CanCheckForUpdates() => SelectedNode != null && !IsCheckingUpdates && !IsReorganizing;
+
+    /// <summary>
+    /// Checks the selected mod, or every mod in the selected backend, game or category
+    /// folder, for files newer than the ones downloaded, and queues the ones picked.
+    /// </summary>
+    /// <remarks>
+    /// The files that replace a download are ticked; other newer files (another variant,
+    /// a new optional file) are offered unticked. Downloads land in the mod's folder as
+    /// any other download does.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
+    private async Task CheckForUpdatesAsync()
+    {
+        var node = SelectedNode;
+        if (node == null || _backends == null || _dialogService == null)
+            return;
+
+        var folders = ModsUnder(node).Select(m => m.Path).ToList();
+        if (folders.Count == 0)
+        {
+            StatusMessage = $"There are no mods in {node.Name}";
+            return;
+        }
+
+        IsCheckingUpdates = true;
+        try
+        {
+            // Reading every folder's records is disk work; keep it off the UI thread.
+            IReadOnlyList<string> unknown = [];
+            var found = await Task.Run(() => LibraryUpdates.Identify(ModsDirectory, folders, out unknown));
+            var mods = (Found: found, Unknown: unknown);
+
+            var results = new List<LibraryModUpdate>();
+            for (var i = 0; i < mods.Found.Count; i++)
+            {
+                var mod = mods.Found[i];
+                StatusMessage = $"Checking {i + 1} of {mods.Found.Count}: {mod.Name}...";
+
+                var backend = _backends.Get(mod.BackendId);
+                results.Add(backend == null
+                    ? new LibraryModUpdate { Mod = mod, Error = $"{mod.BackendId} is not available" }
+                    : await LibraryUpdates.CheckAsync(mod, backend));
+            }
+
+            var updates = results.Where(r => r.HasUpdate).ToList();
+            var failed = results.Count(r => r.Error != null);
+            var notes = (failed > 0 ? $"; {failed} could not be checked" : string.Empty) +
+                        (mods.Unknown.Count > 0 ? $"; {mods.Unknown.Count} have no record of where they came from" : string.Empty);
+
+            if (updates.Count == 0)
+            {
+                StatusMessage = $"No updates for the {mods.Found.Count} mod(s) checked in {node.Name}{notes}";
+                return;
+            }
+
+            var labels = new List<string>();
+            var files = new List<(BackendMod Mod, BackendModFile File)>();
+            var ticked = new List<int>();
+
+            foreach (var update in updates.OrderBy(u => u.Mod.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var mod = new BackendMod
+                {
+                    ModId = update.Mod.ModId,
+                    Name = update.Mod.Name,
+                    GameDomain = update.Mod.Game,
+                    BackendId = update.Mod.BackendId,
+                    CategoryName = update.Mod.Category
+                };
+
+                foreach (var file in update.NewFiles)
+                {
+                    if (update.Suggested.Contains(file))
+                        ticked.Add(labels.Count);
+
+                    labels.Add(Describe(update.Mod, file));
+                    files.Add((mod, file));
+                }
+            }
+
+            var picked = await _dialogService.ShowMultiSelectAsync(
+                "Updates",
+                $"{updates.Count} of {mods.Found.Count} mod(s) in {node.Name} have newer files{notes}. " +
+                "Ticked files replace ones you have; the rest are other files uploaded since.",
+                labels,
+                ticked);
+
+            if (picked.Count == 0)
+            {
+                StatusMessage = $"{updates.Count} mod(s) have updates; none queued";
+                return;
+            }
+
+            var queue = picked.Select(i => files[i]).ToList();
+            WeakReferenceMessenger.Default.Send(new EnqueueDownloadsMessage(queue));
+            StatusMessage = $"Queued {queue.Count} update(s) for download";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Update check failed: {ex.Message}";
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+        }
+    }
+
+    // "Mod: File 1.2 (main, 2026-10-20)".
+    private static string Describe(LibraryMod mod, BackendModFile file)
+    {
+        var details = new[]
+        {
+            file.Category,
+            file.UploadedAt?.ToString("yyyy-MM-dd")
+        }.Where(d => !string.IsNullOrWhiteSpace(d));
+
+        var name = string.IsNullOrWhiteSpace(file.DisplayName) ? file.FileName : file.DisplayName;
+        var version = string.IsNullOrWhiteSpace(file.Version) ? string.Empty : $" {file.Version}";
+        return $"{mod.Name}: {name}{version} ({string.Join(", ", details)})";
+    }
+
+    // The mods a node stands for: itself, or every mod folder beneath it.
+    private static IEnumerable<ModFolderItem> ModsUnder(LibraryNode node) =>
+        node.Mod != null
+            ? [node.Mod]
+            : node.Children.SelectMany(ModsUnder);
 
     // Backends in the order the mods directory lists them; anything else after.
     private static int BackendOrder(string backendId)
