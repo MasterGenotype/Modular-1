@@ -208,4 +208,30 @@ public interface IGameModule
     /// are listed in the deploy report.
     /// </remarks>
     IReadOnlyList<DeployConstraint> GetDeployConstraints() => Array.Empty<DeployConstraint>();
+
+    /// <summary>
+    /// Files that mark a mod as core for this game: loaders other mods run through, and
+    /// native code built against the game executable.
+    /// </summary>
+    /// <returns>Rules, or an empty list when the game has no such files.</returns>
+    /// <remarks>
+    /// These are the mods that must move to a matching release when the game updates.
+    /// Requirements listed on mod pages rarely name them, because every mod for the game
+    /// assumes they are there.
+    /// </remarks>
+    IReadOnlyList<Compatibility.CoreModRule> GetCoreModRules() => Array.Empty<Compatibility.CoreModRule>();
+
+    /// <summary>
+    /// Paths whose files can stop working when the game updates: code, scripts, game
+    /// data overrides. Patterns as in <see cref="Compatibility.CoreModRule.PathPattern"/>.
+    /// </summary>
+    /// <returns>
+    /// The patterns, or <c>null</c> when the module cannot tell, in which case every file
+    /// counts as affected.
+    /// </returns>
+    /// <remarks>
+    /// A mod with none of these files, such as a texture pack, needs no release for an
+    /// update even when other mods depend on it.
+    /// </remarks>
+    IReadOnlyList<string>? GetUpdateSensitivePaths() => null;
 }

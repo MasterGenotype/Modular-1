@@ -2,6 +2,7 @@ using Modular.Core.Archives;
 using Modular.Core.Installers.Cyberpunk;
 using Modular.Sdk;
 using Modular.Sdk.Archives;
+using Modular.Sdk.Compatibility;
 using Modular.Sdk.Installers;
 using Modular.Sdk.Modules;
 
@@ -115,6 +116,45 @@ public sealed class CyberpunkGameModule : GameModuleBase
         "bin/x64/plugins/cyber_engine_tweaks/mods/*/db.sqlite3",
         "bin/x64/plugins/cyber_engine_tweaks/mods/*/*.log",
         "**/*.log"
+    ];
+
+    /// <summary>
+    /// Files that mark Cyberpunk's loaders, and mods with native code tied to the exe.
+    /// </summary>
+    /// <remarks>
+    /// RED4ext, Cyber Engine Tweaks and redscript are what every other code mod runs
+    /// through, so mod pages rarely list them. A RED4ext plugin is built against one game
+    /// executable; after a game update it fails to load, or crashes the game, until its
+    /// author rebuilds it.
+    /// </remarks>
+    public override IReadOnlyList<CoreModRule> GetCoreModRules() =>
+    [
+        new("red4ext/RED4ext.dll", CoreModRole.Loader, "RED4ext plugin loader"),
+        new("bin/x64/winmm.dll", CoreModRole.Loader, "RED4ext plugin loader"),
+        new("bin/x64/plugins/cyber_engine_tweaks.asi", CoreModRole.Loader, "Cyber Engine Tweaks, which runs CET mods"),
+        new("engine/tools/scc.exe", CoreModRole.Loader, "redscript compiler, which builds r6/scripts"),
+        new("red4ext/plugins/**/*.dll", CoreModRole.NativeCode, "RED4ext plugin built against the game executable")
+    ];
+
+    /// <summary>
+    /// Where Cyberpunk mods keep code and game data that a patch can break.
+    /// </summary>
+    /// <remarks>
+    /// Scripts and tweaks name game classes and records that patches rename; plugins and
+    /// loaders hook the executable; REDmod mods carry scripts and tweaks too. Archives in
+    /// <c>archive/pc/mod</c> hold meshes and textures, which patches leave alone, and
+    /// ArchiveXL <c>.xl</c> files only point at them.
+    /// </remarks>
+    public override IReadOnlyList<string> GetUpdateSensitivePaths() =>
+    [
+        "bin/**",
+        "engine/**",
+        "red4ext/**",
+        "r6/scripts/**",
+        "r6/tweaks/**",
+        "r6/config/**",
+        "r6/input/**",
+        "mods/**"
     ];
 
     /// <summary>

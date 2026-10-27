@@ -186,6 +186,11 @@ class Program
                 .WithExample("installed")
                 .WithExample("installed", "--game", "730");
 
+            config.AddCommand<CoreModsCommand>("core-mods")
+                .WithDescription("List the mods others rely on, and whether each has a release for a game update")
+                .WithExample("core-mods", "--game", "1091500")
+                .WithExample("core-mods", "--game", "1091500", "--since", "2026-10-22", "--game-version", "2.5")
+                .WithExample("core-mods", "--game", "1091500", "--inventory", "mods.json", "--since", "2026-10-22");
             config.AddCommand<DependenciesCommand>("dependencies")
                 .WithAlias("deps")
                 .WithDescription("List what installed mods need and do not have")

@@ -181,6 +181,13 @@ public abstract class GameModuleBase : IGameModule
     public virtual IReadOnlyList<DeployConstraint> GetDeployConstraints() =>
         Array.Empty<DeployConstraint>();
 
+    /// <inheritdoc />
+    public virtual IReadOnlyList<Sdk.Compatibility.CoreModRule> GetCoreModRules() =>
+        Array.Empty<Sdk.Compatibility.CoreModRule>();
+
+    /// <inheritdoc />
+    public virtual IReadOnlyList<string>? GetUpdateSensitivePaths() => null;
+
     /// <summary>
     /// Tests whether a path relative to the install root exists, as either a file
     /// or a directory. Matching is case-insensitive even on case-sensitive
