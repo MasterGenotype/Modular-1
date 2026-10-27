@@ -73,8 +73,57 @@ public sealed class CyberpunkInstallerTests : IDisposable
         var layout = Analyze(["readme.txt", "Foo/info.json", "Foo/archives/Foo.archive", "Foo/customSounds/a.wav"]);
 
         layout.Types.Should().Be(CyberpunkInstallType.RedMod);
-        Destinations(layout).Skip(1).Should().Equal(
+        Destinations(layout).Should().Equal(
             "mods/Foo/info.json", "mods/Foo/archives/Foo.archive", "mods/Foo/customSounds/a.wav");
+        layout.SkippedFiles.Should().Equal("readme.txt");
+    }
+
+    [Fact]
+    public void ItemCodeListsBesideAMod_AreLeftOutRatherThanDroppedAtTheGameRoot()
+    {
+        var layout = Analyze(["archive/pc/mod/outfit.archive", "archive/pc/mod/outfit.xl", "ND_Outfit Item codes.txt", "readme.TXT"]);
+
+        Destinations(layout).Should().Equal("archive/pc/mod/outfit.archive", "archive/pc/mod/outfit.xl");
+        layout.SkippedFiles.Should().Equal("ND_Outfit Item codes.txt", "readme.TXT");
+        layout.Rejection.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("CP77-Tattoo_Reference_(ALL-BLK)-HQ/BODY/BodyTat01-F (1).png", "CP77-Tattoo_Reference_(ALL-BLK)-HQ/readme.txt")]
+    [InlineData("custom_Unique_V_Body_Shape/base/characters/base_entities/woman_base/deformations_rigs/female_plr_deformations.rig", "custom_Unique_V_Body_Shape/base/x.animgraph")]
+    [InlineData("Recipes/Recipes.xlsx", "Recipes/readme.txt")]
+    [InlineData("archive/base/icon/template.inkatlas", "raw/base/icon/template.tga")]
+    public void AModdersResource_IsRefused(string first, string second)
+    {
+        var layout = Analyze([first, second]);
+
+        layout.Rejection.Should().Contain("nothing Cyberpunk 2077 loads");
+    }
+
+    [Fact]
+    public void AProgramCarryingModTemplates_IsRefused()
+    {
+        // Lethal Curves' rig builder: a Python app whose resources include .xl and .yaml.
+        var layout = Analyze(
+        [
+            "Builder/Builder.exe",
+            "Builder/_internal/python311.dll",
+            "Builder/_internal/resources/axl/always_equipped.xl",
+            "Builder/_internal/resources/axl/equippable/item.yaml"
+        ]);
+
+        layout.Rejection.Should().Contain("Windows program (Builder.exe)");
+        Destinations(layout).Should().NotContain(d => d.StartsWith("archive/") || d.StartsWith("r6/"));
+    }
+
+    [Fact]
+    public void AFrameworkDllAlone_InAGameFolder_IsStillInstalled()
+    {
+        // Nothing routed by type, but laid out from the game folder: not a resource.
+        var layout = Analyze(["bin/x64/plugins/some_loader.dll"]);
+
+        layout.Rejection.Should().BeNull();
+        Destinations(layout).Should().Equal("bin/x64/plugins/some_loader.dll");
     }
 
     [Fact]
@@ -254,6 +303,79 @@ public sealed class CyberpunkInstallerTests : IDisposable
 
         plan.Operations.Select(o => o.DestinationPath).Should().Equal(
             Cet + "Better Lights/init.lua", Cet + "Better Lights/db.lua");
+    }
+
+    private const string Presets = CyberpunkArchiveAnalyzer.AcuPresetsRoot;
+
+    [Fact]
+    public async Task Analyze_ALoosePreset_GoesToAcuFemale_AndAsksWhichBody()
+    {
+        // The Angel preset: its own folder, nothing else.
+        var archive = Zip("Angel Character preset-28861-1-00-1776033387.zip",
+            ("Angel character preset/ANGEL.preset", "LocKey#898870017445300632:8\n"));
+
+        var plan = await new CyberpunkModInstaller().AnalyzeAsync(
+            archive, new InstallContext { GameDirectory = NewDir(), GameId = GameIds.Cyberpunk2077 });
+
+        plan.Operations.Select(o => o.DestinationPath).Should().Equal(Presets + "female/ANGEL.preset");
+        var choice = plan.Choices.Should().ContainSingle().Which;
+        choice.Id.Should().Be(CyberpunkModInstaller.PresetBodyChoiceId);
+        choice.IsResolved.Should().BeFalse();
+        choice.Options.Select(o => o.Id).Should().Equal("female", "male");
+    }
+
+    [Fact]
+    public async Task Analyze_APresetForMaleV_GoesToAcuMale()
+    {
+        var archive = Zip("Awesome V preset.zip", ("Awesome V.preset", "LocKey#898870017445300632:0\n"));
+        var context = new InstallContext { GameDirectory = NewDir(), GameId = GameIds.Cyberpunk2077 };
+        context.Selections[CyberpunkModInstaller.PresetBodyChoiceId] = "male";
+
+        var plan = await new CyberpunkModInstaller().AnalyzeAsync(archive, context);
+
+        plan.Operations.Select(o => o.DestinationPath).Should().Equal(Presets + "male/Awesome V.preset");
+        plan.Choices.Should().ContainSingle().Which.IsResolved.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Analyze_ACyberCatPresetAlone_IsRefusedWithTheReason()
+    {
+        // Amber Girl: a CyberCAT JSON preset and a list of the sliders to set by hand.
+        var archive = Zip("Amber girl preset-2856-1-1-1624743618.zip",
+            ("Amber-Girl-Preset.preset", "{\"DataExists\":true}"),
+            ("The Amber Girl - presets.txt", "Skin tone - 06"));
+
+        var act = () => new CyberpunkModInstaller().AnalyzeAsync(
+            archive, new InstallContext { GameDirectory = NewDir(), GameId = GameIds.Cyberpunk2077 });
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*CyberCAT preset*");
+    }
+
+    [Fact]
+    public async Task Analyze_ACyberCatPresetBesideAnAcuOne_IsLeftOutWithAWarning()
+    {
+        var archive = Zip("both.zip",
+            ("Amber.preset", "{\"DataExists\":true}"),
+            ("Amber ACU.preset", "LocKey#898870017445300632:3"));
+
+        var plan = await new CyberpunkModInstaller().AnalyzeAsync(
+            archive, new InstallContext { GameDirectory = NewDir(), GameId = GameIds.Cyberpunk2077 });
+
+        plan.Operations.Select(o => o.DestinationPath).Should().Equal(Presets + "female/Amber ACU.preset");
+        plan.Warnings.Should().Contain(w => w.Contains("Amber.preset") && w.Contains("CyberCAT"));
+    }
+
+    [Fact]
+    public async Task Analyze_APresetAlreadyInAcusFolder_KeepsItsPlace()
+    {
+        var archive = Zip("presets.zip",
+            ("bin/x64/plugins/cyber_engine_tweaks/mods/AppearanceChangeUnlocker/character-presets/male/Corpo.preset", "LocKey#1:0"));
+
+        var plan = await new CyberpunkModInstaller().AnalyzeAsync(
+            archive, new InstallContext { GameDirectory = NewDir(), GameId = GameIds.Cyberpunk2077 });
+
+        plan.Operations.Select(o => o.DestinationPath).Should().Equal(Presets + "male/Corpo.preset");
+        plan.Choices.Should().BeEmpty();
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

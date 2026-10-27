@@ -61,20 +61,27 @@ public interface IDialogService
     Task<List<int>> ShowMultiSelectAsync(string title, string message, List<string> items, List<int>? preSelected = null);
 
     /// <summary>
-    /// Shows a file chooser where exactly one main file must be picked and any optional
-    /// files can be ticked alongside it. With no main files, at least one optional file
-    /// must be ticked instead.
+    /// Shows a file chooser where at least one main file must be ticked and any optional
+    /// files can be ticked alongside. With no main files, at least one optional file must
+    /// be ticked instead.
     /// </summary>
     /// <param name="title">Dialog title.</param>
     /// <param name="message">Description message.</param>
-    /// <param name="mainItems">Main files; one of them is required.</param>
+    /// <param name="mainItems">
+    /// Main files. Usually alternatives, but a mod may split itself across several (a body
+    /// and a head), so more than one can be ticked.
+    /// </param>
     /// <param name="optionalItems">Optional files; any number may be ticked.</param>
-    /// <param name="preselectedMain">The main file picked to begin with, if any.</param>
+    /// <param name="preselectedMain">The main files ticked to begin with, if any.</param>
+    /// <param name="mainClashes">
+    /// Pairs of main files that write the same files. While both of a pair are ticked, each
+    /// is marked as overwriting the other; ticking both is still allowed.
+    /// </param>
     /// <returns>
-    /// The picked main index (null when there are no main files) and the ticked optional
-    /// indices, or null if cancelled.
+    /// The ticked main and optional indices, or null if cancelled.
     /// </returns>
-    Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
+    Task<(List<int> Main, List<int> Optional)?> ShowFileChoiceAsync(
         string title, string message, List<string> mainItems, List<string> optionalItems,
-        int? preselectedMain = null);
+        IReadOnlyCollection<int>? preselectedMain = null,
+        IReadOnlyList<(int First, int Second)>? mainClashes = null);
 }

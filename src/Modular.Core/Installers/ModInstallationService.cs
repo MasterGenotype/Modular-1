@@ -207,7 +207,25 @@ public class ModInstallationService
         }
 
         using var looseFileScope = looseFile;
-        var readPath = looseFile?.ArchivePath ?? archivePath;
+
+        // A download of nothing but other archives, one per version, is read through the
+        // chosen inner archive. The changeset keeps the download's path, as above.
+        NestedArchive? nested = null;
+        if (looseFile == null)
+        {
+            try
+            {
+                nested = await NestedArchive.OpenIfNeededAsync(archivePath, options.Selections, ct: ct);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            {
+                result.Error = $"Could not read the archives inside {Path.GetFileName(archivePath)}: {ex.Message}";
+                return result;
+            }
+        }
+
+        using var nestedScope = nested;
+        var readPath = nested?.ArchivePath ?? looseFile?.ArchivePath ?? archivePath;
 
         // Step 0: Resolve the game and the module that owns it.
         //
@@ -301,6 +319,8 @@ public class ModInstallationService
 
             var plan = await _installerManager.CreateInstallPlanAsync(
                 readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+            if (nested != null)
+                plan.Choices.Insert(0, nested.Choice);
 
             // Step 4b: Settle anything the archive leaves to the user.
             //
@@ -331,8 +351,27 @@ public class ModInstallationService
                         foreach (var (choiceId, optionId) in answers)
                             context.Selections[choiceId] = optionId;
 
+                        // Another inner archive is another mod, which may need another installer.
+                        if (nested != null &&
+                            context.Selections.TryGetValue(NestedArchive.ChoiceId, out var version) &&
+                            await nested.SelectAsync(version, ct))
+                        {
+                            readPath = nested.ArchivePath;
+                            selection = await _installerManager.SelectInstallerAsync(readPath, gameId, module, ct);
+                            if (selection == null)
+                            {
+                                result.Error = "No suitable installer found for this archive";
+                                await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Failed, ct: ct);
+                                return result;
+                            }
+
+                            result.InstallerUsed = selection.Installer.DisplayName;
+                        }
+
                         plan = await _installerManager.CreateInstallPlanAsync(
                             readPath, context, preferredInstaller: selection.Installer, module: module, ct: ct);
+                        if (nested != null)
+                            plan.Choices.Insert(0, nested.Choice);
                     }
                 }
 
@@ -346,6 +385,7 @@ public class ModInstallationService
             }
 
             result.Choices = plan.Choices;
+            result.Warnings.AddRange(plan.Warnings);
 
             // Step 4c: Learn the mod's category while there is time to ask.
             await WarmCategoryAsync(archivePath, module, ct);

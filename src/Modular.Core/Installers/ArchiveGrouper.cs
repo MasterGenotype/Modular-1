@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Modular.Core.Dependencies.Conventions;
 using Modular.Core.Utilities;
+using Modular.Sdk.Archives;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
 
@@ -72,6 +73,115 @@ public sealed class ArchiveGrouper
         _backends = backends.ToList();
         _modsDirectory = modsDirectory;
         _logger = logger;
+    }
+
+    // Folders a mod's files are laid out from; an archive wrapped in one of these is not
+    // wrapped at all.
+    private static readonly HashSet<string> LayoutRoots = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "archive", "bin", "engine", "mods", "r6", "red4ext", "tools", "data", "bepinex", "fomod"
+    };
+
+    // Files every archive may carry without them being the mod: docs and previews.
+    private static readonly string[] DocumentExtensions = [".txt", ".md", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".url"];
+
+    /// <summary>
+    /// Finds which archives would write the same file as one another.
+    /// </summary>
+    /// <param name="archives">Archives of one mod.</param>
+    /// <param name="archiveReaderFactory">Opens them.</param>
+    /// <returns>
+    /// Each pair that shares a file, by index into <paramref name="archives"/>. A mod whose
+    /// main files share none splits one mod across them (a body and a head); one whose main
+    /// files share files offers them as alternatives.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Paths are compared below a single wrapper folder, and readmes and preview images
+    /// are left out, since every variant carries its own. A <c>fomod/</c> folder is kept:
+    /// each FOMOD archive is a whole mod's installer, so two of them are alternatives even
+    /// when their variants name their game files differently. An archive that cannot be
+    /// read clashes with nothing, so an unreadable file never blocks a choice.
+    /// </para>
+    /// <para>
+    /// Variants that override the same game resources from differently named files look
+    /// like parts; the result decides only what is ticked to begin with.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<(int First, int Second)> FindClashes(
+        IReadOnlyList<string> archives, IArchiveReaderFactory archiveReaderFactory)
+    {
+        ArgumentNullException.ThrowIfNull(archives);
+        ArgumentNullException.ThrowIfNull(archiveReaderFactory);
+
+        var contents = archives.Select(path => FilesOf(path, archiveReaderFactory)).ToList();
+        var clashes = new List<(int, int)>();
+
+        for (var i = 0; i < contents.Count; i++)
+        {
+            for (var j = i + 1; j < contents.Count; j++)
+            {
+                if (contents[i].Overlaps(contents[j]))
+                    clashes.Add((i, j));
+            }
+        }
+
+        return clashes;
+    }
+
+    /// <summary>
+    /// Picks the archives that can go in together: walking the candidates in order, each
+    /// one that clashes with none already picked.
+    /// </summary>
+    /// <param name="candidates">Indices to consider, the preferred (newest) first.</param>
+    /// <param name="clashes">Pairs that write the same files, from <see cref="FindClashes"/>.</param>
+    /// <returns>
+    /// Every part of a split mod, and the first of each set of alternatives: for a body in
+    /// two versions and a head, the preferred body and the head.
+    /// </returns>
+    public static List<int> PickCompatible(IEnumerable<int> candidates, IReadOnlyList<(int First, int Second)> clashes)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(clashes);
+
+        var clashing = clashes.Concat(clashes.Select(c => (c.Second, c.First))).ToHashSet();
+        var picked = new List<int>();
+
+        foreach (var i in candidates)
+        {
+            if (!picked.Any(p => clashing.Contains((p, i))))
+                picked.Add(i);
+        }
+
+        return picked;
+    }
+
+    private static HashSet<string> FilesOf(string archive, IArchiveReaderFactory factory)
+    {
+        try
+        {
+            using var reader = factory.Open(archive);
+            if (reader == null)
+                return [];
+
+            var files = reader.Entries
+                .Where(e => !e.IsDirectory)
+                .Select(e => e.FullName.Replace('\\', '/').Trim('/'))
+                .Where(p => !DocumentExtensions.Any(x => p.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            // Strip a lone wrapper folder, so "Body/archive/pc/mod/x" compares as "archive/pc/mod/x".
+            var tops = files.Select(p => p.Contains('/') ? p[..p.IndexOf('/')] : string.Empty).Distinct().ToList();
+            if (tops.Count == 1 && tops[0].Length > 0 && !LayoutRoots.Contains(tops[0]))
+                files = files.Select(p => p[(tops[0].Length + 1)..]).ToList();
+
+            return files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or NotSupportedException or UnauthorizedAccessException
+                                       or SharpCompress.Common.SharpCompressException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

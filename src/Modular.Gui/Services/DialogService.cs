@@ -345,9 +345,10 @@ public class DialogService : IDialogService
         return result;
     }
 
-    public async Task<(int? Main, List<int> Optional)?> ShowFileChoiceAsync(
+    public async Task<(List<int> Main, List<int> Optional)?> ShowFileChoiceAsync(
         string title, string message, List<string> mainItems, List<string> optionalItems,
-        int? preselectedMain = null)
+        IReadOnlyCollection<int>? preselectedMain = null,
+        IReadOnlyList<(int First, int Second)>? mainClashes = null)
     {
         var window = GetMainWindow();
         if (window == null) return null;
@@ -355,13 +356,12 @@ public class DialogService : IDialogService
         var okBtn = new Button { Content = "OK", MinWidth = 80 };
         var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
 
-        // Each dialog gets its own group, so radio buttons never couple across windows.
-        var group = $"main-{Guid.NewGuid():N}";
-        var radios = mainItems.Select((text, index) => new RadioButton
+        // Tick boxes, not radio buttons: a mod can split itself across main files (a body
+        // and a head) that are all needed.
+        var mainBoxes = mainItems.Select((text, index) => new CheckBox
         {
-            GroupName = group,
             Content = new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-            IsChecked = index == preselectedMain,
+            IsChecked = preselectedMain?.Contains(index) == true,
             FontSize = 12
         }).ToList();
 
@@ -374,27 +374,72 @@ public class DialogService : IDialogService
 
         // OK stays off until the choice is complete: a main file when there are any,
         // otherwise at least one optional file.
-        void UpdateOk() => okBtn.IsEnabled = radios.Count > 0
-            ? radios.Any(r => r.IsChecked == true)
+        void UpdateOk() => okBtn.IsEnabled = mainBoxes.Count > 0
+            ? mainBoxes.Any(r => r.IsChecked == true)
             : checkBoxes.Any(c => c.IsChecked == true);
 
-        foreach (var r in radios) r.IsCheckedChanged += (_, _) => UpdateOk();
+        // Under each main file, a note naming the ticked main files it overwrites, shown
+        // only while both are ticked: parts of one mod go together, alternatives do not.
+        var clashNotes = mainItems.Select(_ => new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            Margin = new Thickness(28, 0, 0, 2),
+            IsVisible = false
+        }).ToList();
+        foreach (var note in clashNotes)
+            note.Bind(TextBlock.ForegroundProperty, note.GetResourceObservable("WarningBrush"));
+
+        var clashPairs = (mainClashes ?? [])
+            .Where(c => c.First != c.Second &&
+                        c.First >= 0 && c.First < mainItems.Count &&
+                        c.Second >= 0 && c.Second < mainItems.Count)
+            .ToList();
+
+        void UpdateClashes()
+        {
+            for (var i = 0; i < mainBoxes.Count; i++)
+            {
+                var overwritten = mainBoxes[i].IsChecked == true
+                    ? clashPairs
+                        .Select(c => c.First == i ? c.Second : c.Second == i ? c.First : -1)
+                        .Where(j => j >= 0 && mainBoxes[j].IsChecked == true)
+                        .Distinct()
+                        .Select(j => mainItems[j])
+                        .ToList()
+                    : [];
+
+                clashNotes[i].IsVisible = overwritten.Count > 0;
+                clashNotes[i].Text = overwritten.Count > 0
+                    ? "⚠ Writes the same files as " + string.Join(" and ", overwritten) +
+                      " — whichever installs last wins. Untick one unless that is intended."
+                    : string.Empty;
+            }
+        }
+
+        foreach (var r in mainBoxes) r.IsCheckedChanged += (_, _) => { UpdateOk(); UpdateClashes(); };
         foreach (var c in checkBoxes) c.IsCheckedChanged += (_, _) => UpdateOk();
         UpdateOk();
+        UpdateClashes();
 
         var listPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 12, 0) };
 
-        if (radios.Count > 0)
+        if (mainBoxes.Count > 0)
         {
-            listPanel.Children.Add(SectionHeader("Main file — pick one (required)", top: 0));
-            foreach (var r in radios) listPanel.Children.Add(r);
+            listPanel.Children.Add(SectionHeader(
+                mainBoxes.Count > 1 ? "Main files — tick at least one" : "Main file (required)", top: 0));
+            for (var i = 0; i < mainBoxes.Count; i++)
+            {
+                listPanel.Children.Add(mainBoxes[i]);
+                listPanel.Children.Add(clashNotes[i]);
+            }
         }
 
         if (checkBoxes.Count > 0)
         {
             listPanel.Children.Add(SectionHeader(
-                radios.Count > 0 ? "Optional files — tick any to add" : "Optional files — tick at least one",
-                top: radios.Count > 0 ? 12 : 0));
+                mainBoxes.Count > 0 ? "Optional files — tick any to add" : "Optional files — tick at least one",
+                top: mainBoxes.Count > 0 ? 12 : 0));
             foreach (var c in checkBoxes) listPanel.Children.Add(c);
         }
 
@@ -442,10 +487,10 @@ public class DialogService : IDialogService
 
         if (cancelled) return null;
 
-        var main = radios.FindIndex(r => r.IsChecked == true);
+        var main = Enumerable.Range(0, mainBoxes.Count).Where(i => mainBoxes[i].IsChecked == true).ToList();
         var optional = Enumerable.Range(0, checkBoxes.Count).Where(i => checkBoxes[i].IsChecked == true).ToList();
 
-        return (main >= 0 ? main : null, optional);
+        return (main, optional);
     }
 
     private static TextBlock SectionHeader(string text, double top) => new()

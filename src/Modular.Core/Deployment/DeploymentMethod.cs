@@ -56,6 +56,12 @@ public readonly record struct DeploymentSettings(
     /// <summary>The built-in default: hardlink, falling back to copy.</summary>
     public static DeploymentSettings Default { get; } =
         new(DeploymentMethod.Hardlink, DeploymentFallback.Copy, "default");
+
+    /// <summary>
+    /// Whether every file is laid down again from staging, even one already in place.
+    /// Files changed outside Modular are still preserved before they are replaced.
+    /// </summary>
+    public bool Force { get; init; }
 }
 
 /// <summary>

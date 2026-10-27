@@ -73,18 +73,22 @@ public sealed class DeploymentService
     /// stored relative order afterwards.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="force">
+    /// Lay every file down again from staging, even those already in place.
+    /// </param>
     /// <returns>What the deployment did.</returns>
     public async Task<DeploymentResult> DeployAsync(
         GameInstallation installation,
         DeploymentMethod? methodOverride = null,
         IReadOnlyList<string>? loadOrderOverride = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool force = false)
     {
         ArgumentNullException.ThrowIfNull(installation);
 
         var module = _resolver.GetModule(installation);
         var modPaths = module.ResolveModPaths(installation);
-        var settings = await ResolveSettingsAsync(installation.GameKey, methodOverride, ct);
+        var settings = await ResolveSettingsAsync(installation.GameKey, methodOverride, ct) with { Force = force };
 
         var records = await _mods.ListAsync(installation.GameKey, enabledOnly: true, ct);
         var ordered = ApplyLoadOrderOverride(records, loadOrderOverride);
@@ -229,6 +233,71 @@ public sealed class DeploymentService
         {
             // Put the mod back so the recorded state still matches what is on disk.
             await _mods.UpsertAsync(record, ct);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Enables or disables mods of a game and redeploys, so the game folder matches.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="modIds">Mods to change, matched without regard to case.</param>
+    /// <param name="enabled">Whether the mods should be deployed.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The redeployment result, or a failure naming any mod the game does not have, in
+    /// which case nothing is changed.
+    /// </returns>
+    /// <remarks>
+    /// A disabled mod keeps its staging and its place in the order; only its files leave
+    /// the game folder. If the redeploy fails, the flags are put back so the recorded state
+    /// still matches what is on disk.
+    /// </remarks>
+    public async Task<DeploymentResult> SetEnabledAsync(
+        GameInstallation installation,
+        IReadOnlyCollection<string> modIds,
+        bool enabled,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentNullException.ThrowIfNull(modIds);
+
+        var known = await _mods.ListAsync(installation.GameKey, enabledOnly: false, ct);
+        var targets = new List<GameModRecord>();
+        var unknown = new List<string>();
+
+        foreach (var id in modIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var record = known.FirstOrDefault(m =>
+                string.Equals(m.ModId, id, StringComparison.OrdinalIgnoreCase));
+
+            if (record == null)
+                unknown.Add(id);
+            else
+                targets.Add(record);
+        }
+
+        if (unknown.Count > 0)
+        {
+            return new DeploymentResult
+            {
+                GameKey = installation.GameKey,
+                Error = $"Not installed for this game: {string.Join(", ", unknown)}"
+            };
+        }
+
+        var changed = targets.Where(m => m.Enabled != enabled).ToList();
+
+        foreach (var record in changed)
+            await _mods.SetEnabledAsync(installation.GameKey, record.ModId, enabled, ct);
+
+        var result = await DeployAsync(installation, ct: ct);
+
+        if (!result.Success)
+        {
+            foreach (var record in changed)
+                await _mods.SetEnabledAsync(installation.GameKey, record.ModId, record.Enabled, CancellationToken.None);
         }
 
         return result;

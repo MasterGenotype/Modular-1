@@ -217,6 +217,16 @@ class Program
                 .WithExample("deploy", "--game", "cyberpunk2077", "--method", "copy")
                 .WithExample("deploy", "--game", "1091500", "--purge");
 
+            config.AddCommand<EnableCommand>("enable")
+                .WithDescription("Turn mods back on and redeploy")
+                .WithExample("enable", "--game", "1091500", "my-mod", "other-mod")
+                .WithExample("enable", "--game", "1091500", "--all");
+
+            config.AddCommand<DisableCommand>("disable")
+                .WithDescription("Turn mods off and redeploy; they stay installed and keep their place in the order")
+                .WithExample("disable", "--game", "1091500", "my-mod")
+                .WithExample("disable", "--game", "1091500", "--all");
+
             config.AddBranch("order", order =>
             {
                 order.SetDescription("Inspect and set a game's load order");

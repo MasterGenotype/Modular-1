@@ -21,7 +21,9 @@ public class ZipArchiveReader : IArchiveReader
             Name = e.Name,
             Length = e.Length,
             CompressedLength = e.CompressedLength,
-            IsDirectory = string.IsNullOrEmpty(e.Name) && e.FullName.EndsWith('/'),
+            // Archives made on Windows may name folders with a trailing backslash, which
+            // .NET on Linux takes for part of a file name ("archive\pc\").
+            IsDirectory = e.FullName.EndsWith('/') || e.FullName.EndsWith('\\'),
             LastWriteTime = e.LastWriteTime,
             Crc32 = (uint)e.Crc32
         }).ToList();

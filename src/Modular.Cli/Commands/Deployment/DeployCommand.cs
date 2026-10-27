@@ -44,6 +44,11 @@ public sealed class DeployCommand : AsyncCommand<DeployCommand.Settings>
         [Description("Remove everything Modular deployed and restore the original files")]
         public bool Purge { get; init; }
 
+        /// <summary>Whether to lay every file down again, even those already in place.</summary>
+        [CommandOption("--force")]
+        [Description("Remove and redeploy every mod file, not only missing or changed ones")]
+        public bool Force { get; init; }
+
         /// <summary>Whether to list every affected file.</summary>
         [CommandOption("--verbose")]
         [Description("List every file rather than counts")]
@@ -140,7 +145,7 @@ public sealed class DeployCommand : AsyncCommand<DeployCommand.Settings>
                 .StartAsync("Deploying...", async _ =>
                 {
                     result = await installService.Deployment.DeployAsync(
-                        installation, method, loadOrder, cts.Token);
+                        installation, method, loadOrder, cts.Token, settings.Force);
                 });
 
             if (result == null || !result.Success)

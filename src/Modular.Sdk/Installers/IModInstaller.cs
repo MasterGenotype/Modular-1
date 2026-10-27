@@ -236,6 +236,12 @@ public class InstallPlan
     /// so and analyzes again with the answers.
     /// </remarks>
     public List<InstallChoice> Choices { get; set; } = new();
+
+    /// <summary>
+    /// Things the person installing should know about the plan, such as files left out
+    /// because the game would not load them. Reported with the install's result.
+    /// </summary>
+    public List<string> Warnings { get; set; } = new();
 }
 
 /// <summary>

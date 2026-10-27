@@ -38,7 +38,8 @@ public class SharpCompressArchiveReader : IArchiveReader
                 Name = Path.GetFileName(key.TrimEnd('/', '\\')),
                 Length = entry.Size,
                 CompressedLength = entry.CompressedSize,
-                IsDirectory = entry.IsDirectory,
+                // A trailing backslash is a folder too, in archives made on Windows.
+                IsDirectory = entry.IsDirectory || key.EndsWith('/') || key.EndsWith('\\'),
                 LastWriteTime = entry.LastModifiedTime.HasValue
                     ? new DateTimeOffset(entry.LastModifiedTime.Value)
                     : null,

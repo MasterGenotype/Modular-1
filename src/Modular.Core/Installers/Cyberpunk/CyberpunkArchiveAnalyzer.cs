@@ -56,6 +56,12 @@ public static class CyberpunkArchiveAnalyzer
 
     private const string CetModsRoot = "bin/x64/plugins/cyber_engine_tweaks/mods/";
 
+    /// <summary>
+    /// Where ACU (Appearance Change Unlocker) reads character presets from, one folder
+    /// per body: <c>female/</c> and <c>male/</c>.
+    /// </summary>
+    public const string AcuPresetsRoot = CetModsRoot + "AppearanceChangeUnlocker/character-presets/";
+
     // ── Framework root markers ───────────────────────────────────────────
 
     /// <summary>Files that indicate a framework/engine-level install.</summary>
@@ -196,6 +202,7 @@ public static class CyberpunkArchiveAnalyzer
         var fileRoutes = new Dictionary<string, FileRoute>(StringComparer.OrdinalIgnoreCase);
         var frameworkHints = new List<FrameworkFileHint>();
         var signalConfidences = new List<double>();
+        var skipped = new List<string>();
 
         void Route(ArchiveEntry entry, CyberpunkInstallType type, FileRoute route, double confidence)
         {
@@ -235,6 +242,11 @@ public static class CyberpunkArchiveAnalyzer
             {
                 if (TryRouteLoose(entry, path, lowerPath) is { } loose)
                     Route(entry, loose.Type, loose.Route, loose.Confidence);
+                else if (lenient)
+                    // Nothing in Cyberpunk reads it from where it would land (a readme, an
+                    // item code list, a modder's source file): left out, not dropped at
+                    // the game root.
+                    skipped.Add(entry.FullName);
                 else
                     fileRoutes[entry.FullName] = FileRoute.Declared(path, PackageTypes.Unknown);
                 continue;
@@ -371,6 +383,19 @@ public static class CyberpunkArchiveAnalyzer
                 "or download the mod's own files instead.";
             reason = "Standalone Windows program, not a mod";
         }
+        else if (lenient && detectedTypes == CyberpunkInstallType.Unknown &&
+                 !allLower.Any(IsUnderGameRootFolder))
+        {
+            // Nothing the game loads, and nothing laid out from the game folder: modders'
+            // resources (WolvenKit sources, templates, reference images) or documentation.
+            // Copied into the game they would only clutter it.
+            rejection =
+                "This archive holds nothing Cyberpunk 2077 loads: no .archive, script, " +
+                "plugin or config file, nor anything laid out from the game folder. It looks " +
+                "like a resource for mod authors (source files, templates, reference images); " +
+                "keep it in the library and open it from there.";
+            reason = "Nothing the game loads";
+        }
 
         return new CyberpunkInstallLayout
         {
@@ -380,7 +405,8 @@ public static class CyberpunkArchiveAnalyzer
             FileRoutes = fileRoutes,
             StrippedPrefix = strippedPrefix,
             FrameworkHints = frameworkHints,
-            Rejection = rejection
+            Rejection = rejection,
+            SkippedFiles = rejection == null ? skipped : []
         };
 
         // Routes a file that is not under any of the game's top-level folders, or
@@ -388,6 +414,16 @@ public static class CyberpunkArchiveAnalyzer
         (CyberpunkInstallType Type, FileRoute Route, double Confidence)? TryRouteLoose(
             ArchiveEntry entry, string path, string lowerPath)
         {
+            // Beside a program, files are the program's own: its runtime, and templates it
+            // writes mods from (Lethal Curves' rig builder carries .xl and .yaml files).
+            // Routed by extension they would install into the game as if they were a mod.
+            if (FindRoot(lowerPath, programRoots) != null)
+            {
+                return lenient && lowerPath.EndsWith(".exe")
+                    ? (CyberpunkInstallType.StandaloneExe, FileRoute.Declared(path), 0.70)
+                    : null;
+            }
+
             // .archive.xl is Cyberpunk-specific (ArchiveXL format) — always accepted.
             if (lowerPath.EndsWith(".archive.xl") && FindRoot(lowerPath, redModRoots) == null)
             {
@@ -412,6 +448,14 @@ public static class CyberpunkArchiveAnalyzer
             {
                 return (CyberpunkInstallType.CetMod, FileRoute.Heuristic(
                     $"{CetModsRoot}{cetName}/{RelativeTo(path, cetRoot)}", PackageTypes.Cp77CetMod), 0.85);
+            }
+
+            // A character preset, which ACU reads from its own folder. Which body it is for
+            // is not in the file; the installer asks, female to begin with.
+            if (lowerPath.EndsWith(".preset"))
+            {
+                return (CyberpunkInstallType.CetMod, FileRoute.Heuristic(
+                    AcuPresetsRoot + "female/" + Path.GetFileName(path), PackageTypes.Cp77CetMod), 0.80);
             }
 
             // .archive and .xl: the game and ArchiveXL only read archive/pc/mod directly.
@@ -543,7 +587,13 @@ public static class CyberpunkArchiveAnalyzer
     private static bool IsUnderGameRootFolder(string path)
     {
         var slash = path.IndexOf('/');
-        return slash > 0 && GameRootFolders.Contains(path[..slash]);
+        if (slash <= 0 || !GameRootFolders.Contains(path[..slash]))
+            return false;
+
+        // The game reads archive/pc/ only. "archive/base/..." is a WolvenKit project's
+        // unpacked source, which a modders' resource ships and the game never loads.
+        return !path.StartsWith("archive/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("archive/pc/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

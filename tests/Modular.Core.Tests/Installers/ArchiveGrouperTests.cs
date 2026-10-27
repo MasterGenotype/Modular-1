@@ -115,6 +115,82 @@ public sealed class ArchiveGrouperTests : IDisposable
         groups.Should().ContainSingle().Which.KnowsFileTypes.Should().BeFalse();
     }
 
+    [Fact]
+    public void FindClashes_PartsOfOneMod_ShareNoFiles()
+    {
+        // VTK Vanilla HD: the body and the head are both main files, and both needed.
+        var body = Zip("body.zip", "archive/pc/mod/vtk_Body.archive", "archive/pc/mod/vtk_Body.xl", "readme.txt");
+        var head = Zip("head.zip", "Head/archive/pc/mod/vtk_Head.archive", "Head/readme.txt");
+
+        ArchiveGrouper.FindClashes([body, head], new Modular.Core.Archives.ArchiveReaderFactory())
+            .Should().BeEmpty("readmes do not count, and the game files differ");
+    }
+
+    [Fact]
+    public void FindClashes_VersionsOfOneFile_Clash_EvenInsideAWrapperFolder()
+    {
+        var v1 = Zip("v1.zip", "archive/pc/mod/thing.archive");
+        var v2 = Zip("v2.zip", "Thing v2/archive/pc/mod/thing.archive");
+        var other = Zip("other.zip", "archive/pc/mod/other.archive");
+
+        ArchiveGrouper.FindClashes([v1, other, v2], new Modular.Core.Archives.ArchiveReaderFactory())
+            .Should().Equal((0, 2));
+    }
+
+    [Fact]
+    public void FindClashes_TwoFomodInstallers_AreAlternatives()
+    {
+        var a = Zip("25.zip", "fomod/ModuleConfig.xml", "mod_25/archive/pc/mod/sweaty25.archive");
+        var b = Zip("50.zip", "fomod/ModuleConfig.xml", "mod_50/archive/pc/mod/sweaty50.archive");
+
+        ArchiveGrouper.FindClashes([a, b], new Modular.Core.Archives.ArchiveReaderFactory())
+            .Should().ContainSingle();
+    }
+
+    [Fact]
+    public void PickCompatible_TicksEveryPart_AndTheFirstOfEachSetOfAlternatives()
+    {
+        // 0 body v2, 1 head, 2 body v1, 3 hands: the bodies clash, the rest go alongside.
+        var clashes = new List<(int, int)> { (0, 2) };
+
+        ArchiveGrouper.PickCompatible([0, 1, 2, 3], clashes).Should().Equal(0, 1, 3);
+    }
+
+    [Fact]
+    public void PickCompatible_FollowsTheOrderGiven_AndClashesEitherWay()
+    {
+        var clashes = new List<(int, int)> { (0, 1), (1, 2) };
+
+        ArchiveGrouper.PickCompatible([1, 0, 2], clashes).Should().Equal(1);
+        ArchiveGrouper.PickCompatible([0, 1, 2], clashes).Should().Equal(0, 2);
+    }
+
+    [Fact]
+    public void FindClashes_ThenPickCompatible_KeepsBodyVersionsApart_AndTheHead()
+    {
+        var bodyNew = Zip("body2.zip", "Body v2/archive/pc/mod/body.archive");
+        var head = Zip("head.zip", "archive/pc/mod/head.archive");
+        var bodyOld = Zip("body1.zip", "archive/pc/mod/body.archive");
+        var archives = new List<string> { bodyNew, head, bodyOld };
+
+        var clashes = ArchiveGrouper.FindClashes(archives, new Modular.Core.Archives.ArchiveReaderFactory());
+
+        ArchiveGrouper.PickCompatible([0, 1, 2], clashes).Should().Equal(0, 1);
+    }
+
+    private string Zip(string name, params string[] entries)
+    {
+        var path = Path.Combine(_root, name);
+        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        foreach (var entry in entries)
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(entry).Open());
+            writer.Write("x");
+        }
+
+        return path;
+    }
+
     private string Write(params string[] parts)
     {
         var path = Path.Combine([_root, .. parts]);

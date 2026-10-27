@@ -28,6 +28,10 @@ public partial class InstalledModsViewModel : ViewModelBase
     // only narrows the rows, so this keeps every mod of the game.
     private readonly Dictionary<string, ChangesetRecord> _records = new(StringComparer.Ordinal);
 
+    // Whether each changeset's mod is switched on, for the mods that are part of a game's
+    // deployment. Legacy installs went straight into the game folder and have no switch.
+    private readonly Dictionary<string, bool> _enabledOf = new(StringComparer.Ordinal);
+
     [ObservableProperty]
     private ObservableCollection<ChangesetDisplayModel> _changesets = new();
 
@@ -145,6 +149,8 @@ public partial class InstalledModsViewModel : ViewModelBase
             foreach (var record in installed)
                 _gameKeyOf[record.ChangesetId] = AssignGameKey(record, scanned);
 
+            await LoadEnabledStatesAsync(installed);
+
             foreach (var key in _gameKeyOf.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList())
             {
                 if (!names.ContainsKey(key))
@@ -182,6 +188,30 @@ public partial class InstalledModsViewModel : ViewModelBase
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    // Reads each managed mod's switch from its game's deployment.
+    private async Task LoadEnabledStatesAsync(IReadOnlyList<ChangesetRecord> installed)
+    {
+        _enabledOf.Clear();
+
+        var managed = installed
+            .Where(r => r.ManagedBy == ChangesetOwnership.Deployment &&
+                        !string.IsNullOrEmpty(r.GameKey) && r.ModId != null)
+            .GroupBy(r => r.GameKey!, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var game in managed)
+        {
+            var enabled = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var mod in await _installService!.Deployment.Mods.ListAsync(game.Key))
+                enabled[mod.ModId] = mod.Enabled;
+
+            foreach (var record in game)
+            {
+                if (enabled.TryGetValue(record.ModId!, out var on))
+                    _enabledOf[record.ChangesetId] = on;
+            }
         }
     }
 
@@ -286,7 +316,8 @@ public partial class InstalledModsViewModel : ViewModelBase
                 TargetDirectory = record.TargetDirectory ?? "Unknown",
                 ArchivePath = record.ArchivePath ?? "",
                 CreatedAt = record.CreatedAtUtc,
-                State = record.State.ToString()
+                State = record.State.ToString(),
+                IsEnabled = _enabledOf.TryGetValue(record.ChangesetId, out var on) ? on : null
             });
         }
 
@@ -333,6 +364,7 @@ public partial class InstalledModsViewModel : ViewModelBase
         {
             _gameKeyOf.Remove(id);
             _records.Remove(id);
+            _enabledOf.Remove(id);
         }
 
         GameTotal = _records.Count;
@@ -348,10 +380,9 @@ public partial class InstalledModsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Re-applies the selected game's whole mod installation: every enabled mod is laid
-    /// down again from staging, in load order, and the game's load-order files rewritten.
-    /// Files that are already in place are left as they are; missing or changed ones are
-    /// put back.
+    /// Re-applies the selected game's whole mod installation: every file of every enabled
+    /// mod is laid down again from staging, in load order, and the game's load-order files
+    /// rewritten. A file changed outside Modular is preserved before it is replaced.
     /// </summary>
     [RelayCommand]
     private async Task ReapplyGameAsync()
@@ -376,8 +407,8 @@ public partial class InstalledModsViewModel : ViewModelBase
 
         var message =
             $"Re-apply every enabled mod for {game.DisplayName} from staging, in load order?\n\n" +
-            "Files already in place are kept. Missing or changed files are put back, and any " +
-            "changed file is preserved before it is replaced.";
+            "Every mod file is removed and laid down again. Any file changed outside Modular " +
+            "is preserved before it is replaced.";
         if (legacy > 0)
             message += $"\n\n{legacy} mod(s) installed without staging are not part of the deployment and are left as they are.";
 
@@ -400,7 +431,7 @@ public partial class InstalledModsViewModel : ViewModelBase
             }
 
             var installation = resolved.Value.Installation;
-            var result = await Task.Run(() => _installService.Deployment.DeployAsync(installation));
+            var result = await Task.Run(() => _installService.Deployment.DeployAsync(installation, force: true));
 
             if (!result.Success)
             {
@@ -522,6 +553,146 @@ public partial class InstalledModsViewModel : ViewModelBase
             StatusMessage = $"Successfully removed all {removed} mod(s)";
         else
             StatusMessage = $"Removed {removed} mod(s), {failed} failed";
+    }
+
+    /// <summary>
+    /// Switches one mod on or off and redeploys its game.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleEnabledAsync(ChangesetDisplayModel? row)
+    {
+        if (row is not { IsEnabled: { } current })
+            return;
+
+        await SetEnabledAsync([row], !current);
+    }
+
+    /// <summary>Switches on every listed mod that is off.</summary>
+    [RelayCommand]
+    private Task EnableAllAsync() => SetListedEnabledAsync(enabled: true);
+
+    /// <summary>Switches off every listed mod that is on.</summary>
+    [RelayCommand]
+    private Task DisableAllAsync() => SetListedEnabledAsync(enabled: false);
+
+    // Only the rows on screen change, so a search narrows what this switches, the same as
+    // Remove All.
+    private async Task SetListedEnabledAsync(bool enabled)
+    {
+        if (_dialogService == null)
+            return;
+
+        var verb = enabled ? "enable" : "disable";
+        var rows = Changesets.Where(r => r.IsEnabled != null && r.IsEnabled != enabled).ToList();
+
+        if (rows.Count == 0)
+        {
+            StatusMessage = $"Nothing to {verb}: every listed mod that can be switched is already {verb}d";
+            return;
+        }
+
+        var scope = SelectedGame is { IsAllGames: false } game ? $" for {game.DisplayName}" : string.Empty;
+        var what = IsSearching
+            ? $"the {rows.Count} listed mod(s){scope} matching \"{SearchText.Trim()}\""
+            : $"{rows.Count} mod(s){scope}";
+        var effect = enabled
+            ? "Their files are deployed into the game folder again."
+            : "Their files leave the game folder. They stay installed, keep their place in the load order, and can be enabled again.";
+
+        if (!await _dialogService.ShowConfirmationAsync(
+                enabled ? "Enable Mods" : "Disable Mods",
+                $"{char.ToUpperInvariant(verb[0])}{verb[1..]} {what}?\n\n{effect}"))
+        {
+            return;
+        }
+
+        await SetEnabledAsync(rows, enabled);
+    }
+
+    // One redeploy per game, however many of its mods change.
+    private async Task SetEnabledAsync(IReadOnlyList<ChangesetDisplayModel> rows, bool enabled)
+    {
+        if (_installService == null || _dialogService == null || rows.Count == 0)
+            return;
+
+        var verb = enabled ? "enable" : "disable";
+        var changed = 0;
+        var notes = new List<string>();
+        var failures = new List<string>();
+
+        IsLoading = true;
+
+        try
+        {
+            var games = rows
+                .Where(r => _records.ContainsKey(r.ChangesetId))
+                .GroupBy(r => _records[r.ChangesetId].GameKey ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var game in games)
+            {
+                var gameRows = game.ToList();
+                var gameName = gameRows[0].Game;
+                StatusMessage = gameRows.Count == 1
+                    ? $"{(enabled ? "Enabling" : "Disabling")} {gameRows[0].ModId}..."
+                    : $"{(enabled ? "Enabling" : "Disabling")} {gameRows.Count} mod(s) for {gameName}...";
+
+                try
+                {
+                    var resolved = await _installService.ResolveGameAsync(_records[gameRows[0].ChangesetId]);
+                    if (resolved == null)
+                    {
+                        failures.Add($"{gameName}: the game could not be found on disk.");
+                        continue;
+                    }
+
+                    var installation = resolved.Value.Installation;
+                    var modIds = gameRows.Select(r => _records[r.ChangesetId].ModId!).ToList();
+                    var result = await Task.Run(() =>
+                        _installService.Deployment.SetEnabledAsync(installation, modIds, enabled));
+
+                    if (!result.Success)
+                    {
+                        failures.Add($"{gameName}: {result.Error ?? "unknown error"}");
+                        continue;
+                    }
+
+                    foreach (var row in gameRows)
+                    {
+                        row.IsEnabled = enabled;
+                        _enabledOf[row.ChangesetId] = enabled;
+                    }
+
+                    changed += gameRows.Count;
+                    notes.AddRange(DescribeDeploymentNotes(result));
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{gameName}: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+
+        StatusMessage = failures.Count == 0
+            ? rows.Count == 1
+                ? $"{(enabled ? "Enabled" : "Disabled")} {rows[0].ModId}"
+                : $"{(enabled ? "Enabled" : "Disabled")} {changed} mod(s)"
+            : $"{(enabled ? "Enabled" : "Disabled")} {changed} mod(s); {rows.Count - changed} could not be {verb}d";
+
+        if (failures.Count > 0)
+        {
+            await _dialogService.ShowErrorAsync(
+                $"Could Not {char.ToUpperInvariant(verb[0])}{verb[1..]}",
+                "These were not switched:\n\n" +
+                string.Join("\n", failures));
+        }
+        else if (notes.Count > 0)
+        {
+            await _dialogService.ShowWarningAsync("Deployed with Notes", string.Join("\n", notes));
+        }
     }
 
     /// <summary>
@@ -720,12 +891,14 @@ public partial class InstalledModsViewModel : ViewModelBase
         if (file != null)
             return [(mod, file)];
 
-        // One main file is required; optional files ride along with it if ticked.
+        // At least one main file is required; optional files ride along if ticked. Nothing
+        // is downloaded yet to tell alternatives from parts, so the person decides.
         var mains = files.Where(MissingDependencyService.IsMain).ToList();
         var optionals = files.Where(f => !MissingDependencyService.IsMain(f)).ToList();
 
         var message = mains.Count > 0
-            ? $"'{mod.Name}' has {files.Count} files. Pick the main file to download, and tick any optional files to download with it."
+            ? $"'{mod.Name}' has {files.Count} files. Tick the main file to download, and any optional files to go with it. " +
+              "Main files are usually alternatives, but some mods split themselves across several (a body and a head): tick each one that is needed."
             : $"'{mod.Name}' has {files.Count} files. Tick the ones to download.";
         if (item.Notes.Count > 0)
             message += "\n\nThe requiring mod's author says:\n" + string.Join("\n", item.Notes);
@@ -739,9 +912,10 @@ public partial class InstalledModsViewModel : ViewModelBase
         if (choice == null)
             return [];
 
-        var picked = new List<(BackendMod Mod, BackendModFile File)>();
-        if (choice.Value.Main is int main && main >= 0 && main < mains.Count)
-            picked.Add((mod, mains[main]));
+        var picked = choice.Value.Main
+            .Where(i => i >= 0 && i < mains.Count)
+            .Select(i => (mod, mains[i]))
+            .ToList();
         picked.AddRange(choice.Value.Optional
             .Where(i => i >= 0 && i < optionals.Count)
             .Select(i => (mod, optionals[i])));
@@ -937,6 +1111,27 @@ public partial class ChangesetDisplayModel : ObservableObject
 
     [ObservableProperty]
     private string _state = string.Empty;
+
+    /// <summary>
+    /// Whether the mod is deployed; null when it is not part of a game's deployment and so
+    /// cannot be switched, only removed.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanToggle))]
+    [NotifyPropertyChangedFor(nameof(ToggleLabel))]
+    [NotifyPropertyChangedFor(nameof(EnabledText))]
+    private bool? _isEnabled;
+
+    public bool CanToggle => IsEnabled != null;
+
+    public string ToggleLabel => IsEnabled == false ? "Enable" : "Disable";
+
+    public string EnabledText => IsEnabled switch
+    {
+        true => "On",
+        false => "Off",
+        null => "—"
+    };
 }
 
 /// <summary>

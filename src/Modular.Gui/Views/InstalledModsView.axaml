@@ -14,7 +14,7 @@
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,10">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <ComboBox ItemsSource="{Binding Games}"
                           SelectedItem="{Binding SelectedGame}"
@@ -39,7 +39,25 @@
                     <TextBlock Text="Re-apply Mods"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="3" Command="{Binding FetchAllMissingDependenciesCommand}"
+            <Button Grid.Column="3" Command="{Binding EnableAllCommand}"
+                    IsEnabled="{Binding !IsLoading}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Switch on every listed mod that is off, and redeploy">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ToggleSwitch" Width="16" Height="16"/>
+                    <TextBlock Text="Enable All"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Command="{Binding DisableAllCommand}"
+                    IsEnabled="{Binding !IsLoading}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Switch off every listed mod that is on, and redeploy; they stay installed">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ToggleSwitchOff" Width="16" Height="16"/>
+                    <TextBlock Text="Disable All"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="5" Command="{Binding FetchAllMissingDependenciesCommand}"
                     IsEnabled="{Binding !IsLoading}"
                     Margin="0,0,8,0"
                     ToolTip.Tip="Find and download what the installed mods need and do not have">
@@ -48,7 +66,7 @@
                     <TextBlock Text="Fetch Missing Dependencies"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="4" Command="{Binding RemoveAllCommand}"
+            <Button Grid.Column="6" Command="{Binding RemoveAllCommand}"
                     IsEnabled="{Binding !IsLoading}"
                     Margin="0,0,8,0"
                     ToolTip.Tip="Remove all the mods listed">
@@ -57,7 +75,7 @@
                     <TextBlock Text="Remove All"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="5" Command="{Binding RefreshInstalledCommand}"
+            <Button Grid.Column="7" Command="{Binding RefreshInstalledCommand}"
                     IsEnabled="{Binding !IsLoading}">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
@@ -99,6 +117,7 @@
                   IsReadOnly="True">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Changeset" Binding="{Binding ChangesetId}" Width="120"/>
+                <DataGridTextColumn Header="On" Binding="{Binding EnabledText}" Width="50"/>
                 <DataGridTextColumn Header="Mod" Binding="{Binding ModId}" Width="*"/>
                 <DataGridTextColumn Header="Game" Binding="{Binding Game}" Width="160"/>
                 <DataGridTextColumn Header="Target Directory" Binding="{Binding TargetDirectory}" Width="2*"/>
@@ -115,6 +134,19 @@
                                     <mi:MaterialIcon Kind="PackageDown" Width="14" Height="14"/>
                                     <TextBlock Text="Dependencies" FontSize="12"/>
                                 </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="" Width="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="vm:ChangesetDisplayModel">
+                            <Button Command="{Binding $parent[DataGrid].((vm:InstalledModsViewModel)DataContext).ToggleEnabledCommand}"
+                                    CommandParameter="{Binding}"
+                                    IsVisible="{Binding CanToggle}"
+                                    ToolTip.Tip="Switch this mod on or off and redeploy; a disabled mod stays installed"
+                                    Padding="6,4">
+                                <TextBlock Text="{Binding ToggleLabel}" FontSize="12"/>
                             </Button>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

@@ -51,6 +51,12 @@ public sealed class CyberpunkInstallLayout
     /// </summary>
     public string? Rejection { get; init; }
 
+    /// <summary>
+    /// Archive entries left out because nothing in the game reads them from where they
+    /// would land, such as readmes and item code lists beside a mod's files.
+    /// </summary>
+    public IReadOnlyList<string> SkippedFiles { get; init; } = [];
+
     /// <summary>True when a single type flag covers the entire archive.</summary>
     public bool IsSingleType => (Types & (Types - 1)) == 0 && Types != CyberpunkInstallType.Unknown;
 

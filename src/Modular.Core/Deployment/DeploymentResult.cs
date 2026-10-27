@@ -53,6 +53,11 @@ public sealed class DeploymentResult
     public List<string> GeneratedPathsLeftAlone { get; } = new();
 
     /// <summary>
+    /// Generated files placed from a mod's first version because the game had none yet.
+    /// </summary>
+    public List<string> Seeded { get; } = new();
+
+    /// <summary>
     /// Files whose vanilla backup was not restored because it belongs to an older build.
     /// </summary>
     public List<string> StaleBackupsSkipped { get; } = new();

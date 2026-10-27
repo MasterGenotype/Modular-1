@@ -618,6 +618,15 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         var isExternal = requirement.ExternalRequirement || modId <= 0;
         var sameGame = !isExternal && requirementGameId == gameId;
 
+        // Authors sometimes list a NexusMods mod as an off-site link to its page, so it
+        // is taken for the mod the link names rather than left to a match on its name.
+        if (isExternal && TryParseModPageUrl(requirement.Url, out var linkedDomain, out var linkedId))
+        {
+            modId = linkedId;
+            isExternal = false;
+            sameGame = string.Equals(linkedDomain, gameDomain, StringComparison.OrdinalIgnoreCase);
+        }
+
         var url = !string.IsNullOrWhiteSpace(requirement.Url)
             ? requirement.Url
             : sameGame ? $"https://www.nexusmods.com/{gameDomain}/mods/{modId}" : null;
@@ -631,6 +640,29 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             Url = url,
             Notes = string.IsNullOrWhiteSpace(requirement.Notes) ? null : requirement.Notes
         };
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex ModPageUrl = new(
+        @"^https?://(?:www\.)?nexusmods\.com/(?<domain>[a-z0-9_-]+)/mods/(?<id>\d+)(?:[/?#]|$)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    // Reads the game domain and mod id from a mod page link such as
+    // "https://www.nexusmods.com/cyberpunk2077/mods/107?tab=files".
+    private static bool TryParseModPageUrl(string? url, out string domain, out int modId)
+    {
+        domain = string.Empty;
+        modId = 0;
+
+        var match = url == null ? null : ModPageUrl.Match(url.Trim());
+        if (match is not { Success: true } ||
+            !int.TryParse(match.Groups["id"].Value, out modId) || modId <= 0)
+        {
+            return false;
+        }
+
+        domain = match.Groups["domain"].Value;
+        return true;
     }
 
     // --- Collections ---

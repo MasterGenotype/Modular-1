@@ -68,6 +68,9 @@ public sealed class DeploymentPlanner
         // Paks a module pinned to load last are placed after every ordered file.
         var pinned = new List<PlannedFile>();
 
+        // First versions of generated files, later mods winning.
+        var seeds = new Dictionary<DeployKey, PlannedFile>();
+
         foreach (var mod in mods)
         {
             foreach (var staged in mod.Files)
@@ -98,12 +101,25 @@ public sealed class DeploymentPlanner
                     continue;
                 }
 
-                // A file the game or its tools generate is never Modular's to place.
+                // A file the game or its tools write is theirs once it exists. A mod may still
+                // ship its first version (AMM ships its database filled), so it is seeded
+                // where nothing is there yet, and never overwritten or tracked.
                 if (MatchesAnyGlob(relativePath, generatedGlobs))
                 {
-                    plan.Skipped.Add(new SkippedFile(
-                        mod.ModId, rootName, relativePath,
-                        "matches a generated path owned by the game or its tools"));
+                    seeds[new DeployKey(rootName, relativePath)] = new PlannedFile
+                    {
+                        ModId = mod.ModId,
+                        RootName = rootName,
+                        RelativePath = relativePath,
+                        StagedPath = Path.Combine(
+                            mod.StagingPath,
+                            staged.RootName,
+                            staged.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                        DestinationPath = Path.Combine(
+                            rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)),
+                        PackageType = staged.PackageType,
+                        OrderIndex = mod.OrderIndex
+                    };
                     continue;
                 }
 
@@ -151,6 +167,7 @@ public sealed class DeploymentPlanner
 
         plan.Files.AddRange(winners.Values);
         plan.Files.AddRange(pinned);
+        plan.Seeds.AddRange(seeds.Values);
         plan.ConflictIndex = conflictIndex;
         plan.ModOrder = mods.Select(m => m.ModId).ToList();
 
@@ -398,6 +415,13 @@ public sealed class DeploymentPlan
 
     /// <summary>Files that were not planned, and why.</summary>
     public List<SkippedFile> Skipped { get; } = new();
+
+    /// <summary>
+    /// Files at generated paths that a mod ships a first version of. Each is copied only
+    /// where the destination is missing or empty, and is left out of the manifest, so
+    /// what the game wrote there is never replaced or purged.
+    /// </summary>
+    public List<PlannedFile> Seeds { get; } = new();
 
     /// <summary>Destinations holding a file Modular did not deploy.</summary>
     public List<UnmanagedReplacement> UnmanagedReplacements { get; } = new();

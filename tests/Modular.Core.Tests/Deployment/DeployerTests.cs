@@ -59,6 +59,116 @@ public sealed class DeployerTests : IDisposable
     }
 
     [Fact]
+    public async Task Redeploy_AHardlinkWithAStaleRecordedInode_IsKeptNotPreserved()
+    {
+        // Seen on a real install: every recorded device:inode had gone stale while the links
+        // were untouched, and a redeploy moved every deployed file into the overwrite store.
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"));
+        await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+        var actual = fixture.CorruptRecordedInodes();
+
+        var result = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Success.Should().BeTrue(result.Error);
+        result.Displaced.Should().BeEmpty();
+        result.Unchanged.Should().Contain("game/a.txt");
+        fixture.OverwriteHas("game/a.txt").Should().BeFalse();
+        fixture.LoadManifest().Files.Single().Inode.Should().Be(actual.Single());
+    }
+
+    [Fact]
+    public async Task Removing_AHardlinkWithAStaleRecordedInode_DeletesItNotPreserves()
+    {
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"));
+        fixture.StageMod("mod-b", ("game/b.txt", "b"));
+        await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a", "mod-b");
+        fixture.CorruptRecordedInodes();
+
+        var result = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Success.Should().BeTrue(result.Error);
+        result.Displaced.Should().BeEmpty();
+        File.Exists(fixture.GamePath("b.txt")).Should().BeFalse();
+        fixture.OverwriteHas("game/b.txt").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Redeploy_AHardlinkReplacedByARealFile_IsStillPreserved()
+    {
+        // The stale-record allowance must not swallow a real edit: an atomic save breaks
+        // the link, so the file no longer shares the staged inode.
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"));
+        await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+        fixture.CorruptRecordedInodes();
+
+        var temp = fixture.GamePath("a.txt.tmp");
+        File.WriteAllText(temp, "the user's own edit");
+        File.Move(temp, fixture.GamePath("a.txt"), overwrite: true);
+
+        var result = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Displaced.Should().Contain("game/a.txt");
+        fixture.OverwriteHas("game/a.txt").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ForcedRedeploy_LaysEveryFileDownAgain()
+    {
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"), ("game/sub/b.txt", "b"));
+        var first = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+        first.Placed.Should().HaveCount(2);
+
+        var result = await fixture.ForceDeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Success.Should().BeTrue(result.Error);
+        result.Unchanged.Should().BeEmpty();
+        result.Placed.Should().BeEquivalentTo("game/a.txt", "game/sub/b.txt");
+        result.Displaced.Should().BeEmpty();
+        File.ReadAllText(fixture.GamePath("sub/b.txt")).Should().Be("b");
+
+        var again = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+        again.Unchanged.Should().BeEquivalentTo("game/a.txt", "game/sub/b.txt");
+    }
+
+    [Fact]
+    public async Task ForcedRedeploy_OfModularsOwnLinks_PreservesNothing()
+    {
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"));
+        await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+        fixture.CorruptRecordedInodes();
+
+        var result = await fixture.ForceDeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Placed.Should().Contain("game/a.txt");
+        result.Displaced.Should().BeEmpty();
+        fixture.OverwriteHas("game/a.txt").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ForcedRedeploy_StillPreservesAFileTheUserEdited()
+    {
+        var fixture = NewFixture();
+        fixture.StageMod("mod-a", ("game/a.txt", "a"));
+        await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        var temp = fixture.GamePath("a.txt.tmp");
+        File.WriteAllText(temp, "the user's own edit");
+        File.Move(temp, fixture.GamePath("a.txt"), overwrite: true);
+
+        var result = await fixture.ForceDeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Placed.Should().Contain("game/a.txt");
+        result.Displaced.Should().Contain("game/a.txt");
+        fixture.OverwriteHas("game/a.txt").Should().BeTrue();
+        File.ReadAllText(fixture.GamePath("a.txt")).Should().Be("a");
+    }
+
+    [Fact]
     public async Task Deploy_Symlink_PointsAtTheAbsoluteStagedPath()
     {
         // Relative targets break as soon as two roots live in different trees, which is
@@ -211,17 +321,43 @@ public sealed class DeployerTests : IDisposable
             ("game/r6/cache/final.redscripts", "compiled"),
             ("game/archive/pc/mod/a.archive", "a"));
 
-        await fixture.DeployAsync(DeploymentMethod.Copy, "mod-a");
-
-        // The generated path is never deployed in the first place.
-        File.Exists(fixture.GamePath("r6/cache/final.redscripts")).Should().BeFalse();
-
-        // Nor is one that already exists removed.
         fixture.WriteGameFile("r6/cache/final.redscripts", "tool output");
+        var result = await fixture.DeployAsync(DeploymentMethod.Copy, "mod-a");
+
+        // What the tool wrote is not replaced by the mod's copy...
+        result.Seeded.Should().BeEmpty();
+        File.ReadAllText(fixture.GamePath("r6/cache/final.redscripts")).Should().Be("tool output");
+
+        // ...nor removed.
         var purge = fixture.Purge();
 
         purge.Removed.Should().NotContain("game/r6/cache/final.redscripts");
         File.ReadAllText(fixture.GamePath("r6/cache/final.redscripts")).Should().Be("tool output");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task Deploy_AGeneratedFileAModShips_IsSeededWhereTheGameHasNone(string? existing)
+    {
+        // AMM ships its database filled; without it AMM fails with "no such table". An
+        // empty file is what CET leaves behind when the mod opened a database that was
+        // not there.
+        var fixture = NewFixture(new GeneratedPathsModule());
+        fixture.StageMod("mod-a", ("game/r6/cache/db.sqlite3", "filled"));
+        if (existing != null)
+            fixture.WriteGameFile("r6/cache/db.sqlite3", existing);
+
+        var result = await fixture.DeployAsync(DeploymentMethod.Hardlink, "mod-a");
+
+        result.Seeded.Should().Equal("game/r6/cache/db.sqlite3");
+        File.ReadAllText(fixture.GamePath("r6/cache/db.sqlite3")).Should().Be("filled");
+
+        // A copy, so the game's writes stay out of staging, and never purged.
+        File.WriteAllText(fixture.GamePath("r6/cache/db.sqlite3"), "user state");
+        File.ReadAllText(fixture.StagedPath("mod-a", "game/r6/cache/db.sqlite3")).Should().Be("filled");
+        fixture.Purge();
+        File.ReadAllText(fixture.GamePath("r6/cache/db.sqlite3")).Should().Be("user state");
     }
 
     [Fact]
@@ -522,8 +658,15 @@ public sealed class DeployerTests : IDisposable
         public Task<DeploymentResult> DeployAsync(DeploymentMethod method, params string[] modOrder) =>
             DeployAsync(method, DeploymentFallback.Copy, modOrder);
 
-        public async Task<DeploymentResult> DeployAsync(
-            DeploymentMethod method, DeploymentFallback fallback, params string[] modOrder)
+        public Task<DeploymentResult> DeployAsync(
+            DeploymentMethod method, DeploymentFallback fallback, params string[] modOrder) =>
+            DeployAsync(method, fallback, force: false, modOrder);
+
+        public Task<DeploymentResult> ForceDeployAsync(DeploymentMethod method, params string[] modOrder) =>
+            DeployAsync(method, DeploymentFallback.Copy, force: true, modOrder);
+
+        private async Task<DeploymentResult> DeployAsync(
+            DeploymentMethod method, DeploymentFallback fallback, bool force, string[] modOrder)
         {
             var installation = Installation;
             var modPaths = _module.ResolveModPaths(installation);
@@ -550,7 +693,7 @@ public sealed class DeployerTests : IDisposable
             {
                 result = await _deployer.DeployAsync(
                     installation, _module, plan,
-                    new DeploymentSettings(method, fallback, "test"));
+                    new DeploymentSettings(method, fallback, "test") { Force = force });
             }
             catch (DeploymentAbortedException ex)
             {
@@ -562,6 +705,28 @@ public sealed class DeployerTests : IDisposable
         }
 
         public DeploymentResult Purge() => _deployer.Purge(Installation);
+
+        public DeploymentManifest LoadManifest() =>
+            DeploymentManifest.Load(
+                Layout.GetGameStagingDirectory(Installation.GameKey), Installation.GameKey);
+
+        // Rewrites every recorded inode to one no file has, and returns the real ones.
+        public List<string?> CorruptRecordedInodes()
+        {
+            var manifest = LoadManifest();
+            var actual = manifest.Files.Select(f => f.Inode).ToList();
+
+            foreach (var file in manifest.Files)
+                file.Inode = "0:1";
+
+            manifest.Save(Layout.GetGameStagingDirectory(Installation.GameKey));
+            return actual;
+        }
+
+        public bool OverwriteHas(string rootRelative) =>
+            File.Exists(Path.Combine(
+                Layout.GetOverwriteDirectory(Installation.GameKey),
+                rootRelative.Replace('/', Path.DirectorySeparatorChar)));
     }
 
     /// <summary>Reads a staged tree the way the real pipeline does.</summary>

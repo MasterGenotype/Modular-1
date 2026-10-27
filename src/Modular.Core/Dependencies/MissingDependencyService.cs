@@ -161,6 +161,9 @@ public sealed class MissingDependencyService
 
     private static readonly Regex NonWord = new(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);
 
+    // A note an author put in brackets after a requirement's name: "Codeware (No REDMOD version)".
+    private static readonly Regex BracketedNote = new(@"\s*[\(\[][^\)\]]*[\)\]]", RegexOptions.Compiled);
+
     // An author's note that opens by calling the requirement optional: "(Optional) Adds…".
     private static readonly Regex OptionalNote = new(
         @"^\W*optional\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -349,7 +352,8 @@ public sealed class MissingDependencyService
                         continue;
                     }
 
-                    if (present.Contains(Normalize(requirement.Name)))
+                    if (present.Contains(Normalize(requirement.Name)) ||
+                        present.Contains(Normalize(BracketedNote.Replace(requirement.Name, " "))))
                     {
                         if (!satisfiedElsewhere.Contains(requirement.Name, StringComparer.OrdinalIgnoreCase))
                             satisfiedElsewhere.Add(requirement.Name);

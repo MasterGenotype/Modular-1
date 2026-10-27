@@ -133,6 +133,12 @@ public sealed class Deployer : IDeployer
                 PlaceFile(file, plan, previous, manifest, result, settings, constraints, fallbackRoots, installation);
             }
 
+            foreach (var seed in plan.Seeds)
+            {
+                ct.ThrowIfCancellationRequested();
+                SeedFile(seed, result);
+            }
+
             manifest.Save(gameStaging);
             result.Manifest = manifest;
 
@@ -309,7 +315,8 @@ public sealed class Deployer : IDeployer
                 continue;
             }
 
-            if (!strategy.Matches(record.ToIdentity(), current.Value))
+            if (!strategy.Matches(record.ToIdentity(), current.Value) &&
+                !IsLinkToStaged(method, record.StagedPath, current.Value))
             {
                 if (buildChanged)
                 {
@@ -366,6 +373,29 @@ public sealed class Deployer : IDeployer
     /// <summary>Suffix used for a manifest file's pre-existing version.</summary>
     private const string VanillaBackupSuffix = ".modular-vanilla";
 
+    // Copies a mod's first version of a generated file where the game has none yet. A
+    // copy, not a link: the game writes to it, and must not write through to staging.
+    private void SeedFile(PlannedFile seed, DeploymentResult result)
+    {
+        var destination = new FileInfo(seed.DestinationPath);
+        if (destination.Exists && destination.Length > 0)
+            return;
+
+        if (!File.Exists(seed.StagedPath))
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(destination.DirectoryName!);
+            File.Copy(seed.StagedPath, seed.DestinationPath, overwrite: true);
+            result.Seeded.Add($"{seed.RootName}/{seed.RelativePath}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            result.Warnings.Add($"Could not place {seed.RootName}/{seed.RelativePath} from {seed.ModId}: {ex.Message}");
+        }
+    }
+
     private void PlaceFile(
         PlannedFile file,
         DeploymentPlan plan,
@@ -411,19 +441,30 @@ public sealed class Deployer : IDeployer
         var strategy = _strategies[requested];
 
         // Incremental: a file already matching what we recorded needs no rewrite. This is
-        // what keeps a reorder of a large mod list from rewriting gigabytes.
-        if (existing != null &&
+        // what keeps a reorder of a large mod list from rewriting gigabytes. A forced
+        // deployment skips it and lays every file down again.
+        if (!settings.Force &&
+            existing != null &&
             string.Equals(existing.ModId, file.ModId, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(existing.Method, requested.ToName(), StringComparison.Ordinal) &&
-            strategy.ReadIdentity(file.DestinationPath) is { } current &&
-            strategy.Matches(existing.ToIdentity(), current) &&
-            strategy.ReflectsStaged(file.StagedPath, existing.ToIdentity()))
+            strategy.ReadIdentity(file.DestinationPath) is { } current)
         {
-            record.SetIdentity(existing.ToIdentity());
-            record.Requested = existing.Requested;
-            manifest.Files.Add(record);
-            result.Unchanged.Add($"{file.RootName}/{file.RelativePath}");
-            return;
+            // A link that is still the staged file is in place even when its record has gone
+            // stale, and the record is refreshed from it.
+            FileIdentity? inPlace =
+                strategy.Matches(existing.ToIdentity(), current) &&
+                strategy.ReflectsStaged(file.StagedPath, existing.ToIdentity())
+                    ? existing.ToIdentity()
+                    : IsLinkToStaged(requested, file.StagedPath, current) ? current : null;
+
+            if (inPlace is { } identity)
+            {
+                record.SetIdentity(identity);
+                record.Requested = existing.Requested;
+                manifest.Files.Add(record);
+                result.Unchanged.Add($"{file.RootName}/{file.RelativePath}");
+                return;
+            }
         }
 
         var destinationDir = Path.GetDirectoryName(file.DestinationPath);
@@ -436,8 +477,11 @@ public sealed class Deployer : IDeployer
             var existingMethod =
                 DeploymentMethods.ParseMethod(existing.Method) ?? requested;
 
-            if (!_strategies[existingMethod].Matches(existing.ToIdentity(), present))
+            if (!_strategies[existingMethod].Matches(existing.ToIdentity(), present) &&
+                !IsLinkToStaged(existingMethod, existing.StagedPath, present))
+            {
                 PreserveDisplaced(existing, file.DestinationPath, result, installation);
+            }
         }
 
         try
@@ -586,6 +630,21 @@ public sealed class Deployer : IDeployer
                 $"Could not restore the original {record.Root}/{record.Path}: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Whether a destination is a hardlink to the staged file itself.
+    /// </summary>
+    /// <remarks>
+    /// Such a file is Modular's own whatever its record says. Recorded device:inode values
+    /// have been seen to go stale while the links were untouched, which made every deployed
+    /// file look changed and moved them all into the overwrite store. This hides no edit the
+    /// record could catch: an in-place edit of a hardlink changes the staged file too.
+    /// </remarks>
+    private static bool IsLinkToStaged(DeploymentMethod method, string? stagedPath, FileIdentity current) =>
+        method == DeploymentMethod.Hardlink &&
+        current.Inode != null &&
+        !string.IsNullOrEmpty(stagedPath) &&
+        string.Equals(NativeLink.TryGetInodeIdentity(stagedPath), current.Inode, StringComparison.Ordinal);
 
     /// <summary>
     /// Moves a file Modular no longer recognises into the overwrite store.

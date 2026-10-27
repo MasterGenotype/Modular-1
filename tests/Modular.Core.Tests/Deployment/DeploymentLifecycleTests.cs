@@ -125,6 +125,54 @@ public sealed class DeploymentLifecycleTests : IAsyncLifetime
         File.Exists(Path.Combine(_game, "a.txt")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task SetEnabled_Off_RemovesTheFilesButKeepsTheModAndItsPlace()
+    {
+        await InstallAsync("mod-a", ("a.txt", "a"));
+        var b = await InstallAsync("mod-b", ("b.txt", "b"));
+        var installation = (await _service.Deployment.ResolveInstallationAsync(_game))!;
+
+        var result = await _service.Deployment.SetEnabledAsync(installation, ["MOD-A"], enabled: false);
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(Path.Combine(_game, "a.txt")).Should().BeFalse();
+        File.Exists(Path.Combine(_game, "b.txt")).Should().BeTrue();
+
+        var mods = await _service.Deployment.Mods.ListAsync(b.GameKey!);
+        mods.Select(m => (m.ModId, m.Enabled)).Should().Equal(("mod-a", false), ("mod-b", true));
+        Directory.Exists(mods[0].StagingPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SetEnabled_BackOn_RestoresTheModsFilesAndItsWin()
+    {
+        await InstallAsync("mod-a", ("shared.txt", "from-a"));
+        await InstallAsync("mod-b", ("shared.txt", "from-b"));
+        var installation = (await _service.Deployment.ResolveInstallationAsync(_game))!;
+
+        await _service.Deployment.SetEnabledAsync(installation, ["mod-b"], enabled: false);
+        File.ReadAllText(Path.Combine(_game, "shared.txt")).Should().Be("from-a");
+
+        var result = await _service.Deployment.SetEnabledAsync(installation, ["mod-b"], enabled: true);
+
+        result.Success.Should().BeTrue(result.Error);
+        File.ReadAllText(Path.Combine(_game, "shared.txt")).Should().Be("from-b");
+    }
+
+    [Fact]
+    public async Task SetEnabled_WithAnUnknownMod_ChangesNothing()
+    {
+        var a = await InstallAsync("mod-a", ("a.txt", "a"));
+        var installation = (await _service.Deployment.ResolveInstallationAsync(_game))!;
+
+        var result = await _service.Deployment.SetEnabledAsync(installation, ["mod-a", "nope"], enabled: false);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("nope");
+        File.Exists(Path.Combine(_game, "a.txt")).Should().BeTrue();
+        (await _service.Deployment.Mods.ListAsync(a.GameKey!)).Single().Enabled.Should().BeTrue();
+    }
+
     // ── uninstall ───────────────────────────────────────────────────────────
 
     [Fact]

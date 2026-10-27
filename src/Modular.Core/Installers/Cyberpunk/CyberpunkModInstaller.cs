@@ -4,6 +4,7 @@ using Modular.Core.Utilities;
 using Modular.Sdk;
 using Modular.Sdk.Archives;
 using Modular.Sdk.Installers;
+using Modular.Sdk.Modules;
 
 namespace Modular.Core.Installers.Cyberpunk;
 
@@ -170,8 +171,9 @@ public class CyberpunkModInstaller : IModInstaller, IGameAwareInstaller
         };
 
         long totalBytes = 0;
+        var skipped = layout.SkippedFiles.ToHashSet(StringComparer.Ordinal);
 
-        foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
+        foreach (var entry in reader.Entries.Where(e => !e.IsDirectory && !skipped.Contains(e.FullName)))
         {
             // Look up the routed destination for this entry, together with the package
             // type and the rule that chose it — recorded on the operation so a mis-route
@@ -210,7 +212,17 @@ public class CyberpunkModInstaller : IModInstaller, IGameAwareInstaller
             totalBytes += entry.Length;
         }
 
+        totalBytes -= SettlePresets(plan, reader, context);
         plan.TotalBytes = totalBytes;
+
+        if (skipped.Count > 0)
+        {
+            var names = layout.SkippedFiles.Select(Path.GetFileName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            plan.Warnings.Add(
+                $"Left out {skipped.Count} file(s) the game does not load from where they would go: " +
+                string.Join(", ", names.Take(5)) + (names.Count > 5 ? $" and {names.Count - 5} more" : string.Empty) +
+                ". They stay in the archive.");
+        }
 
         _logger?.LogInformation(
             "Cyberpunk install plan: {Count} files, {Types}, {Size:N0} bytes",
@@ -246,6 +258,105 @@ public class CyberpunkModInstaller : IModInstaller, IGameAwareInstaller
     /// A file is critical if it's a framework loader DLL, an ASI plugin,
     /// or marked critical by the analyzer.
     /// </summary>
+    /// <summary>Choice of the body a loose character preset is for.</summary>
+    public const string PresetBodyChoiceId = "acu-preset-body";
+
+    /// <summary>
+    /// Settles the character presets the analyzer sent to ACU's folder: asks which body
+    /// they are for, and leaves out the ones ACU cannot read.
+    /// </summary>
+    /// <returns>Bytes of the operations left out.</returns>
+    /// <remarks>
+    /// Only presets that sat loose in the archive are touched; one already laid out in
+    /// ACU's <c>female/</c> or <c>male/</c> folder keeps its place. A preset that is JSON
+    /// is CyberCAT's, a save editor run outside the game, and would do nothing in ACU's
+    /// folder.
+    /// </remarks>
+    private static long SettlePresets(InstallPlan plan, IArchiveReader reader, InstallContext context)
+    {
+        var female = CyberpunkArchiveAnalyzer.AcuPresetsRoot + "female/";
+        var presets = plan.Operations
+            .Where(o => o.RouteSource == RouteSource.Heuristic &&
+                        o.DestinationPath.StartsWith(female, StringComparison.OrdinalIgnoreCase) &&
+                        !o.SourcePath.Replace('\\', '/').Contains("character-presets/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (presets.Count == 0)
+            return 0;
+
+        var entries = reader.Entries.ToDictionary(e => e.FullName, StringComparer.Ordinal);
+        var cyberCat = presets.Where(o => entries.TryGetValue(o.SourcePath, out var e) && IsJson(reader, e)).ToList();
+        foreach (var op in cyberCat)
+            plan.Operations.Remove(op);
+
+        if (cyberCat.Count > 0)
+        {
+            var names = string.Join(", ", cyberCat.Select(o => Path.GetFileName(o.SourcePath)));
+            const string why = "the CyberCAT save editor applies it to a save from outside the game, and ACU " +
+                               "cannot read it";
+
+            // Nothing else to install: say why, rather than install nothing.
+            if (plan.Operations.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"{names} is a CyberCAT preset: {why}. Keep it in the library and load it in CyberCAT, " +
+                    "or set the look in the character creator from the values the mod lists.");
+            }
+
+            plan.Warnings.Add($"Left out {names}, a CyberCAT preset: {why}. It stays in the archive.");
+        }
+
+        var acu = presets.Except(cyberCat).ToList();
+        if (acu.Count > 0)
+        {
+            var given = context.Selections.TryGetValue(PresetBodyChoiceId, out var answer) &&
+                        answer is "female" or "male"
+                ? answer
+                : null;
+
+            plan.Choices.Add(new InstallChoice
+            {
+                Id = PresetBodyChoiceId,
+                Title = acu.Count == 1
+                    ? $"Is the character preset {Path.GetFileNameWithoutExtension(acu[0].SourcePath)} for female or male V?"
+                    : $"Are these {acu.Count} character presets for female or male V?",
+                Options =
+                [
+                    new InstallChoiceOption { Id = "female", Label = "Female V", FileCount = acu.Count },
+                    new InstallChoiceOption { Id = "male", Label = "Male V", FileCount = acu.Count }
+                ],
+                SelectedOptionId = given ?? "female",
+                IsResolved = given != null
+            });
+
+            if (given == "male")
+            {
+                foreach (var op in acu)
+                    op.DestinationPath = CyberpunkArchiveAnalyzer.AcuPresetsRoot + "male/" + op.DestinationPath[female.Length..];
+            }
+        }
+
+        return cyberCat.Sum(o => o.SizeBytes);
+    }
+
+    // CyberCAT presets are JSON; ACU's are lines of "LocKey#…:value".
+    private static bool IsJson(IArchiveReader reader, ArchiveEntry entry)
+    {
+        try
+        {
+            using var stream = reader.OpenEntryStream(entry);
+            int b;
+            while ((b = stream.ReadByte()) is ' ' or '\t' or '\r' or '\n' or 0xEF or 0xBB or 0xBF)
+            {
+            }
+
+            return b == '{';
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     private static bool IsCriticalFile(string entryPath, CyberpunkInstallLayout layout)
     {
         // Framework-level files marked by the analyzer

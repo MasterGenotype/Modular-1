@@ -358,6 +358,24 @@ public sealed class MissingDependencyServiceTests
     }
 
     [Fact]
+    public async Task ARequirementNamedWithANote_MatchesAModInTheGameFolder()
+    {
+        var backend = new FakeBackend();
+        backend.Requirements["9702"] =
+        [
+            new ModRequirement { ModId = "353", Name = "Codeware (No REDMOD version)" },
+            new ModRequirement { ModId = "354", Name = "Codeware Extras" }
+        ];
+
+        var module = new FakeModule { Present = ["Codeware"] };
+
+        var report = await Service(backend, module).FindAsync([Durge], [Durge]);
+
+        report.Items.Should().ContainSingle().Which.Name.Should().Be("Codeware Extras");
+        report.SatisfiedElsewhere.Should().Equal("Codeware (No REDMOD version)");
+    }
+
+    [Fact]
     public async Task ModsThatDeclareAConflict_AreReported()
     {
         var module = new FakeModule
@@ -444,6 +462,63 @@ public sealed class MissingDependencyServiceTests
         mapped[2].IsExternal.Should().BeFalse();
         mapped[2].SameGame.Should().BeFalse();
         mapped[2].Url.Should().BeNull();
+    }
+
+    [Fact]
+    public void NexusResponse_OffSiteLinkToAModPage_IsThatMod()
+    {
+        const string json = """
+            {"data":{"legacyMods":{"nodes":[{"modId":10395,"modRequirements":{"nexusRequirements":{"nodes":[
+              {"modId":"0","modName":"CET (No REDMOD version)","gameId":"0","url":"https://www.nexusmods.com/baldursgate3/mods/107?tab=files","notes":"","externalRequirement":true},
+              {"modId":"0","modName":"Other game tool","gameId":"0","url":"https://nexusmods.com/skyrimspecialedition/mods/12","notes":"","externalRequirement":true},
+              {"modId":"0","modName":"REDmod","gameId":"0","url":"https://www.cyberpunk.net/modding-support","notes":"","externalRequirement":true},
+              {"modId":"0","modName":"A collection","gameId":"0","url":"https://www.nexusmods.com/baldursgate3/collections/abc","notes":"","externalRequirement":true}
+            ]}}}]}}}
+            """;
+
+        var mapped = NexusModsGraphQlClient.ParseResponse<NexusGraphQlData>(json)!.LegacyMods!.Nodes.Single()
+            .ModRequirements!.NexusRequirements!.Nodes
+            .Select(r => NexusModsBackend.MapRequirement(r, 3474, Domain))
+            .ToList();
+
+        mapped[0].IsExternal.Should().BeFalse();
+        mapped[0].SameGame.Should().BeTrue();
+        mapped[0].ModId.Should().Be("107");
+        mapped[0].Url.Should().Be("https://www.nexusmods.com/baldursgate3/mods/107?tab=files");
+
+        mapped[1].IsExternal.Should().BeFalse();
+        mapped[1].SameGame.Should().BeFalse();
+        mapped[1].ModId.Should().Be("12");
+
+        mapped[2].IsExternal.Should().BeTrue();
+        mapped[2].ModId.Should().BeEmpty();
+
+        mapped[3].IsExternal.Should().BeTrue();
+        mapped[3].ModId.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OffSiteLinkToAnInstalledMod_IsNotMissing()
+    {
+        var backend = new FakeBackend();
+        backend.Requirements["10395"] =
+        [
+            NexusModsBackend.MapRequirement(new NexusGraphQlRequirement
+            {
+                ModId = "0",
+                ModName = "CET (No REDMOD version)",
+                GameId = "0",
+                Url = $"https://www.nexusmods.com/{Domain}/mods/107?tab=files",
+                ExternalRequirement = true
+            }, 3474, Domain)
+        ];
+
+        var nca = Installed("NCA", "NCA Standard Density-10395-2-3-1759193708.zip");
+        var cet = Installed("CET", "CET 1.37.1 - Scripting fixes-107-1-37-1-1759193708.zip");
+
+        var report = await Service(backend).FindAsync([nca], [nca, cet]);
+
+        report.Items.Should().BeEmpty();
     }
 
     [Fact]

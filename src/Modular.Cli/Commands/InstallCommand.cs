@@ -180,6 +180,8 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                     AnsiConsole.MarkupLine($"  [grey]{Markup.Escape(file)}[/]");
                 if (result.PlannedOperations.Count > 20)
                     AnsiConsole.MarkupLine($"  [grey]... and {result.PlannedOperations.Count - 20} more[/]");
+                foreach (var warning in result.Warnings)
+                    AnsiConsole.MarkupLine($"[yellow]![/] {Markup.Escape(warning)}");
             }
             else if (result.Success)
             {

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Modular.Core.Archives;
 using Modular.Core.Collections;
 using Modular.Core.Configuration;
 using Modular.Core.Database;
@@ -652,10 +653,12 @@ public partial class InstallViewModel : ViewModelBase
     /// other, so only one should go in. Add-ons offered as optional files can go with it.
     /// </para>
     /// <para>
-    /// When the mod's page says what each file is, its versions (main files and old
-    /// versions) are offered as a pick-one, with the main file picked to begin with, and its
-    /// other files as add-ons to tick. Without that, every archive can be ticked and the
-    /// newest one is, to begin with. Cancelling leaves that mod out of the install.
+    /// Which archives go together is read from the archives themselves: two that write the
+    /// same files are alternatives, two that do not are parts of one mod (a body and a
+    /// head). The newest of each set of alternatives is ticked to begin with, with every
+    /// part that clashes with none of them, and ticking two that clash is marked in the
+    /// dialog. When the mod's page says what each file is, main files and old versions are
+    /// listed apart from add-ons. Cancelling leaves that mod out of the install.
     /// </para>
     /// </remarks>
     private async Task<(List<string> Paths, List<string> NotChosen)> ChooseArchivesPerModAsync(List<string> paths)
@@ -704,39 +707,73 @@ public partial class InstallViewModel : ViewModelBase
         return (paths.Where(keep.Contains).ToList(), skipped);
     }
 
-    // The page said what each file is: one version, plus any add-ons.
+    // The page said what each file is: main files (and old versions of them), plus any
+    // add-ons.
     private async Task<List<string>> ChooseByFileTypeAsync(ArchiveGroup group)
     {
         var versions = group.Archives
             .Where(a => a.IsVersion)
-            .OrderBy(a => string.Equals(a.Category, "main", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .OrderBy(a => IsMainFile(a) ? 0 : 1)
             .ThenByDescending(a => File.GetLastWriteTimeUtc(a.Path))
             .ToList();
         var addOns = group.Archives.Where(a => !a.IsVersion).ToList();
 
-        // One main file is the obvious pick; with several, the person chooses.
-        var mains = versions.Count(a => string.Equals(a.Category, "main", StringComparison.OrdinalIgnoreCase));
+        // Main files are usually alternatives, but a mod can split itself across several
+        // (a body and a head) that are all needed, and may offer some of those parts in
+        // versions too. The archives tell which: alternatives write the same files, parts
+        // of one mod write different ones. So the newest of each set of alternatives is
+        // ticked, with every part that clashes with none of them, and the dialog marks any
+        // two ticked files that would overwrite each other. Old versions are checked too:
+        // each clashes with the main file it is a version of.
+        var mains = Enumerable.Range(0, versions.Count).Where(i => IsMainFile(versions[i])).ToList();
+        var clashes = versions.Count > 1
+            ? ArchiveGrouper.FindClashes(versions.Select(a => a.Path).ToList(), new ArchiveReaderFactory())
+            : [];
+        var ticked = ArchiveGrouper.PickCompatible(mains, clashes);
+        var mainClashes = clashes.Where(c => mains.Contains(c.First) && mains.Contains(c.Second)).ToList();
+
+        var message = $"'{group.Name}' has {group.Archives.Count} archives queued. ";
+        if (mains.Count > 1 && mainClashes.Count == 0)
+            message += "Its main files install different files, so they are parts of one mod and are all ticked. ";
+        else if (mains.Count > 1)
+            message += $"Some of its main files write the same files, so they are alternatives ({DescribeClashes(versions, mainClashes)}). " +
+                       (ticked.Count > 1
+                           ? "The newest of each is ticked, with the parts that go alongside. "
+                           : "The newest is ticked. ");
+        message += "Old versions replace the main file they are a version of; add-ons go with it.";
 
         var choice = await _dialogService!.ShowFileChoiceAsync(
-            "Choose Version",
-            $"'{group.Name}' has {group.Archives.Count} archives queued. Its versions go in the same place, " +
-            "so install one, plus any add-ons you want with it.",
+            "Choose Files",
+            message,
             versions.Select(Describe).ToList(),
             addOns.Select(Describe).ToList(),
-            mains == 1 ? 0 : null);
+            ticked,
+            clashes);
 
         if (choice == null)
             return [];
 
-        var picked = new List<string>();
-        if (choice.Value.Main is int main && main >= 0 && main < versions.Count)
-            picked.Add(versions[main].Path);
+        var picked = choice.Value.Main
+            .Where(i => i >= 0 && i < versions.Count)
+            .Select(i => versions[i].Path)
+            .ToList();
         picked.AddRange(choice.Value.Optional
             .Where(i => i >= 0 && i < addOns.Count)
             .Select(i => addOns[i].Path));
 
         return picked;
     }
+
+    private static bool IsMainFile(QueuedArchive archive) =>
+        string.Equals(archive.Category, "main", StringComparison.OrdinalIgnoreCase);
+
+    // "A and B; C and D": the archives that write the same files, by the page's names.
+    private static string DescribeClashes(
+        List<QueuedArchive> archives, IEnumerable<(int First, int Second)> clashes) =>
+        string.Join("; ", clashes.Select(c => $"{Name(archives[c.First])} and {Name(archives[c.Second])}"));
+
+    private static string Name(QueuedArchive archive) =>
+        string.IsNullOrWhiteSpace(archive.Label) ? Path.GetFileName(archive.Path) : archive.Label;
 
     // Nothing says what the files are: any may be ticked, the newest to begin with.
     private async Task<List<string>> ChooseAnyAsync(ArchiveGroup group)
@@ -745,13 +782,27 @@ public partial class InstallViewModel : ViewModelBase
             .OrderByDescending(a => File.GetLastWriteTimeUtc(a.Path))
             .ToList();
 
-        var picked = await _dialogService!.ShowMultiSelectAsync(
+        // Archives that write different files are parts of the mod and go together; ones
+        // that write the same files are versions, of which one is wanted. The newest of
+        // each set of versions is ticked, with every part, and the dialog marks any two
+        // ticked archives that would overwrite each other.
+        var clashes = ArchiveGrouper.FindClashes(archives.Select(a => a.Path).ToList(), new ArchiveReaderFactory());
+
+        var choice = await _dialogService!.ShowFileChoiceAsync(
             "Choose Archives",
-            $"'{group.Name}' has {archives.Count} archives queued. Archives of one mod are usually " +
-            "different versions of it, and installing more than one loads both or lets one replace " +
-            "the other. Tick the version you want, and any add-ons that go with it.",
+            clashes.Count == 0
+                ? $"'{group.Name}' has {archives.Count} archives queued. None of them write the same " +
+                  "files, so they look like parts of one mod and are all ticked. Untick any you do not want."
+                : $"'{group.Name}' has {archives.Count} archives queued, and some write the same files, " +
+                  $"so they are versions of each other ({DescribeClashes(archives, clashes)}): installing " +
+                  "both lets one replace the other. The newest of each is ticked, with any archives that " +
+                  "go alongside it.",
             archives.Select(Describe).ToList(),
-            [0]);
+            [],
+            ArchiveGrouper.PickCompatible(Enumerable.Range(0, archives.Count), clashes),
+            clashes);
+
+        var picked = choice?.Main ?? [];
 
         return picked
             .Where(i => i >= 0 && i < archives.Count)
