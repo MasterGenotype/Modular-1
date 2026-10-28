@@ -147,10 +147,11 @@ internal class NexusModsGraphQlClient
     private readonly Dictionary<string, int> _gameIds = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IFluentClient _client;
-    private readonly string _apiKey;
+    // Read per request so a key from a later SSO login is used without a restart.
+    private readonly Func<string> _apiKey;
     private readonly ILogger? _logger;
 
-    public NexusModsGraphQlClient(string apiKey, Modular.FluentHttp.Interfaces.IRateLimiter rateLimiter, ILogger? logger = null)
+    public NexusModsGraphQlClient(Func<string> apiKey, Modular.FluentHttp.Interfaces.IRateLimiter rateLimiter, ILogger? logger = null)
     {
         _apiKey = apiKey;
         _logger = logger;
@@ -353,7 +354,7 @@ internal class NexusModsGraphQlClient
         where TData : class
     {
         var json = await _client.PostAsync(GraphQlUrl)
-            .WithHeader("apikey", _apiKey)
+            .WithHeader("apikey", _apiKey())
             .WithHeader("accept", "application/json")
             .WithJsonBody(requestBody)
             .WithCancellation(ct)

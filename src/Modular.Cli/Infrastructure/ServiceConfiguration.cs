@@ -156,7 +156,8 @@ public sealed class RuntimeServices : IDisposable
                 settings.NexusApplicationSlug,
                 loggerFactory?.CreateLogger<NexusSsoClient>());
 
-            settings.NexusApiKey = await ssoClient.AuthenticateAsync();
+            settings.NexusApiKey = await ssoClient.AuthenticateAsync(
+                url => Console.WriteLine($"If the browser didn't open, visit: {url}"));
             await configService.SaveAsync(settings);
             Console.WriteLine("Authorization successful! API key saved to config.");
         }

@@ -14,7 +14,12 @@ public class NexusSsoClient
     private const string SsoEndpoint = "wss://sso.nexusmods.com";
     private const string AuthUrlBase = "https://www.nexusmods.com/sso";
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(30);
+
+    // WebSocket ping control frames, as Nexus's SSO demo sends with ws.ping().
+    // A data frame is not a ping: the server parses it as a message, answers
+    // "Invalid JSON" and the login fails.
+    private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PongTimeout = TimeSpan.FromSeconds(20);
 
     private readonly string _applicationSlug;
     private readonly ILogger? _logger;
@@ -29,81 +34,64 @@ public class NexusSsoClient
     /// Runs the full SSO flow: connects to the SSO WebSocket, opens the
     /// authorization page in the user's browser, and waits for the API key.
     /// </summary>
+    /// <param name="onAuthorizationUrl">
+    /// Receives the authorization page URL, so it can be shown to the user in
+    /// case the browser does not open.
+    /// </param>
     /// <returns>The NexusMods API key.</returns>
     /// <exception cref="TimeoutException">Thrown if the user doesn't authorize within the timeout.</exception>
     /// <exception cref="InvalidOperationException">Thrown if the SSO server returns an error.</exception>
-    public async Task<string> AuthenticateAsync(CancellationToken ct = default)
+    public async Task<string> AuthenticateAsync(
+        Action<string>? onAuthorizationUrl = null,
+        CancellationToken ct = default)
     {
-        var uuid = Guid.NewGuid().ToString();
-        string? connectionToken = null;
-
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(Timeout);
 
+        try
+        {
+            return await RunAsync(onAuthorizationUrl, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "SSO authorization timed out. The user did not authorize within the time limit.");
+        }
+    }
+
+    private async Task<string> RunAsync(Action<string>? onAuthorizationUrl, CancellationToken ct)
+    {
+        var uuid = Guid.NewGuid().ToString();
+
         using var ws = new ClientWebSocket();
-        await ws.ConnectAsync(new Uri(SsoEndpoint), timeoutCts.Token);
+        ws.Options.KeepAliveInterval = PingInterval;
+        ws.Options.KeepAliveTimeout = PongTimeout;
+        await ws.ConnectAsync(new Uri(SsoEndpoint), ct);
         _logger?.LogInformation("Connected to NexusMods SSO server");
 
-        // Send handshake
         var handshake = JsonSerializer.Serialize(new SsoHandshake
         {
             Id = uuid,
-            Token = connectionToken,
+            Token = null,
             Protocol = 2
         });
-        await SendAsync(ws, handshake, timeoutCts.Token);
+        await SendAsync(ws, handshake, ct);
 
-        // Receive connection token
-        var response = await ReceiveAsync(ws, timeoutCts.Token);
-        var tokenResponse = JsonSerializer.Deserialize<SsoResponse>(response);
-        if (tokenResponse?.Success == true && tokenResponse.Data?.ConnectionToken != null)
-        {
-            connectionToken = tokenResponse.Data.ConnectionToken;
-            _logger?.LogDebug("Received connection token");
-        }
+        var tokenResponse = Parse(await ReceiveAsync(ws, ct));
+        if (tokenResponse?.Success != true || tokenResponse.Data?.ConnectionToken == null)
+            throw new InvalidOperationException(
+                $"SSO handshake failed: {tokenResponse?.Error ?? "no connection token received"}");
+        _logger?.LogDebug("Received connection token");
 
-        // Open browser for authorization
-        var authUrl = $"{AuthUrlBase}?id={uuid}&application={_applicationSlug}";
+        var authUrl = $"{AuthUrlBase}?id={uuid}&application={Uri.EscapeDataString(_applicationSlug)}";
+        onAuthorizationUrl?.Invoke(authUrl);
         OpenBrowser(authUrl);
 
-        // Wait for API key with periodic pings
-        return await WaitForApiKeyAsync(ws, timeoutCts.Token);
-    }
-
-    private async Task<string> WaitForApiKeyAsync(ClientWebSocket ws, CancellationToken ct)
-    {
-        var buffer = new byte[4096];
-
-        // Send keepalive pings on a background task — we must NOT cancel
-        // ReceiveAsync with a CancellationToken because that aborts the
-        // entire ClientWebSocket in .NET.
-        _ = Task.Run(async () =>
+        while (true)
         {
-            while (!ct.IsCancellationRequested)
-            {
-                await Task.Delay(PingInterval, ct);
-                if (ws.State == WebSocketState.Open)
-                {
-                    await ws.SendAsync(
-                        ArraySegment<byte>.Empty,
-                        WebSocketMessageType.Binary,
-                        true,
-                        ct);
-                }
-            }
-        }, ct);
+            var response = Parse(await ReceiveAsync(ws, ct));
 
-        while (!ct.IsCancellationRequested)
-        {
-            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-
-            if (result.MessageType == WebSocketMessageType.Close)
-                throw new InvalidOperationException("SSO server closed the connection unexpectedly.");
-
-            var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            var response = JsonSerializer.Deserialize<SsoResponse>(message);
-
-            if (response?.Success == true && response.Data?.ApiKey != null)
+            if (response?.Success == true && !string.IsNullOrEmpty(response.Data?.ApiKey))
             {
                 _logger?.LogInformation("Received API key from SSO");
                 await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Done", CancellationToken.None);
@@ -114,7 +102,17 @@ public class NexusSsoClient
                 throw new InvalidOperationException($"SSO error: {response.Error}");
         }
 
-        throw new TimeoutException("SSO authorization timed out. The user did not authorize within the time limit.");
+        static SsoResponse? Parse(string message)
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<SsoResponse>(message);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
     }
 
     private static async Task SendAsync(ClientWebSocket ws, string message, CancellationToken ct)
@@ -123,22 +121,41 @@ public class NexusSsoClient
         await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
     }
 
+    // Reads one whole text message, however many frames it arrives in.
     private static async Task<string> ReceiveAsync(ClientWebSocket ws, CancellationToken ct)
     {
         var buffer = new byte[4096];
-        var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-        return Encoding.UTF8.GetString(buffer, 0, result.Count);
+        using var message = new MemoryStream();
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+            if (result.MessageType == WebSocketMessageType.Close)
+                throw new InvalidOperationException(
+                    $"SSO server closed the connection unexpectedly: {result.CloseStatus} {result.CloseStatusDescription}".TrimEnd());
+            message.Write(buffer, 0, result.Count);
+        }
+        while (!result.EndOfMessage);
+
+        return Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
     }
 
-    private static void OpenBrowser(string url)
+    private void OpenBrowser(string url)
     {
-        // Cross-platform browser launch
-        if (OperatingSystem.IsWindows())
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-        else if (OperatingSystem.IsMacOS())
-            System.Diagnostics.Process.Start("open", url);
-        else
-            System.Diagnostics.Process.Start("xdg-open", url);
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            else if (OperatingSystem.IsMacOS())
+                System.Diagnostics.Process.Start("open", url);
+            else
+                System.Diagnostics.Process.Start("xdg-open", url);
+        }
+        catch (Exception ex)
+        {
+            // The URL has already gone to onAuthorizationUrl, so the user can open it by hand.
+            _logger?.LogWarning(ex, "Could not open a browser for {Url}", url);
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Modular.Sdk.Backends;
 using Modular.Sdk.Backends.Common;
@@ -53,6 +54,19 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         ModMetadataCache metadataCache,
         ILogger<NexusModsBackend>? logger = null,
         ResumableDownloader? downloader = null)
+        : this(settings, rateLimiter, database, metadataCache, logger, downloader, apiHandler: null)
+    {
+    }
+
+    /// <param name="apiHandler">Serves the REST API requests in place of the network, for tests.</param>
+    internal NexusModsBackend(
+        AppSettings settings,
+        Modular.Core.RateLimiting.IRateLimiter rateLimiter,
+        DownloadDatabase database,
+        ModMetadataCache metadataCache,
+        ILogger<NexusModsBackend>? logger,
+        ResumableDownloader? downloader,
+        HttpMessageHandler? apiHandler)
     {
         _settings = settings;
         _database = database;
@@ -60,9 +74,12 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         _logger = logger;
         _downloader = downloader ?? new ResumableDownloader(logger: null);
         var rateLimiterAdapter = new RateLimiterAdapter(rateLimiter);
-        _client = FluentClientFactory.Create(BaseUrl, rateLimiterAdapter, logger);
+        _client = apiHandler == null
+            ? FluentClientFactory.Create(BaseUrl, rateLimiterAdapter, logger)
+            : new FluentClient(new HttpClient(apiHandler))
+                .SetBaseUrl(BaseUrl).SetRateLimiter(rateLimiterAdapter).SetLogger(logger);
         _client.SetUserAgent("Modular/1.0");
-        _graphQlClient = new NexusModsGraphQlClient(settings.NexusApiKey ?? string.Empty, rateLimiterAdapter, logger);
+        _graphQlClient = new NexusModsGraphQlClient(() => settings.NexusApiKey ?? string.Empty, rateLimiterAdapter, logger);
     }
 
     public IReadOnlyList<string> ValidateConfiguration()
@@ -200,27 +217,48 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         return files;
     }
 
-    public async Task<string?> ResolveDownloadUrlAsync(
+    public Task<string?> ResolveDownloadUrlAsync(
         string modId,
         string fileId,
         string? gameDomain = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        ResolveDownloadUrlAsync(modId, fileId, gameDomain, nxm: null, ct);
+
+    // With an nxm link, its key and expiry go on the request: that is what lets an
+    // account without Premium download the file the user clicked.
+    private async Task<string?> ResolveDownloadUrlAsync(
+        string modId,
+        string fileId,
+        string? gameDomain,
+        NxmLink? nxm,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(gameDomain))
             throw new ArgumentException("Game domain is required for NexusMods", nameof(gameDomain));
 
         try
         {
-            var response = await _client
-                .GetAsync($"v1/games/{gameDomain}/mods/{modId}/files/{fileId}/download_link.json")
+            var request = _client
+                .GetAsync($"v1/games/{gameDomain}/mods/{modId}/files/{fileId}/download_link.json");
+            if (nxm?.Key != null && nxm.Expires is { } expires)
+                request = request
+                    .WithArgument("key", nxm.Key)
+                    .WithArgument("expires", expires.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+
+            var response = await request
                 .WithHeader("apikey", _settings.NexusApiKey)
                 .WithHeader("accept", "application/json")
+                .WithCancellation(ct)
                 .AsResponseAsync();
 
             // Check for successful response before deserializing
             if (!response.IsSuccessStatusCode)
             {
-                if (response.StatusCode == 403)
+                if (response.StatusCode == 403 && nxm != null)
+                {
+                    _logger?.LogWarning("NexusMods refused the nxm link for mod {ModId} file {FileId}: it has expired or belongs to another account", modId, fileId);
+                }
+                else if (response.StatusCode == 403)
                 {
                     _logger?.LogWarning("Cannot get download link for mod {ModId} file {FileId}: NexusMods Premium membership required", modId, fileId);
                 }
@@ -347,18 +385,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
 
                 var modId = mod.ModId;
                 var fileId = file.FileId;
-                var result = await _downloader.DownloadAsync(
-                    new ResumableDownloadRequest
-                    {
-                        Url = url,
-                        DestinationPath = outputPath,
-                        Identity = DownloadIdentity.NexusMods(gameDomain, modId, fileId),
-                        // size_kb is approximate, so size is not validated for NexusMods.
-                        ExpectedMd5 = file.Md5,
-                        VerifyMd5 = options.VerifyDownloads,
-                        Resume = resume,
-                        RefreshUrlAsync = token => ResolveDownloadUrlAsync(modId, fileId, gameDomain, token)
-                    },
+                await DownloadFileAsync(
+                    gameDomain, modId, file, url, outputPath, resume, options.VerifyDownloads,
+                    token => ResolveDownloadUrlAsync(modId, fileId, gameDomain, token),
                     progress == null ? null : new SyncProgress<(long downloaded, long total)>(p =>
                         progress.Report(new DownloadProgress
                         {
@@ -371,31 +400,6 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                             Phase = DownloadPhase.Downloading
                         })),
                     ct);
-
-                var record = new DownloadRecord
-                {
-                    GameDomain = gameDomain,
-                    ModId = modIdInt,
-                    FileId = fileIdInt,
-                    Filename = file.FileName,
-                    Filepath = outputPath,
-                    Url = result.FinalUrl,
-                    Md5Expected = file.Md5 ?? string.Empty,
-                    FileSize = result.FileSize,
-                    DownloadTime = DateTime.UtcNow,
-                    Status = DownloadStatus.Success
-                };
-
-                // The downloader verifies MD5 when requested (and always after a resume);
-                // a mismatch throws DownloadIntegrityException, so a computed hash here is a match.
-                if (result.Md5 != null)
-                {
-                    record.Md5Actual = result.Md5;
-                    record.Status = result.Md5Verified ? DownloadStatus.Verified : DownloadStatus.HashMismatch;
-                }
-
-                _database.AddRecord(record);
-                _logger?.LogInformation("Downloaded: {File}{Resumed}", file.FileName, result.Resumed ? " (resumed)" : string.Empty);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -458,6 +462,122 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         }
 
         progress?.Report(DownloadProgress.Done(total));
+    }
+
+    /// <summary>
+    /// Downloads the file an <c>nxm://</c> link points at into the mod library and
+    /// records it, using the link's key so no Premium membership is needed.
+    /// </summary>
+    /// <returns>
+    /// The file's name, and whether the download database already had it, in which
+    /// case nothing is downloaded unless <see cref="DownloadOptions.Force"/> is set.
+    /// </returns>
+    /// <exception cref="ApiException">NexusMods refused the link, or the file does not exist.</exception>
+    public async Task<(string FileName, bool AlreadyDownloaded)> DownloadNxmAsync(
+        NxmLink link,
+        string outputDirectory,
+        DownloadOptions? options = null,
+        IProgress<(long downloaded, long total)>? progress = null,
+        CancellationToken ct = default)
+    {
+        options ??= DownloadOptions.Default;
+
+        if (link.IsExpired(DateTimeOffset.UtcNow))
+            throw new ApiException(
+                "This download link has expired. Click \"Mod Manager Download\" on nexusmods.com again.", 403);
+
+        var modId = link.ModId.ToString(CultureInfo.InvariantCulture);
+        var fileId = link.FileId.ToString(CultureInfo.InvariantCulture);
+
+        // The link may be for an older file, so archived ones count too.
+        var files = await GetModFilesAsync(modId, link.GameDomain, new FileFilter { IncludeArchived = true }, ct);
+        var file = files.FirstOrDefault(f => f.FileId == fileId)
+            ?? throw new ApiException($"NexusMods has no file {fileId} for mod {modId} in {link.GameDomain}.", 404);
+
+        var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, link.GameDomain, modId);
+        var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
+
+        // Same rule as DownloadModsAsync: the database decides, since renaming moves folders.
+        if (!options.Force && _database.IsDownloaded(link.GameDomain, link.ModId, link.FileId))
+        {
+            _logger?.LogInformation("Already downloaded: {File}", file.FileName);
+            return (file.FileName, true);
+        }
+
+        var url = await ResolveDownloadUrlAsync(modId, fileId, link.GameDomain, link, ct)
+            ?? throw new ApiException(
+                link.Key == null
+                    ? "NexusMods gave no download link. This link carries no key, and the account is not Premium."
+                    : "NexusMods refused this download link. It may have expired, or been issued to a different " +
+                      "account than the one Modular is logged in as. Click \"Mod Manager Download\" again.",
+                403);
+
+        FileUtils.EnsureDirectoryExists(modOutputDir);
+        await DownloadFileAsync(
+            link.GameDomain, modId, file, url, outputPath,
+            resume: options.Resume && !options.Force,
+            verify: options.VerifyDownloads,
+            token => ResolveDownloadUrlAsync(modId, fileId, link.GameDomain, link, token),
+            progress,
+            ct);
+        await _database.SaveAsync();
+
+        return (file.FileName, false);
+    }
+
+    // Downloads one resolved file to outputPath and records it in the download
+    // database. Failures propagate to the caller, which records them its own way.
+    private async Task DownloadFileAsync(
+        string gameDomain,
+        string modId,
+        BackendModFile file,
+        string url,
+        string outputPath,
+        bool resume,
+        bool verify,
+        Func<CancellationToken, Task<string?>> refreshUrl,
+        IProgress<(long downloaded, long total)>? progress,
+        CancellationToken ct)
+    {
+        var result = await _downloader.DownloadAsync(
+            new ResumableDownloadRequest
+            {
+                Url = url,
+                DestinationPath = outputPath,
+                Identity = DownloadIdentity.NexusMods(gameDomain, modId, file.FileId),
+                // size_kb is approximate, so size is not validated for NexusMods.
+                ExpectedMd5 = file.Md5,
+                VerifyMd5 = verify,
+                Resume = resume,
+                RefreshUrlAsync = refreshUrl
+            },
+            progress,
+            ct);
+
+        var record = new DownloadRecord
+        {
+            GameDomain = gameDomain,
+            ModId = int.Parse(modId, CultureInfo.InvariantCulture),
+            FileId = int.Parse(file.FileId, CultureInfo.InvariantCulture),
+            Filename = file.FileName,
+            Filepath = outputPath,
+            Url = result.FinalUrl,
+            Md5Expected = file.Md5 ?? string.Empty,
+            FileSize = result.FileSize,
+            DownloadTime = DateTime.UtcNow,
+            Status = DownloadStatus.Success
+        };
+
+        // The downloader verifies MD5 when requested (and always after a resume);
+        // a mismatch throws DownloadIntegrityException, so a computed hash here is a match.
+        if (result.Md5 != null)
+        {
+            record.Md5Actual = result.Md5;
+            record.Status = result.Md5Verified ? DownloadStatus.Verified : DownloadStatus.HashMismatch;
+        }
+
+        _database.AddRecord(record);
+        _logger?.LogInformation("Downloaded: {File}{Resumed}", file.FileName, result.Resumed ? " (resumed)" : string.Empty);
     }
 
     public async Task<BackendMod?> GetModInfoAsync(

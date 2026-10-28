@@ -35,7 +35,7 @@ public class RenameService : IRenameService
         var adapter = new RateLimiterAdapter(rateLimiter);
         _client = FluentClientFactory.Create(BaseUrl, adapter, logger);
         _client.SetUserAgent("Modular/1.0");
-        _graphQlClient = new NexusModsGraphQlClient(settings.NexusApiKey, adapter, logger);
+        _graphQlClient = new NexusModsGraphQlClient(() => settings.NexusApiKey, adapter, logger);
     }
 
     /// <summary>

@@ -496,14 +496,14 @@ public partial class SettingsViewModel : ViewModelBase
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            var apiKey = await _ssoClient.AuthenticateAsync(cts.Token);
+            var apiKey = await _ssoClient.AuthenticateAsync(
+                url => SsoStatusMessage = $"Waiting for authorization. If the browser didn't open, visit: {url}");
 
             NexusApiKey = apiKey;
             HasUnsavedChanges = true;
             SsoStatusMessage = "Login successful! Save settings to persist the API key.";
         }
-        catch (OperationCanceledException)
+        catch (TimeoutException)
         {
             SsoStatusMessage = "Login timed out — please try again";
         }

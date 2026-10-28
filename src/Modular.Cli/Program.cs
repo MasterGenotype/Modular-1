@@ -55,6 +55,12 @@ class Program
             config.AddCommand<LoginCommand>("login")
                 .WithDescription("Authenticate with NexusMods via browser SSO");
 
+            // nxm:// links from "Mod Manager Download" buttons
+            config.AddCommand<NxmCommand>("nxm")
+                .WithDescription("Download a NexusMods nxm:// link, or register Modular as the nxm handler")
+                .WithExample("nxm", "nxm://cyberpunk2077/mods/107/files/12345?key=abc&expires=1700000000")
+                .WithExample("nxm", "--register");
+
             // Diagnostics command group
             config.AddBranch("diagnostics", diagnostics =>
             {
