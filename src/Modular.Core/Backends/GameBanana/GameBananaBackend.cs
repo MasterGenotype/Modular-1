@@ -18,6 +18,7 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
 {
     private const string BaseUrl = "https://gamebanana.com/apiv11";
     private const int DefaultPageSize = 15;
+    private const int MinGameNameLength = 3;
     private static readonly TimeSpan ThrottleDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly AppSettings _settings;
@@ -26,6 +27,9 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
     private readonly ResumableDownloader _downloader;
     private readonly SemaphoreSlim _throttle = new(1, 1);
     private DateTime _lastRequest = DateTime.MinValue;
+
+    // Each game's name, looked up by id.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _gameNames = new();
 
     public string Id => BackendIds.GameBanana;
     public string DisplayName => "GameBanana";
@@ -248,6 +252,107 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Finds GameBanana games by name, so nobody has to know a game's number.
+    /// </summary>
+    /// <param name="name">Part of a game's name (three letters at least), or a game id.</param>
+    /// <param name="maxResults">Most games to return.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The matching games, best match first; empty when the lookup fails.</returns>
+    public async Task<IReadOnlyList<GameMatch>> SearchGamesAsync(
+        string name,
+        int maxResults = 15,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return [];
+
+        name = name.Trim();
+
+        try
+        {
+            if (int.TryParse(name, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var gameId) && gameId > 0)
+            {
+                var gameName = await GetGameNameAsync(gameId, ct);
+                return gameName != null ? [new GameMatch(name, gameName)] : [];
+            }
+
+            // GameBanana refuses names shorter than this.
+            if (name.Length < MinGameNameLength)
+                return [];
+
+            await ThrottleAsync();
+
+            using var response = await _client.GetAsync("Util/Game/NameMatch")
+                .WithArgument("_sName", name)
+                .WithArgument("_nPage", "1")
+                .WithArgument("_nPerpage", Math.Clamp(maxResults, 1, 50).ToString())
+                .WithCancellation(ct)
+                .AsJsonAsync();
+
+            return ParseGameMatches(response.RootElement)
+                .OrderByDescending(g => FuzzyMatcher.Score(name, g.Name))
+                .ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to search GameBanana games for '{Name}'", name);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Looks up a GameBanana game's name.
+    /// </summary>
+    /// <param name="gameId">The game's GameBanana id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The name, or null when there is no such game or the lookup fails.</returns>
+    public async Task<string?> GetGameNameAsync(int gameId, CancellationToken ct = default)
+    {
+        if (_gameNames.TryGetValue(gameId, out var known))
+            return known;
+
+        try
+        {
+            await ThrottleAsync();
+
+            using var response = await _client.GetAsync($"Game/{gameId}")
+                .WithArgument("_csvProperties", "_idRow,_sName")
+                .WithCancellation(ct)
+                .AsJsonAsync();
+
+            var game = JsonSerializer.Deserialize<GameBananaGameRef>(response.RootElement.GetRawText());
+            return string.IsNullOrWhiteSpace(game?.Name) ? null : _gameNames[gameId] = game.Name;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to look up GameBanana game {GameId}", gameId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the games of a <c>Util/Game/NameMatch</c> response, in the order served.
+    /// </summary>
+    internal static List<GameMatch> ParseGameMatches(JsonElement root)
+    {
+        var response = JsonSerializer.Deserialize<GameBananaGameMatchResponse>(root.GetRawText());
+
+        return (response?.Records ?? [])
+            .Where(g => g.Id > 0 && !string.IsNullOrWhiteSpace(g.Name))
+            .Select(g => new GameMatch(g.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), g.Name))
+            .ToList();
     }
 
     /// <summary>

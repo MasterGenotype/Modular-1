@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Modular.Core.Backends;
 using Modular.Core.Backends.GameBanana;
 using Modular.Core.Configuration;
 using Modular.Core.Utilities;
@@ -13,7 +14,7 @@ namespace Modular.Gui.ViewModels;
 /// <summary>
 /// ViewModel for the GameBanana search tab.
 /// Searches the GameBanana API and ranks results with fuzzy matching.
-/// Filters by GameDomain (numeric game ID) when provided.
+/// Limits the search to one game when one is picked by name.
 /// </summary>
 public partial class GameBananaSearchViewModel : ViewModelBase
 {
@@ -22,9 +23,6 @@ public partial class GameBananaSearchViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _searchText = string.Empty;
-
-    [ObservableProperty]
-    private string _gameIdText = string.Empty;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -41,14 +39,13 @@ public partial class GameBananaSearchViewModel : ViewModelBase
     [ObservableProperty]
     private int _selectedCount;
 
-    /// <summary>
-    /// Configured game IDs from settings, displayed for quick selection.
-    /// </summary>
-    public ObservableCollection<string> AvailableGameIds { get; } = new();
+    /// <summary>The game the search is limited to; none searches every game.</summary>
+    public GamePickerViewModel Game { get; }
 
     // Designer constructor
     public GameBananaSearchViewModel()
     {
+        Game = new GamePickerViewModel();
         SearchResults.Add(new ModDisplayModel(new BackendMod
         {
             ModId = "999",
@@ -63,14 +60,14 @@ public partial class GameBananaSearchViewModel : ViewModelBase
     public GameBananaSearchViewModel(GameBananaBackend backend, AppSettings settings)
     {
         _backend = backend;
-
-        // Pre-populate available game IDs from configuration
-        foreach (var id in settings.GameBananaGameIds)
-            AvailableGameIds.Add(id.ToString());
-
-        // Default to first configured game ID if available
-        if (AvailableGameIds.Count > 0)
-            GameIdText = AvailableGameIds[0];
+        Game = new GamePickerViewModel(
+            (name, ct) => backend.SearchGamesAsync(name, ct: ct),
+            settings.GameBananaGameIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        Game.GameChosen += (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(SearchText))
+                _ = ExecuteSearchAsync();
+        };
     }
 
     partial void OnSearchTextChanged(string value)
@@ -99,17 +96,27 @@ public partial class GameBananaSearchViewModel : ViewModelBase
             return;
         }
 
-        // Parse optional game ID filter
-        int? gameId = null;
-        if (!string.IsNullOrWhiteSpace(GameIdText) && int.TryParse(GameIdText.Trim(), out var parsedId))
-            gameId = parsedId;
-
         IsLoading = true;
-        var gameLabel = gameId.HasValue ? $" (game {gameId.Value})" : "";
-        StatusMessage = $"Searching GameBanana for \"{SearchText}\"{gameLabel}...";
 
         try
         {
+            GameMatch? game = null;
+            if (Game.HasText)
+            {
+                StatusMessage = $"Looking up \"{Game.Text.Trim()}\" on GameBanana...";
+                game = await Game.ResolveAsync();
+                if (game == null)
+                {
+                    SearchResults.Clear();
+                    TotalResults = 0;
+                    StatusMessage = $"No GameBanana game is named \"{Game.Text.Trim()}\". Pick one from the list, or clear it to search every game.";
+                    return;
+                }
+            }
+
+            int? gameId = game != null && int.TryParse(game.Id, out var parsedId) ? parsedId : null;
+            StatusMessage = $"Searching GameBanana for \"{SearchText}\"{(game != null ? $" in {game.Name}" : "")}...";
+
             var results = await _backend.SearchModsAsync(SearchText, gameId: gameId, maxResults: 50);
 
             // Rank by fuzzy score but keep ALL API results — the API already did relevance

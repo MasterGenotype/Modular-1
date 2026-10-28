@@ -43,7 +43,9 @@ Downloads land in `{mods_directory}/modio/{game}/{mod name}/`, where `{game}` is
 reduced to lower-case letters and digits (`baldursgate3`). See "Mods directory layout" in the README.
 
 In the GUI, the **mod.io** page has a Subscriptions tab and a Search tab; credentials and
-game ids are under Settings → mod.io.
+game ids are under Settings → mod.io. The Search tab picks its game by name: type part of it
+and choose from the list (`ModIoBackend.SearchGamesAsync`, the `/games?_q=` endpoint, which
+every game's host serves). Typing an id still works.
 
 ## Baldur's Gate 3's in-game mod manager
 

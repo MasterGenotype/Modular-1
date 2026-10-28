@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Modular.Core.Backends;
 using Modular.Core.Backends.ModIo;
 using Modular.Core.Configuration;
 using Modular.Core.Utilities;
@@ -11,7 +12,7 @@ using Modular.Sdk.Backends.Common;
 namespace Modular.Gui.ViewModels;
 
 /// <summary>
-/// ViewModel for the mod.io search tab. Searches one game at a time, by its mod.io id.
+/// ViewModel for the mod.io search tab. Searches one game at a time, picked by name.
 /// </summary>
 public partial class ModIoSearchViewModel : ViewModelBase
 {
@@ -22,9 +23,6 @@ public partial class ModIoSearchViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _searchText = string.Empty;
-
-    [ObservableProperty]
-    private string _gameIdText = string.Empty;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -41,12 +39,13 @@ public partial class ModIoSearchViewModel : ViewModelBase
     [ObservableProperty]
     private int _selectedCount;
 
-    /// <summary>Configured game IDs, offered for quick selection.</summary>
-    public ObservableCollection<string> AvailableGameIds { get; } = new();
+    /// <summary>The game to search; mod.io searches one game at a time.</summary>
+    public GamePickerViewModel Game { get; }
 
     // Designer constructor
     public ModIoSearchViewModel()
     {
+        Game = new GamePickerViewModel();
         SearchResults.Add(new ModDisplayModel(new BackendMod
         {
             ModId = "4256380",
@@ -61,12 +60,14 @@ public partial class ModIoSearchViewModel : ViewModelBase
     public ModIoSearchViewModel(ModIoBackend backend, AppSettings settings)
     {
         _backend = backend;
-
-        foreach (var id in settings.ModIoGameIds)
-            AvailableGameIds.Add(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        if (AvailableGameIds.Count > 0)
-            GameIdText = AvailableGameIds[0];
+        Game = new GamePickerViewModel(
+            (name, ct) => backend.SearchGamesAsync(name, ct: ct),
+            settings.ModIoGameIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        Game.GameChosen += (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(SearchText))
+                _ = ExecuteSearchAsync();
+        };
     }
 
     partial void OnSearchTextChanged(string value)
@@ -95,17 +96,34 @@ public partial class ModIoSearchViewModel : ViewModelBase
             return;
         }
 
-        var game = string.IsNullOrWhiteSpace(GameIdText) ? null : GameIdText.Trim();
+        if (!Game.HasText)
+        {
+            SearchResults.Clear();
+            TotalResults = 0;
+            StatusMessage = "Pick a game to search: mod.io searches one game at a time";
+            return;
+        }
 
         IsLoading = true;
-        StatusMessage = $"Searching mod.io for \"{SearchText}\"{(game != null ? $" (game {game})" : "")}...";
 
         try
         {
+            StatusMessage = $"Looking up \"{Game.Text.Trim()}\" on mod.io...";
+            var game = await Game.ResolveAsync();
+            if (game == null)
+            {
+                SearchResults.Clear();
+                TotalResults = 0;
+                StatusMessage = $"No mod.io game is named \"{Game.Text.Trim()}\". Pick one from the list.";
+                return;
+            }
+
+            StatusMessage = $"Searching mod.io for \"{SearchText}\" in {game.Name}...";
+
             var result = await _backend.SearchModsAsync(new ModSearchQuery
             {
                 Terms = SearchText,
-                GameDomain = game,
+                GameDomain = game.Id,
                 PageSize = PageSize
             });
 

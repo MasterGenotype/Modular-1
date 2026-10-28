@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Modular.Core.Backends;
 using Modular.Core.Backends.ModIo;
 using Modular.Core.Configuration;
 using Modular.Sdk.Backends;
@@ -293,6 +294,53 @@ public class ModIoBackendTests
         failure.CurrentFile.Should().Be("live.zip");
         failure.Error.Should().NotBeNullOrEmpty();
         reports.Should().NotContain(r => r.Status == "Downloaded live.zip");
+    }
+
+    // ── games ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SearchGamesAsync_FindsGamesByNameOnTheConfiguredGamesHost()
+    {
+        var (backend, server) = Create();
+        server.On("/v1/games", Page(2,
+            """{"id":5784,"name":"Cyberpunk 2077 Tools","name_id":"cp-tools"}""",
+            """{"id":5785,"name":"Cyberpunk 2077","name_id":"cyberpunk2077"}"""));
+
+        var games = await backend.SearchGamesAsync("cyberpunk 2077");
+
+        // The exact name comes first, whatever order mod.io served.
+        games.Select(g => g.Id).Should().Equal("5785", "5784");
+        games[0].Name.Should().Be("Cyberpunk 2077");
+
+        var request = server.Requests.Should().ContainSingle().Subject;
+        request.Uri.Host.Should().Be("g-6715.modapi.io");
+        Uri.UnescapeDataString(request.Uri.Query).Should().Contain("_q=cyberpunk 2077");
+
+        // Names learned from a search name the game's folder without another request.
+        (await backend.GetGameNameAsync("5785")).Should().Be("Cyberpunk 2077");
+        server.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task SearchGamesAsync_WithNoGameConfigured_StillSearches()
+    {
+        var (backend, server) = Create(new AppSettings { ModIoAccessToken = "token" });
+        server.On("/v1/games", Page(1, """{"id":6715,"name":"Baldur's Gate 3","name_id":"baldursgate3"}"""));
+
+        var games = await backend.SearchGamesAsync("baldur");
+
+        games.Should().Equal(new GameMatch("6715", "Baldur's Gate 3"));
+        server.Requests.Should().ContainSingle().Which.Uri.Host.Should().Be("g-6715.modapi.io");
+    }
+
+    [Fact]
+    public async Task SearchGamesAsync_GivenAnId_LooksThatGameUp()
+    {
+        var (backend, server) = Create();
+        server.On("/v1/games/5784", """{"id":5784,"name":"Cyberpunk 2077","name_id":"cyberpunk2077"}""");
+
+        (await backend.SearchGamesAsync("5784")).Should().Equal(new GameMatch("5784", "Cyberpunk 2077"));
+        (await backend.SearchGamesAsync("999")).Should().BeEmpty();
     }
 
     // ── version provider ────────────────────────────────────────────────────

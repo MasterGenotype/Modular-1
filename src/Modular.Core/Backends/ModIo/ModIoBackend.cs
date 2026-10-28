@@ -38,6 +38,9 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     // mod.io marks explicit content with bit 8 of maturity_option.
     private const int ExplicitMaturityBit = 8;
 
+    // Baldur's Gate 3, whose host answers game searches when no game is configured.
+    private const long DirectoryHostGame = 6715;
+
     private readonly AppSettings _settings;
     private readonly ModIoClient _client;
     private readonly ResumableDownloader _downloader;
@@ -577,6 +580,54 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         }
 
         return gameDomain;
+    }
+
+    /// <summary>
+    /// Finds mod.io games by name, so nobody has to know a game's number.
+    /// </summary>
+    /// <remarks>
+    /// Every game's host serves the whole games list, so the first configured game's host
+    /// is used, or Baldur's Gate 3's when none is configured.
+    /// </remarks>
+    /// <param name="name">Part of a game's name, or a game id.</param>
+    /// <param name="maxResults">Most games to return.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The matching games, best match first.</returns>
+    public async Task<IReadOnlyList<GameMatch>> SearchGamesAsync(
+        string name,
+        int maxResults = 20,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return [];
+
+        name = name.Trim();
+
+        if (long.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out var gameId) && gameId > 0)
+        {
+            var known = await GetGameNameAsync(name, ct);
+            return known != null && known != name ? [new GameMatch(name, known)] : [];
+        }
+
+        var host = _settings.ModIoGameIds.Count > 0 ? _settings.ModIoGameIds[0] : DirectoryHostGame;
+        var page = await _client.GetAsync<ModIoPage<ModIoGame>>(
+            host,
+            "games",
+            new Dictionary<string, string>
+            {
+                ["_q"] = name,
+                ["_limit"] = Math.Clamp(maxResults, 1, ModIoClient.MaxPageSize).ToString(CultureInfo.InvariantCulture)
+            },
+            ct);
+
+        var games = page.Data.Where(g => g.Id > 0 && !string.IsNullOrWhiteSpace(g.Name)).ToList();
+        foreach (var game in games)
+            _gameNames[game.Id] = game.Name;
+
+        return games
+            .OrderByDescending(g => FuzzyMatcher.Score(name, g.Name))
+            .Select(g => new GameMatch(g.Id.ToString(CultureInfo.InvariantCulture), g.Name))
+            .ToList();
     }
 
     private async Task<ModIoMod?> GetModAsync(string modId, string? gameDomain, CancellationToken ct)

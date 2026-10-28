@@ -192,6 +192,18 @@ public class GameBananaGameRef
 }
 
 /// <summary>
+/// Response of Util/Game/NameMatch: games whose name matches, best first.
+/// </summary>
+public class GameBananaGameMatchResponse
+{
+    [JsonPropertyName("_aMetadata")]
+    public GameBananaMetadata? Metadata { get; set; }
+
+    [JsonPropertyName("_aRecords")]
+    public List<GameBananaGameRef> Records { get; set; } = [];
+}
+
+/// <summary>
 /// Response wrapper for mod file listings from GameBanana API.
 /// Used for endpoint Mod/{id}/Files.
 /// </summary>

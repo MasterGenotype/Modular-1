@@ -23,7 +23,7 @@ public partial class GameBananaViewModel : ViewModelBase
     private ObservableCollection<ModDisplayModel> _mods = new();
 
     [ObservableProperty]
-    private string _searchText = string.Empty;
+    private string _filterText = string.Empty;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -43,15 +43,15 @@ public partial class GameBananaViewModel : ViewModelBase
     [ObservableProperty]
     private string _configurationError = string.Empty;
 
-    // Filtered view of mods, fuzzy-ranked when a search query is active
+    // Filtered view of mods, fuzzy-ranked when a filter is typed
     public IEnumerable<ModDisplayModel> FilteredMods =>
-        string.IsNullOrWhiteSpace(SearchText)
+        string.IsNullOrWhiteSpace(FilterText)
             ? Mods
             : FuzzyMatcher
-                .Rank(SearchText, Mods, m => m.Name)
+                .Rank(FilterText, Mods, m => m.Name)
                 .Concat(FuzzyMatcher
-                    .Rank(SearchText, Mods.Where(m => m.Author != null), m => m.Author!)
-                    .Where(m => FuzzyMatcher.Score(SearchText, m.Name) == 0))
+                    .Rank(FilterText, Mods.Where(m => m.Author != null), m => m.Author!)
+                    .Where(m => FuzzyMatcher.Score(FilterText, m.Name) == 0))
                 .Distinct();
 
     // Designer constructor
@@ -102,7 +102,7 @@ public partial class GameBananaViewModel : ViewModelBase
         }
     }
 
-    partial void OnSearchTextChanged(string value)
+    partial void OnFilterTextChanged(string value)
     {
         OnPropertyChanged(nameof(FilteredMods));
     }
@@ -151,59 +151,6 @@ public partial class GameBananaViewModel : ViewModelBase
             if (_dialogService != null)
             {
                 await _dialogService.ShowErrorAsync("Error", $"Failed to fetch mods: {ex.Message}");
-            }
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    [RelayCommand]
-    private async Task SearchModsAsync()
-    {
-        if (_backend == null)
-        {
-            StatusMessage = "Backend not initialized";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(SearchText))
-        {
-            // If search is empty, refresh subscriptions instead
-            await RefreshModsAsync();
-            return;
-        }
-
-        IsLoading = true;
-        StatusMessage = $"Searching for '{SearchText}'...";
-
-        try
-        {
-            var searchResults = await _backend.SearchModsAsync(SearchText, maxResults: 50);
-
-            Mods.Clear();
-            foreach (var mod in searchResults)
-            {
-                var displayModel = new ModDisplayModel(mod)
-                {
-                    Status = ModDownloadStatus.NotDownloaded
-                };
-                Mods.Add(displayModel);
-            }
-
-            TotalMods = Mods.Count;
-            StatusMessage = TotalMods == 0
-                ? $"No mods found for '{SearchText}'"
-                : $"Found {TotalMods} mod(s) matching '{SearchText}'";
-            OnPropertyChanged(nameof(FilteredMods));
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Search error: {ex.Message}";
-            if (_dialogService != null)
-            {
-                await _dialogService.ShowErrorAsync("Search Error", $"Failed to search: {ex.Message}");
             }
         }
         finally

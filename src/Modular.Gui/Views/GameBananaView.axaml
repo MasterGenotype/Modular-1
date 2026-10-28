@@ -23,19 +23,13 @@
         </Border>
 
         <!-- Header -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
             <TextBlock Grid.Column="0" Text="Subscribed Mods" FontSize="16" VerticalAlignment="Center" Opacity="0.7"/>
             <Button Grid.Column="1" Command="{Binding RefreshModsCommand}" ToolTip.Tip="Refresh subscribed mods"
-                    IsEnabled="{Binding IsConfigured}" Margin="0,0,10,0">
+                    IsEnabled="{Binding IsConfigured}">
                 <StackPanel Orientation="Horizontal" Spacing="5">
                     <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
                     <TextBlock Text="My Subscriptions"/>
-                </StackPanel>
-            </Button>
-            <Button Grid.Column="2" Command="{Binding SearchModsCommand}" ToolTip.Tip="Search all GameBanana mods">
-                <StackPanel Orientation="Horizontal" Spacing="5">
-                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
-                    <TextBlock Text="Search"/>
                 </StackPanel>
             </Button>
         </Grid>
@@ -43,16 +37,13 @@
         <!-- Search and filter bar -->
         <Grid Grid.Row="2" RowDefinitions="Auto,*">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,10">
-                <TextBox Grid.Column="0" 
-                         Text="{Binding SearchText}" 
-                         Watermark="Search GameBanana mods... (press Enter or click Search)"
+                <TextBox Grid.Column="0"
+                         Text="{Binding FilterText}"
+                         Watermark="Filter subscriptions by name or author..."
                          Margin="0,0,10,0">
                     <TextBox.InnerLeftContent>
-                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
+                        <mi:MaterialIcon Kind="FilterVariant" Width="16" Height="16" Margin="8,0,0,0" Opacity="0.5"/>
                     </TextBox.InnerLeftContent>
-                    <TextBox.KeyBindings>
-                        <KeyBinding Gesture="Enter" Command="{Binding SearchModsCommand}"/>
-                    </TextBox.KeyBindings>
                 </TextBox>
 
                 <Button Grid.Column="1" Command="{Binding SelectAllCommand}" 

@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Modular.Gui.ViewModels"
              xmlns:models="using:Modular.Gui.Models"
+             xmlns:backends="using:Modular.Core.Backends"
              xmlns:mi="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="Modular.Gui.Views.ModIoSearchView"
@@ -17,12 +18,27 @@
         <!-- Search bar -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,10,0">
-                <TextBlock Text="Game ID:" VerticalAlignment="Center"/>
-                <AutoCompleteBox ItemsSource="{Binding AvailableGameIds}"
-                                 Text="{Binding GameIdText}"
-                                 FilterMode="Contains"
-                                 MinWidth="140"
-                                 Watermark="e.g. 6715"/>
+                <TextBlock Text="Game:" VerticalAlignment="Center"/>
+                <AutoCompleteBox DataContext="{Binding Game}"
+                                 Text="{Binding Text}"
+                                 SelectedItem="{Binding SelectedGame}"
+                                 AsyncPopulator="{Binding Populator}"
+                                 FilterMode="None"
+                                 MinimumPrefixLength="1"
+                                 MinimumPopulateDelay="0:0:0.3"
+                                 MinWidth="240"
+                                 MaxWidth="320"
+                                 Watermark="e.g. Baldur&apos;s Gate 3"
+                                 ToolTip.Tip="Type part of the game's name and pick it from the list. A game id works too.">
+                    <AutoCompleteBox.ItemTemplate>
+                        <DataTemplate x:DataType="backends:GameMatch">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Id}" Opacity="0.5" Margin="12,0,0,0"/>
+                            </Grid>
+                        </DataTemplate>
+                    </AutoCompleteBox.ItemTemplate>
+                </AutoCompleteBox>
             </StackPanel>
 
             <TextBox Grid.Column="1"

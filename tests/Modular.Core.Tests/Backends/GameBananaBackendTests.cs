@@ -307,4 +307,33 @@ public class GameBananaModelsTests
 
         Assert.Empty(GameBananaBackend.ParseRequirements(profile.RootElement));
     }
+
+    [Fact]
+    public void ParseGameMatches_ReadsIdsAndNamesInOrder()
+    {
+        // The shape Util/Game/NameMatch returns.
+        using var response = System.Text.Json.JsonDocument.Parse("""
+            {"_aMetadata":{"_nRecordCount":3,"_nPerpage":15,"_bIsComplete":true},
+             "_aRecords":[
+               {"_idRow":8722,"_sName":"Cyberpunk 2077","_sProfileUrl":"https://gamebanana.com/games/8722"},
+               {"_idRow":7872,"_sName":"VA-11 Hall-A: Cyberpunk Bartender Action"},
+               {"_idRow":0,"_sName":""}
+             ]}
+            """);
+
+        var games = GameBananaBackend.ParseGameMatches(response.RootElement);
+
+        Assert.Equal(
+            [new GameMatch("8722", "Cyberpunk 2077"), new GameMatch("7872", "VA-11 Hall-A: Cyberpunk Bartender Action")],
+            games);
+    }
+
+    [Fact]
+    public async Task SearchGamesAsync_TooShortForGameBanana_ReturnsNothingWithoutAsking()
+    {
+        var backend = new GameBananaBackend(new AppSettings());
+
+        Assert.Empty(await backend.SearchGamesAsync("ze"));
+        Assert.Empty(await backend.SearchGamesAsync("  "));
+    }
 }
