@@ -43,6 +43,18 @@ public sealed record BG3PakMeta(
         Dependencies.Where(d => !IsBuiltIn(d.Uuid));
 
     /// <summary>
+    /// The name other mods reach this mod's Script Extender scripts by
+    /// (<c>Mods.&lt;name&gt;</c>), or <c>null</c> for a mod without scripts.
+    /// </summary>
+    public string? ScriptModTable { get; init; }
+
+    /// <summary>
+    /// Other mods' script tables this mod's scripts use while the game is loading, so
+    /// those mods must load first. Read by <see cref="BG3ScriptReferences"/>.
+    /// </summary>
+    public IReadOnlyList<string> ScriptReferences { get; init; } = [];
+
+    /// <summary>
     /// Modules that ship with the game. Nearly every mod lists several of these as
     /// dependencies, and none of them is ever something to go and fetch.
     /// </summary>

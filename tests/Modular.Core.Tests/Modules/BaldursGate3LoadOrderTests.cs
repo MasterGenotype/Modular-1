@@ -322,6 +322,69 @@ public sealed class BaldursGate3LoadOrderTests : IDisposable
     }
 
     [Fact]
+    public void ModSettings_AListedModWhoseScriptsUseAnotherAsTheyLoad_IsMovedBelowIt()
+    {
+        // Oath Framework and Community Library: no declared dependency, only a script call.
+        var path = NewModSettings(ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("Framework", A), ("Bystander", B), ("Library", C)));
+
+        var result = BG3ModSettings.Update(
+            path,
+            [
+                Meta(A, "Framework") with { ScriptModTable = "Framework", ScriptReferences = ["Library"] },
+                Meta(B, "Bystander"),
+                Meta(C, "Library") with { ScriptModTable = "Library" },
+            ],
+            [new BG3ManagedPak(Meta(C, "Library").Module, BG3LoadOrderClassifier.Race, 0)]);
+
+        result.Moved.Should().Equal("Framework");
+        result.Order.Should().Equal("GustavX", "Bystander", "Library", "Framework");
+        result.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ModSettings_ScriptReferencesBothWays_AreNotALoop_AndMoveNothing()
+    {
+        var path = NewModSettings(ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("First", A), ("Second", B)));
+
+        var result = BG3ModSettings.Update(
+            path,
+            [
+                Meta(A, "First") with { ScriptModTable = "First", ScriptReferences = ["Second"] },
+                Meta(B, "Second", A) with { ScriptModTable = "Second", ScriptReferences = ["First"] },
+            ],
+            [new BG3ManagedPak(Meta(A, "First").Module, BG3LoadOrderClassifier.Gameplay, 0)]);
+
+        result.Moved.Should().BeEmpty();
+        result.Order.Should().Equal("GustavX", "First", "Second");
+        result.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScriptReferences_OnlyTopLevelUsesCount_NotFunctionsChecksOrComments()
+    {
+        const string lua = """
+            local imports = { "Globals" }
+            CLGlobals, CLUtils = Mods.CommunityLibrary.Import(imports)
+            local tags = Mods["TagFramework"].Tags
+            if Mods.BG3SX then
+                Mods.BG3SX.Register()
+            end
+            function Later()
+                return Mods.Volition.Value
+            end
+            -- Mods.Commented.Out()
+            --[[
+            Mods.Block.Comment()
+            ]]
+            """;
+
+        BG3ScriptReferences.LoadTimeReferences(lua)
+            .Should().Equal("CommunityLibrary", "TagFramework");
+    }
+
+    [Fact]
     public void ModSettings_AnOrderThatIsAlreadyRight_IsNotRewritten()
     {
         var path = NewModSettings(ExistingFile(

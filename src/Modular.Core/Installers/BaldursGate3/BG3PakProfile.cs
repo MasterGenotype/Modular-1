@@ -53,7 +53,11 @@ public sealed record BG3PakProfile(BG3PakMeta? Meta, IReadOnlyList<string> Files
         if (files.Count == 0)
             return null;
 
-        var profile = new BG3PakProfile(BG3PakMeta.Read(info.FullName), files);
+        var meta = BG3PakMeta.Read(info.FullName);
+        if (meta != null && files.Any(f => f.Contains("/ScriptExtender/", StringComparison.OrdinalIgnoreCase)))
+            meta = BG3ScriptReferences.Apply(info.FullName, meta);
+
+        var profile = new BG3PakProfile(meta, files);
         Cache[info.FullName] = (info.Length, info.LastWriteTimeUtc, profile);
         return profile;
     }

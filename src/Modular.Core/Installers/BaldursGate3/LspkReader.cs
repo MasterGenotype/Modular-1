@@ -5,7 +5,7 @@ using System.Text;
 namespace Modular.Core.Installers.BaldursGate3;
 
 /// <summary>
-/// Reads the file table of a Larian <c>.pak</c> (LSPK) package, and single small files from it.
+/// Reads the file table of a Larian <c>.pak</c> (LSPK) package, and small files from it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -110,50 +110,87 @@ public static class LspkReader
 
         foreach (var entry in ReadEntries(stream))
         {
-            if (!match(entry.Name))
-                continue;
-
-            if (entry.Part != 0 || entry.SizeOnDisk <= 0 || entry.SizeOnDisk > MaxFileSize ||
-                entry.UncompressedSize > MaxFileSize ||
-                entry.Offset < 0 || entry.Offset + entry.SizeOnDisk > stream.Length)
-            {
-                return null;
-            }
-
-            var data = new byte[entry.SizeOnDisk];
-            stream.Position = entry.Offset;
-            if (!TryReadExactly(stream, data))
-                return null;
-
-            switch (entry.Compression)
-            {
-                case CompressionNone:
-                    return data;
-
-                case CompressionZlib:
-                    try
-                    {
-                        using var zlib = new ZLibStream(
-                            new MemoryStream(data), CompressionMode.Decompress);
-                        using var output = new MemoryStream();
-                        zlib.CopyTo(output);
-                        return output.ToArray();
-                    }
-                    catch (InvalidDataException)
-                    {
-                        return null;
-                    }
-
-                case CompressionLz4:
-                    var decoded = new byte[entry.UncompressedSize];
-                    return TryDecodeLz4Block(data, decoded) ? decoded : null;
-
-                default:
-                    return null;
-            }
+            if (match(entry.Name))
+                return Decode(stream, entry);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Extracts every packed file whose virtual path satisfies a predicate.
+    /// </summary>
+    /// <param name="pakPath">Absolute path to the <c>.pak</c>.</param>
+    /// <param name="match">Chooses files by their forward-slash virtual paths.</param>
+    /// <returns>
+    /// Each matching file's path and decompressed bytes, in pak order. A file that cannot be
+    /// decoded is left out; an unreadable pak gives an empty list.
+    /// </returns>
+    public static IReadOnlyList<(string Name, byte[] Data)> ReadFiles(string pakPath, Func<string, bool> match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+
+        var files = new List<(string Name, byte[] Data)>();
+        try
+        {
+            using var stream = new FileStream(
+                pakPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+            foreach (var entry in ReadEntries(stream))
+            {
+                if (match(entry.Name) && Decode(stream, entry) is { } data)
+                    files.Add((entry.Name, data));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        return files;
+    }
+
+    // The decompressed bytes of one entry, or null when it is out of bounds, too big or
+    // compressed in a way this reader does not decode.
+    private static byte[]? Decode(Stream stream, Entry entry)
+    {
+        if (entry.Part != 0 || entry.SizeOnDisk <= 0 || entry.SizeOnDisk > MaxFileSize ||
+            entry.UncompressedSize > MaxFileSize ||
+            entry.Offset < 0 || entry.Offset + entry.SizeOnDisk > stream.Length)
+        {
+            return null;
+        }
+
+        var data = new byte[entry.SizeOnDisk];
+        stream.Position = entry.Offset;
+        if (!TryReadExactly(stream, data))
+            return null;
+
+        switch (entry.Compression)
+        {
+            case CompressionNone:
+                return data;
+
+            case CompressionZlib:
+                try
+                {
+                    using var zlib = new ZLibStream(
+                        new MemoryStream(data), CompressionMode.Decompress);
+                    using var output = new MemoryStream();
+                    zlib.CopyTo(output);
+                    return output.ToArray();
+                }
+                catch (InvalidDataException)
+                {
+                    return null;
+                }
+
+            case CompressionLz4:
+                var decoded = new byte[entry.UncompressedSize];
+                return TryDecodeLz4Block(data, decoded) ? decoded : null;
+
+            default:
+                return null;
+        }
     }
 
     private static List<Entry> ReadEntries(Stream stream)

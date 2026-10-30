@@ -130,6 +130,7 @@ public static class BG3ModSettings
         var installedByUuid = installed
             .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var dependsOn = DependencyMap(installedByUuid);
 
         var ownershipPath = Path.Combine(
             Path.GetDirectoryName(modSettingsPath) ?? string.Empty, OwnershipFileName);
@@ -185,8 +186,7 @@ public static class BG3ModSettings
                 managedByUuid.TryGetValue(e.Uuid, out var other) && LoadsAfter(other, pak));
 
             var firstDependent = entries.FindIndex(1, e =>
-                installedByUuid.TryGetValue(e.Uuid, out var meta) &&
-                meta.ModDependencies.Any(d => d.Uuid == pak.Module.Uuid));
+                dependsOn.TryGetValue(e.Uuid, out var needs) && needs.Contains(pak.Module.Uuid));
 
             var at = new[] { firstLater, firstDependent }.Where(i => i > 0).DefaultIfEmpty(-1).Min();
 
@@ -204,7 +204,7 @@ public static class BG3ModSettings
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var warnings = new List<string>();
-        var moved = PutDependenciesFirst(entries, installedByUuid, warnings);
+        var moved = PutDependenciesFirst(entries, dependsOn, warnings);
 
         // Only for Modular's own mods: a gap in someone else's is theirs to report, and
         // would otherwise be repeated on every deployment.
@@ -342,11 +342,49 @@ public static class BG3ModSettings
         return refreshed;
     }
 
+    // What each installed mod needs loaded before it: the mods its meta.lsx declares, and
+    // the mods whose script tables its scripts use while loading. A script reference that
+    // points back at a mod depending on this one is dropped rather than made into a loop:
+    // it is the less certain of the two.
+    private static Dictionary<string, HashSet<string>> DependencyMap(
+        Dictionary<string, BG3PakMeta> installedByUuid)
+    {
+        var declared = installedByUuid.ToDictionary(
+            p => p.Key,
+            p => p.Value.ModDependencies.Select(d => d.Uuid).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
+        var byTable = installedByUuid
+            .Where(p => p.Value.ScriptModTable != null)
+            .GroupBy(p => p.Value.ScriptModTable!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.Key).ToList(), StringComparer.Ordinal);
+
+        var scripted = installedByUuid.ToDictionary(
+            p => p.Key,
+            p => p.Value.ScriptReferences
+                .SelectMany(t => byTable.GetValueOrDefault(t) ?? [])
+                .Where(d => !string.Equals(d, p.Key, StringComparison.OrdinalIgnoreCase))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (uuid, needs) in scripted)
+        {
+            needs.RemoveWhere(d =>
+                declared.GetValueOrDefault(d)?.Contains(uuid) == true ||
+                scripted.GetValueOrDefault(d)?.Contains(uuid) == true);
+        }
+
+        foreach (var (uuid, needs) in declared)
+            needs.UnionWith(scripted[uuid]);
+
+        return declared;
+    }
+
     // Moves any mod that sits above something it depends on to just below it. Nothing
     // else moves, so an order that was already valid comes back exactly as it went in.
     private static List<string> PutDependenciesFirst(
         List<Entry> entries,
-        Dictionary<string, BG3PakMeta> installedByUuid,
+        Dictionary<string, HashSet<string>> dependsOn,
         List<string> warnings)
     {
         var moved = new List<string>();
@@ -357,11 +395,11 @@ public static class BG3ModSettings
 
         for (var i = 1; i < entries.Count; i++)
         {
-            if (!installedByUuid.TryGetValue(entries[i].Uuid, out var meta))
+            if (!dependsOn.TryGetValue(entries[i].Uuid, out var needs))
                 continue;
 
-            var last = meta.ModDependencies
-                .Select(d => entries.FindIndex(e => e.Uuid == d.Uuid))
+            var last = needs
+                .Select(d => entries.FindIndex(e => string.Equals(e.Uuid, d, StringComparison.OrdinalIgnoreCase)))
                 .DefaultIfEmpty(-1)
                 .Max();
 
