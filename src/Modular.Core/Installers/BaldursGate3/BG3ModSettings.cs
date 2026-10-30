@@ -34,6 +34,9 @@ public sealed record BG3ModSettingsResult
     /// <summary>Names of modules moved so that they load after what they depend on.</summary>
     public IReadOnlyList<string> Moved { get; init; } = [];
 
+    /// <summary>Names of listed modules whose version was brought up to their pak's.</summary>
+    public IReadOnlyList<string> Refreshed { get; init; } = [];
+
     /// <summary>Things that could not be put right, as messages fit to show.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
@@ -50,10 +53,12 @@ public sealed record BG3ModSettingsResult
 /// </para>
 /// <para>
 /// The rules are deliberately conservative. An entry Modular did not add is never
-/// removed and keeps its position. Modular's own mods are appended, and kept in order
-/// among themselves by band and then by Modular's order, except that a mod something
-/// already listed depends on is put just above it. An existing entry is moved only when the list as found already had it
-/// above something it depends on. Which entries are Modular's is
+/// removed and keeps its position. A new mod of Modular's goes in by band and then by
+/// Modular's order, just above the first of its mods that belongs after it, and above
+/// anything already listed that depends on it. An entry already in the list, Modular's
+/// or not, is moved only when the list as found had it above something it depends on,
+/// so an order the user set by hand, or restored from a save, survives every
+/// deployment. Which entries are Modular's is
 /// remembered in a small file beside <c>modsettings.lsx</c>, so that uninstalling a mod
 /// removes its entry and nobody else's.
 /// </para>
@@ -154,6 +159,13 @@ public static class BG3ModSettings
 
         var present = entries.Select(e => e.Uuid).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var added = new List<Entry>();
+        var managedByUuid = managed
+            .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        // A reinstall can change a listed mod's version. The entry keeps its place, but
+        // says what the deployed pak now is.
+        var refreshed = RefreshVersions(entries, managedByUuid);
 
         foreach (var pak in managed
                      .OrderBy(m => m.Tier.Rank)
@@ -165,30 +177,31 @@ public static class BG3ModSettings
 
             var entry = new Entry(pak.Module.Uuid, pak.Module.Name, CreateNode(pak.Module));
 
-            // A mod that something already listed depends on goes in just above it, so
-            // that nothing already in the list has to move. Otherwise it goes last.
+            // A new mod goes in by band, just above the first of Modular's mods that
+            // belongs after it, and above anything already listed that depends on it.
+            // Nothing already in the list moves to make room: its order may be the
+            // user's own, or the one a save was made with.
+            var firstLater = entries.FindIndex(1, e =>
+                managedByUuid.TryGetValue(e.Uuid, out var other) && LoadsAfter(other, pak));
+
             var firstDependent = entries.FindIndex(1, e =>
                 installedByUuid.TryGetValue(e.Uuid, out var meta) &&
                 meta.ModDependencies.Any(d => d.Uuid == pak.Module.Uuid));
 
-            if (firstDependent > 0)
-                entries.Insert(firstDependent, entry);
+            var at = new[] { firstLater, firstDependent }.Where(i => i > 0).DefaultIfEmpty(-1).Min();
+
+            if (at > 0)
+                entries.Insert(at, entry);
             else
                 entries.Add(entry);
 
             added.Add(entry);
         }
 
-        // Entries Modular added are Modular's to order. They are put in band order among
-        // themselves, using only the positions they already hold, so a mod installed
-        // earlier does not stay ahead of one that belongs before it and nobody else's
-        // entry shifts.
         var mine = previouslyOwned
             .Where(managedUuids.Contains)
             .Concat(added.Select(e => e.Uuid))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        SortOwnedInPlace(entries, mine, managed, installedByUuid);
 
         var warnings = new List<string>();
         var moved = PutDependenciesFirst(entries, installedByUuid, warnings);
@@ -214,6 +227,7 @@ public static class BG3ModSettings
             Added = added.Select(e => e.Name).ToList(),
             Removed = removed.Select(e => e.Name).ToList(),
             Moved = moved,
+            Refreshed = refreshed,
             Warnings = warnings
         };
 
@@ -221,7 +235,7 @@ public static class BG3ModSettings
         // already listed stays the game's entry, to be neither moved nor removed.
         var owned = mine.Order(StringComparer.Ordinal).ToList();
 
-        if (exists && before.SequenceEqual(after))
+        if (exists && before.SequenceEqual(after) && refreshed.Count == 0)
         {
             WriteOwnership(ownershipPath, owned, previouslyOwned);
             return result;
@@ -290,37 +304,42 @@ public static class BG3ModSettings
         }
     }
 
-    private static void SortOwnedInPlace(
+    // Band first, then Modular's own order: where a new mod goes among those listed.
+    private static bool LoadsAfter(BG3ManagedPak listed, BG3ManagedPak pak) =>
+        listed.Tier.Rank != pak.Tier.Rank
+            ? listed.Tier.Rank > pak.Tier.Rank
+            : listed.OrderIndex > pak.OrderIndex;
+
+    // Sets each deployed mod's listed version to its pak's. Nothing else in an entry is
+    // touched: the game keeps the hash and handle up to date itself.
+    private static List<string> RefreshVersions(
         List<Entry> entries,
-        HashSet<string> mine,
-        IReadOnlyList<BG3ManagedPak> managed,
-        Dictionary<string, BG3PakMeta> installedByUuid)
+        Dictionary<string, BG3ManagedPak> managedByUuid)
     {
-        var rank = managed
-            .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var refreshed = new List<string>();
 
-        // A mod something listed depends on was placed for that reason and stays there.
-        var dependedOn = entries
-            .Where(e => installedByUuid.ContainsKey(e.Uuid))
-            .SelectMany(e => installedByUuid[e.Uuid].ModDependencies.Select(d => d.Uuid))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            // The default is what a pak gets when its version could not be read, such as
+            // an old meta with a 64-bit value in Version. The game reads those its own
+            // way, so the version it listed is kept rather than replaced with a guess.
+            if (!managedByUuid.TryGetValue(entry.Uuid, out var pak) ||
+                pak.Module.Version64 == BG3ModuleRef.DefaultVersion64)
+            {
+                continue;
+            }
 
-        var slots = Enumerable.Range(0, entries.Count)
-            .Where(i => mine.Contains(entries[i].Uuid) &&
-                        rank.ContainsKey(entries[i].Uuid) &&
-                        !dependedOn.Contains(entries[i].Uuid))
-            .ToList();
+            var version = pak.Module.Version64.ToString(CultureInfo.InvariantCulture);
+            var attribute = entry.Node.Elements("attribute").FirstOrDefault(a => HasId(a, "Version64"));
 
-        var ordered = slots
-            .Select(i => entries[i])
-            .OrderBy(e => rank[e.Uuid].Tier.Rank)
-            .ThenBy(e => rank[e.Uuid].OrderIndex)
-            .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            if (attribute == null || (string?)attribute.Attribute("value") == version)
+                continue;
 
-        for (var i = 0; i < slots.Count; i++)
-            entries[slots[i]] = ordered[i];
+            attribute.SetAttributeValue("value", version);
+            refreshed.Add(entry.Name);
+        }
+
+        return refreshed;
     }
 
     // Moves any mod that sits above something it depends on to just below it. Nothing

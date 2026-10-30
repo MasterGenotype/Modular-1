@@ -310,8 +310,8 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
         return new EngineOrderDescription(
             "the order listed in modsettings.lsx; a later mod wins. Modular adds its paks by " +
             "band (framework, interface, race, class, gameplay, item, appearance, patch), " +
-            "leaves other entries where they are, and moves a mod only to put it after " +
-            "something it depends on",
+            "leaves every entry already listed where it is, and moves a mod only to put " +
+            "it after something it depends on",
             order,
             modSettingsPath);
     }

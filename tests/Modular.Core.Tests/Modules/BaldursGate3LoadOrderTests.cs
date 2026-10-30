@@ -211,6 +211,66 @@ public sealed class BaldursGate3LoadOrderTests : IDisposable
     }
 
     [Fact]
+    public void ModSettings_ModularsOwnEntries_PutInAnotherOrderByHand_StayThatWay()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("In-game", A)));
+        var heads = new BG3ManagedPak(Meta(C, "Heads").Module, BG3LoadOrderClassifier.Appearance, 0);
+        var race = new BG3ManagedPak(Meta(D, "Race").Module, BG3LoadOrderClassifier.Race, 1);
+        var installed = new[] { Meta(A, "In-game"), Meta(C, "Heads"), Meta(D, "Race") };
+
+        BG3ModSettings.Update(path, installed, [heads, race])
+            .Order.Should().Equal("GustavX", "In-game", "Race", "Heads");
+
+        // The user, or a save's load order, puts the appearance mod first.
+        File.WriteAllText(path, ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("Heads", C), ("In-game", A), ("Race", D)));
+
+        var result = BG3ModSettings.Update(path, installed, [heads, race],
+            mayWrite: () => throw new InvalidOperationException("nothing should need writing"));
+
+        result.Written.Should().BeFalse();
+        result.Order.Should().Equal("GustavX", "Heads", "In-game", "Race");
+    }
+
+    [Fact]
+    public void ModSettings_AReinstalledModsNewVersion_IsWrittenToItsEntry_WhichKeepsItsPlace()
+    {
+        var path = NewModSettings(ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("Mine", B), ("In-game A", A)));
+        const long newVersion = 36028816346316894;
+        var mine = new BG3ModuleRef(B, "Mine", "Mine", 0, "meta-hash", newVersion);
+
+        var result = BG3ModSettings.Update(
+            path, [Meta(A, "In-game A"), new BG3PakMeta(mine, [], [])],
+            [new BG3ManagedPak(mine, BG3LoadOrderClassifier.Class, 0)]);
+
+        result.Written.Should().BeTrue();
+        result.Refreshed.Should().Equal("Mine");
+        result.Order.Should().Equal("GustavX", "Mine", "In-game A");
+
+        var written = XDocument.Parse(File.ReadAllText(path));
+        Attribute(Entry(written, B), "Version64").Should().Be("36028816346316894");
+        Attribute(Entry(written, B), "MD5").Should().Be("existing-hash");
+        Attribute(Entry(written, A), "Version64").Should().Be("36028797018963968");
+    }
+
+    [Fact]
+    public void ModSettings_APakWhoseVersionCouldNotBeRead_KeepsTheVersionTheGameListed()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("Old meta", B))
+            .Replace("value=\"36028797018963968\"", "value=\"40\""));
+
+        // No readable version, so the pak's meta comes back with the default.
+        var result = BG3ModSettings.Update(
+            path, [Meta(B, "Old meta")],
+            [new BG3ManagedPak(Meta(B, "Old meta").Module, BG3LoadOrderClassifier.Gameplay, 0)],
+            mayWrite: () => throw new InvalidOperationException("nothing should need writing"));
+
+        result.Written.Should().BeFalse();
+        result.Refreshed.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ModSettings_KeepsTheFilesOwnVersionAndBacksUpWhatItReplaces()
     {
         var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("In-game A", A)));
