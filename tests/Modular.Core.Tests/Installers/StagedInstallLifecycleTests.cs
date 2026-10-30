@@ -461,6 +461,72 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task InstallAsync_ANewVersionInAnArchiveWithANewName_ReplacesTheModDeployingTheSameFiles()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { AutoSnapshot = false };
+
+        var first = await _service.InstallAsync(Named(CreateZip(("data/thing.dat", "v1")), "Mod-1.0.zip"), game, options);
+        var second = await _service.InstallAsync(Named(CreateZip(("data/thing.dat", "v2")), "Mod-1.1.zip"), game, options);
+
+        first.Success.Should().BeTrue(first.Error);
+        second.Success.Should().BeTrue(second.Error);
+        second.ReplacedModId.Should().Be("Mod-1.0");
+
+        var installed = await _service.ListInstalledAsync();
+        installed.Should().ContainSingle().Which.ChangesetId.Should().Be(second.ChangesetId);
+        (await _changesets.GetChangesetAsync(first.ChangesetId!))!.State
+            .Should().Be(ChangesetState.Superseded);
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("v2");
+    }
+
+    [Fact]
+    public async Task InstallAsync_AnIdThatIsOnlyTheArchiveName_StillReplacesTheModDeployingTheSameFiles()
+    {
+        // How the CLI and GUI call it: the id is filled in from the file name.
+        var game = NewDir("game");
+
+        await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game,
+            new ModInstallationOptions { ModId = "Mod-1.0", MatchInstalledByFiles = true, AutoSnapshot = false });
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game,
+            new ModInstallationOptions { ModId = "Mod-1.1", MatchInstalledByFiles = true, AutoSnapshot = false });
+
+        second.Success.Should().BeTrue(second.Error);
+        second.ReplacedModId.Should().Be("Mod-1.0");
+        (await _service.ListInstalledAsync()).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task InstallAsync_AnArchiveSharingOnlySomeFiles_IsANewMod()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { AutoSnapshot = false };
+
+        await _service.InstallAsync(Named(CreateZip(("data/thing.dat", "base")), "Base.zip"), game, options);
+        var patch = await _service.InstallAsync(
+            Named(CreateZip(("data/thing.dat", "patched"), ("data/extra.dat", "more")), "Patch.zip"), game, options);
+
+        patch.Success.Should().BeTrue(patch.Error);
+        patch.ReplacedModId.Should().BeNull();
+        (await _service.ListInstalledAsync()).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task InstallAsync_AGivenModId_IsKept_EvenWhenAnotherModDeploysTheSameFiles()
+    {
+        var game = NewDir("game");
+
+        await _service.InstallAsync(CreateZip(("data/thing.dat", "a")), game,
+            new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "b")), game,
+            new ModInstallationOptions { ModId = "mod-b", AutoSnapshot = false });
+
+        second.Success.Should().BeTrue(second.Error);
+        second.ReplacedModId.Should().BeNull();
+        (await _service.ListInstalledAsync()).Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task InstallAsync_Reinstall_DeploysTheNewVersion()
     {
         // The rebuilt staging tree must reach the game, even though the old deployed file
@@ -613,6 +679,13 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
             writer.Write(content);
         }
 
+        return path;
+    }
+
+    private string Named(string archive, string fileName)
+    {
+        var path = Path.Combine(NewDir("zip"), fileName);
+        File.Move(archive, path);
         return path;
     }
 

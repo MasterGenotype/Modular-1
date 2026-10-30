@@ -117,6 +117,7 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             var options = new ModInstallationOptions
             {
                 ModId = settings.ModId ?? Path.GetFileNameWithoutExtension(archivePath),
+                MatchInstalledByFiles = settings.ModId == null,
                 GameId = settings.Game,
                 AllowOverwrite = settings.Force,
                 CreateBackups = !settings.NoBackup,
@@ -175,6 +176,9 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                             Markup.Escape(string.Join(", ", choice.Options.Select(o => o.Label))) + ")[/]"));
                 }
 
+                if (result.ReplacedModId != null)
+                    AnsiConsole.MarkupLine($"[bold]Would replace:[/] {Markup.Escape(result.ReplacedModId)} [grey](deploys the same files)[/]");
+
                 AnsiConsole.MarkupLine($"[green]Would install {result.PlannedOperations.Count} files:[/]");
                 foreach (var file in result.PlannedOperations.Take(20))
                     AnsiConsole.MarkupLine($"  [grey]{Markup.Escape(file)}[/]");
@@ -197,6 +201,9 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                     AnsiConsole.MarkupLine(
                         $"[grey]Run 'modular deploy --game {Markup.Escape(settings.Game!)}' to apply it.[/]");
                 }
+
+                if (result.ReplacedModId != null)
+                    AnsiConsole.MarkupLine($"Replaced {Markup.Escape(result.ReplacedModId)} [grey](deploys the same files; keeps its place in the load order)[/]");
 
                 if (result.BackedUpFiles.Count > 0)
                     AnsiConsole.MarkupLine($"[grey]Backed up {result.BackedUpFiles.Count} existing files[/]");

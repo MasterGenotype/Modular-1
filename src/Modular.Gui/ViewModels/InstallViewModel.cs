@@ -475,6 +475,7 @@ public partial class InstallViewModel : ViewModelBase
                 var options = new ModInstallationOptions
                 {
                     ModId = Path.GetFileNameWithoutExtension(archivePath),
+                    MatchInstalledByFiles = true,
                     // The selected game's AppID scopes installer selection, so a
                     // game-specific installer is only considered for its own game.
                     GameId = SelectedGame?.AppId.ToString(

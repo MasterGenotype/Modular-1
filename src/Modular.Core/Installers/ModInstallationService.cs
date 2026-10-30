@@ -390,6 +390,23 @@ public class ModInstallationService
             // Step 4c: Learn the mod's category while there is time to ask.
             await WarmCategoryAsync(archivePath, module, ct);
 
+            // Step 4d: A new version of a mod usually comes in an archive with a new name,
+            // so the name alone would make it a second mod beside the first. When the id
+            // is only that name, an installed mod that deploys exactly the same files is
+            // this one: the two could not coexist anyway, since this would overwrite
+            // every file of it. Taking over its id replaces it and keeps its place in the
+            // load order.
+            if (staged && (options.ModId == null || options.MatchInstalledByFiles) &&
+                await FindModDeployingSameFilesAsync(gameKey, plan, targetDirectory, modId, ct) is { } replaced)
+            {
+                _logger?.LogInformation(
+                    "{Archive} deploys the same files as {ModId}; installing it as that mod",
+                    Path.GetFileName(archivePath), replaced.ModId);
+
+                modId = replaced.ModId;
+                result.ReplacedModId = replaced.ModId;
+            }
+
             if (options.DryRun)
             {
                 result.Success = true;
@@ -1202,6 +1219,41 @@ public class ModInstallationService
     /// held by a game_mod row naming a different changeset has been replaced. A managed
     /// changeset with no row on its folder at all is from before deployments and is kept.
     /// </remarks>
+    // The one installed mod of the game whose staged files are exactly the files this plan
+    // would stage, or null when there is none, more than one, or a mod already goes by
+    // this id (then the install is a reinstall by name, as it always was).
+    private async Task<GameModRecord?> FindModDeployingSameFilesAsync(
+        string gameKey, InstallPlan plan, string targetDirectory, string modId, CancellationToken ct)
+    {
+        var probe = new StagingRedirection(
+            targetDirectory, string.Empty, StagingManager.GetPlanOffset(targetDirectory, plan.TargetDirectory));
+
+        var planned = plan.Operations
+            .Where(o => o.Type is FileOperationType.Extract or FileOperationType.Copy)
+            .Select(o => probe.Normalize(o))
+            .Select(f => $"{f.RootName}/{f.RelativePath}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (planned.Count == 0)
+            return null;
+
+        var mods = await _deployment.Mods.ListAsync(gameKey, ct: ct);
+        if (mods.Any(m => string.Equals(m.ModId, modId, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var matches = mods
+            .Where(m =>
+            {
+                var staged = StagingManager.EnumerateStagedFiles(m.StagingPath);
+                return staged.Count == planned.Count &&
+                       staged.All(f => planned.Contains($"{f.RootName}/{f.RelativePath}"));
+            })
+            .Take(2)
+            .ToList();
+
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     private async Task<HashSet<string>> FindSupersededAsync(
         IEnumerable<ChangesetRecord> committed, CancellationToken ct)
     {
@@ -1538,6 +1590,13 @@ public class ModInstallationOptions
     /// </remarks>
     public string? GameId { get; set; }
 
+    /// <summary>
+    /// Whether <see cref="ModId"/> is only the archive's name, so that an installed mod
+    /// deploying exactly the same files is taken to be this mod and replaced. Implied when
+    /// <see cref="ModId"/> is null; leave it off when the id is the mod's real identity.
+    /// </summary>
+    public bool MatchInstalledByFiles { get; set; }
+
     /// <summary>Whether to overwrite existing files.</summary>
     public bool AllowOverwrite { get; set; }
 
@@ -1630,6 +1689,12 @@ public class ModInstallationResult
 
     /// <summary>Absolute path of the mod's staging tree, when the install was staged.</summary>
     public string? StagingPath { get; set; }
+
+    /// <summary>
+    /// The installed mod this archive replaced because it deploys the same files, when
+    /// the install was not given a mod id and its archive name was new.
+    /// </summary>
+    public string? ReplacedModId { get; set; }
 
     /// <summary>
     /// Staged files as <c>&lt;root&gt;/&lt;root-relative path&gt;</c>.
