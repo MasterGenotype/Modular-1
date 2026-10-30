@@ -8,6 +8,7 @@ using Modular.Core.Configuration;
 using Modular.Core.Database;
 using Modular.Core.Utilities;
 using Modular.Gui.Services;
+using Modular.Sdk.Backends;
 using Modular.Sdk.Collections;
 
 namespace Modular.Gui.ViewModels;
@@ -223,6 +224,13 @@ public partial class CollectionViewModel : ViewModelBase
         }
     }
 
+    private DownloadOptions CollectionDownloadOptions()
+    {
+        var options = DownloadOptions.Default;
+        options.MaxConcurrency = _settings?.MaxConcurrentDownloads ?? 1;
+        return options;
+    }
+
     [RelayCommand]
     private async Task DownloadCollectionAsync()
     {
@@ -250,7 +258,7 @@ public partial class CollectionViewModel : ViewModelBase
                 StatusMessage = !string.IsNullOrEmpty(p.Status) ? p.Status : "Downloading...";
             });
 
-            await _service.DownloadCollectionAsync(SelectedCollection, modsDir, progress: progress);
+            await _service.DownloadCollectionAsync(SelectedCollection, modsDir, CollectionDownloadOptions(), progress);
             StatusMessage = $"Collection '{SelectedCollection.Name}' downloaded successfully";
         }
         catch (Exception ex)
@@ -485,7 +493,7 @@ public partial class CollectionViewModel : ViewModelBase
                 SearchStatusMessage = !string.IsNullOrEmpty(p.Status) ? p.Status : "Downloading...";
             });
 
-            await _service.DownloadCollectionAsync(collection, modsDir, progress: progress);
+            await _service.DownloadCollectionAsync(collection, modsDir, CollectionDownloadOptions(), progress);
             SearchStatusMessage = $"Collection '{info.Name}' downloaded ({detail.Entries.Count} mods)";
         }
         catch (Exception ex)

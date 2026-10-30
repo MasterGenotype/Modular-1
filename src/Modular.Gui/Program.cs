@@ -219,6 +219,7 @@ sealed class Program
             var logger = sp.GetService<ILogger<NexusSsoClient>>();
             return new NexusSsoClient(settings.NexusApplicationSlug ?? "vortex", logger);
         });
+        services.AddSingleton<NexusLogin>();
 
         // Game detection
         services.AddSingleton<SteamGameScanner>();

@@ -15,6 +15,13 @@ public class AppSettings
     public string NexusApiKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whether <see cref="NexusApiKey"/> came from the SSO login. A key from SSO is kept
+    /// over one in the NEXUS_API_KEY environment variable.
+    /// </summary>
+    [JsonPropertyName("nexus_api_key_from_sso")]
+    public bool NexusApiKeyFromSso { get; set; }
+
+    /// <summary>
     /// Application slug registered with NexusMods for SSO.
     /// </summary>
     [JsonPropertyName("nexus_application_slug")]

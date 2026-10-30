@@ -583,19 +583,24 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
         var completed = 0;
         var total = allFiles.Count;
 
-        foreach (var (mod, file) in allFiles)
+        // Up to MaxConcurrency files at once; counters are shared, so they are interlocked.
+        await Parallel.ForEachAsync(
+            allFiles,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.MaxConcurrency), CancellationToken = ct },
+            async (entry, itemCt) =>
         {
-            ct.ThrowIfCancellationRequested();
+            var (mod, file) = entry;
+            itemCt.ThrowIfCancellationRequested();
 
             // GameBanana provides URLs inline
             var url = file.DirectDownloadUrl;
             if (string.IsNullOrEmpty(url))
             {
                 _logger?.LogWarning("No download URL for file in mod {ModName}", mod.Name);
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Failure(
-                    file.FileName, "GameBanana gave no download link", completed, total));
-                continue;
+                    file.FileName, "GameBanana gave no download link", Volatile.Read(ref completed), total));
+                return;
             }
 
             // GameBanana names the game a mod is for; the mod's name names its folder.
@@ -606,21 +611,21 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
             // Partial downloads live in a separate .part file, so an existing file is always complete.
             if (!options.Force && File.Exists(outputPath))
             {
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     $"Skipping {file.FileName} (already exists)",
-                    completed, total, file.FileName));
-                continue;
+                    Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
             if (options.DryRun)
             {
                 _logger?.LogInformation("[DRY RUN] Would download: {File}", outputPath);
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     $"[DRY RUN] {file.FileName}",
-                    completed, total, file.FileName));
-                continue;
+                    Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
             try
@@ -631,7 +636,7 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
 
                 var resume = options.Resume && !options.Force;
                 var partialBytes = resume ? ResumableDownloader.GetPartialLength(outputPath) : 0;
-                var completedSoFar = completed;
+                var completedSoFar = Volatile.Read(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     partialBytes > 0 ? $"Resuming {file.FileName}" : $"Downloading {file.FileName}",
                     completedSoFar, total, file.FileName));
@@ -659,7 +664,7 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
                             CurrentFileTotalBytes = p.total >= 0 ? p.total : file.SizeBytes,
                             Phase = DownloadPhase.Downloading
                         })),
-                    ct);
+                    itemCt);
                 _logger?.LogInformation("Downloaded: {File}{Resumed}", outputPath, result.Resumed ? " (resumed)" : string.Empty);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -670,23 +675,23 @@ public partial class GameBananaBackend : IModBackend, IRequirementsBackend
             catch (HttpRequestException ex)
             {
                 _logger?.LogError("Failed to download {ModName}/{FileName}: {Error}", mod.Name, file.FileName, ex.Message);
-                completed++;
-                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
-                continue;
+                Interlocked.Increment(ref completed);
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, Volatile.Read(ref completed), total));
+                return;
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to download {Url}", url);
-                completed++;
-                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
-                continue;
+                Interlocked.Increment(ref completed);
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, Volatile.Read(ref completed), total));
+                return;
             }
 
-            completed++;
+            Interlocked.Increment(ref completed);
             progress?.Report(DownloadProgress.Downloading(
                 $"Downloaded {file.FileName}",
-                completed, total, file.FileName));
-        }
+                Volatile.Read(ref completed), total, file.FileName));
+        });
 
         progress?.Report(DownloadProgress.Done(total));
     }

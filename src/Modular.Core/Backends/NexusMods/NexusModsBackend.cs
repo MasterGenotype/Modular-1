@@ -86,7 +86,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
     {
         var errors = new List<string>();
         if (string.IsNullOrEmpty(_settings.NexusApiKey))
-            errors.Add("NexusMods API key is not configured. Set 'nexus_api_key' in config or API_KEY environment variable.");
+            errors.Add("Not logged in to NexusMods. Run 'modular login' (or Login via Browser in Settings).");
         return errors;
     }
 
@@ -331,9 +331,14 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         var attemptedResolutions = 0;
         var resolvedUrls = 0;
 
-        foreach (var (mod, file) in allFiles)
+        // Up to MaxConcurrency files at once; counters are shared, so they are interlocked.
+        await Parallel.ForEachAsync(
+            allFiles,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.MaxConcurrency), CancellationToken = ct },
+            async (entry, itemCt) =>
         {
-            ct.ThrowIfCancellationRequested();
+            var (mod, file) = entry;
+            itemCt.ThrowIfCancellationRequested();
 
             var modIdInt = int.Parse(mod.ModId);
             var fileIdInt = int.Parse(file.FileId);
@@ -341,11 +346,11 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             // Check if already downloaded
             if (!options.Force && _database.IsDownloaded(gameDomain, modIdInt, fileIdInt))
             {
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     $"Skipping {file.FileName} (already downloaded)",
-                    completed, total, file.FileName));
-                continue;
+                    Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
             var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, gameDomain, mod.ModId);
@@ -354,23 +359,23 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             if (options.DryRun)
             {
                 _logger?.LogInformation("[DRY RUN] Would download: {File}", outputPath);
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     $"[DRY RUN] {file.FileName}",
-                    completed, total, file.FileName));
-                continue;
+                    Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
-            attemptedResolutions++;
-            var url = await ResolveDownloadUrlAsync(mod.ModId, file.FileId, gameDomain, ct);
+            Interlocked.Increment(ref attemptedResolutions);
+            var url = await ResolveDownloadUrlAsync(mod.ModId, file.FileId, gameDomain, itemCt);
             if (string.IsNullOrEmpty(url))
             {
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Failure(
-                    file.FileName, "NexusMods gave no download link", completed, total));
-                continue;
+                    file.FileName, "NexusMods gave no download link", Volatile.Read(ref completed), total));
+                return;
             }
-            resolvedUrls++;
+            Interlocked.Increment(ref resolvedUrls);
 
             try
             {
@@ -378,7 +383,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
 
                 var resume = options.Resume && !options.Force;
                 var partialBytes = resume ? ResumableDownloader.GetPartialLength(outputPath) : 0;
-                var completedSoFar = completed;
+                var completedSoFar = Volatile.Read(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
                     partialBytes > 0 ? $"Resuming {file.FileName}" : $"Downloading {file.FileName}",
                     completedSoFar, total, file.FileName));
@@ -399,7 +404,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                             CurrentFileTotalBytes = p.total >= 0 ? p.total : file.SizeBytes,
                             Phase = DownloadPhase.Downloading
                         })),
-                    ct);
+                    itemCt);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -421,9 +426,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                     Status = DownloadStatus.HashMismatch,
                     ErrorMessage = ex.Message
                 });
-                completed++;
-                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
-                continue;
+                Interlocked.Increment(ref completed);
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, Volatile.Read(ref completed), total));
+                return;
             }
             catch (Exception ex)
             {
@@ -438,16 +443,16 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
                     Status = DownloadStatus.Failed,
                     ErrorMessage = ex.Message
                 });
-                completed++;
-                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
-                continue;
+                Interlocked.Increment(ref completed);
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, Volatile.Read(ref completed), total));
+                return;
             }
 
-            completed++;
+            Interlocked.Increment(ref completed);
             progress?.Report(DownloadProgress.Downloading(
                 $"Downloaded {file.FileName}",
-                completed, total, file.FileName));
-        }
+                Volatile.Read(ref completed), total, file.FileName));
+        });
 
         await _database.SaveAsync();
 

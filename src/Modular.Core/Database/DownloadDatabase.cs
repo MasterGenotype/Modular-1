@@ -13,6 +13,10 @@ public class DownloadDatabase
     private readonly List<DownloadRecord> _records = [];
     private readonly object _lock = new();
 
+    // Concurrent downloads each save when they finish; two writes of the file at once
+    // would fail or interleave.
+    private readonly SemaphoreSlim _saveLock = new(1, 1);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -163,6 +167,7 @@ public class DownloadDatabase
     /// </summary>
     public async Task SaveAsync()
     {
+        await _saveLock.WaitAsync();
         List<DownloadRecord> snapshot;
         lock (_lock)
         {
@@ -184,6 +189,10 @@ public class DownloadDatabase
             {
                 FilePath = _dbPath
             };
+        }
+        finally
+        {
+            _saveLock.Release();
         }
     }
 

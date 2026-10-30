@@ -307,50 +307,55 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         var completed = 0;
         var total = work.Count;
 
-        foreach (var (mod, file) in work)
+        // Up to MaxConcurrency files at once; counters are shared, so they are interlocked.
+        await Parallel.ForEachAsync(
+            work,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.MaxConcurrency), CancellationToken = ct },
+            async (entry, itemCt) =>
         {
-            ct.ThrowIfCancellationRequested();
+            var (mod, file) = entry;
+            itemCt.ThrowIfCancellationRequested();
 
-            var gameName = await GetGameNameAsync(mod.GameDomain, ct);
+            var gameName = await GetGameNameAsync(mod.GameDomain, itemCt);
             var modOutputDir = ModLibraryLayout.ModFolder(outputDirectory, Id, gameName, mod.Name);
             var outputPath = Path.Combine(modOutputDir, FileUtils.SanitizeFilename(file.FileName));
 
             // Partial downloads live in a separate .part file, so an existing file is complete.
             if (!options.Force && File.Exists(outputPath))
             {
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
-                    $"Skipping {file.FileName} (already exists)", completed, total, file.FileName));
-                continue;
+                    $"Skipping {file.FileName} (already exists)", Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
             if (options.DryRun)
             {
                 _logger?.LogInformation("[DRY RUN] Would download: {File}", outputPath);
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
-                    $"[DRY RUN] {file.FileName}", completed, total, file.FileName));
-                continue;
+                    $"[DRY RUN] {file.FileName}", Volatile.Read(ref completed), total, file.FileName));
+                return;
             }
 
             try
             {
                 var url = file.DirectDownloadUrl
-                    ?? await ResolveDownloadUrlAsync(mod.ModId, file.FileId, mod.GameDomain, ct);
+                    ?? await ResolveDownloadUrlAsync(mod.ModId, file.FileId, mod.GameDomain, itemCt);
 
                 if (string.IsNullOrEmpty(url))
                 {
                     _logger?.LogWarning("No download URL for {Mod}/{File}", mod.Name, file.FileName);
-                    completed++;
+                    Interlocked.Increment(ref completed);
                     progress?.Report(DownloadProgress.Failure(
-                        file.FileName, "mod.io gave no download link", completed, total));
-                    continue;
+                        file.FileName, "mod.io gave no download link", Volatile.Read(ref completed), total));
+                    return;
                 }
 
                 FileUtils.EnsureDirectoryExists(modOutputDir);
 
                 var resume = options.Resume && !options.Force;
-                var completedSoFar = completed;
+                var completedSoFar = Volatile.Read(ref completed);
                 var modId = mod.ModId;
                 var fileId = file.FileId;
                 var game = mod.GameDomain;
@@ -385,7 +390,7 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
                             CurrentFileTotalBytes = p.total >= 0 ? p.total : file.SizeBytes,
                             Phase = DownloadPhase.Downloading
                         })),
-                    ct);
+                    itemCt);
 
                 _logger?.LogInformation(
                     "Downloaded: {File}{Resumed}", outputPath, result.Resumed ? " (resumed)" : string.Empty);
@@ -398,15 +403,15 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to download {Mod}/{File}", mod.Name, file.FileName);
-                completed++;
-                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, completed, total));
-                continue;
+                Interlocked.Increment(ref completed);
+                progress?.Report(DownloadProgress.Failure(file.FileName, ex.Message, Volatile.Read(ref completed), total));
+                return;
             }
 
-            completed++;
+            Interlocked.Increment(ref completed);
             progress?.Report(DownloadProgress.Downloading(
-                $"Downloaded {file.FileName}", completed, total, file.FileName));
-        }
+                $"Downloaded {file.FileName}", Volatile.Read(ref completed), total, file.FileName));
+        });
 
         progress?.Report(DownloadProgress.Done(total));
     }

@@ -48,7 +48,7 @@ public class NexusModsBackendTests
         var errors = backend.ValidateConfiguration();
 
         Assert.Single(errors);
-        Assert.Contains("API key", errors[0]);
+        Assert.Contains("modular login", errors[0]);
     }
 
     [Fact]

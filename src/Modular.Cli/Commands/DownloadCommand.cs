@@ -65,6 +65,12 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
             var registry = services.CreateBackendRegistry();
 
+            // NexusMods needs a login; get one through the browser rather than skip it.
+            var mayUseNexus = string.IsNullOrEmpty(settings.Backend) ||
+                settings.Backend.Equals(BackendIds.NexusMods, StringComparison.OrdinalIgnoreCase);
+            if (mayUseNexus && registry.IsRegistered(BackendIds.NexusMods))
+                await services.EnsureNexusLoginAsync(cts.Token);
+
             // Determine which backends to use
             IEnumerable<Modular.Core.Backends.IModBackend> backends;
             if (settings.All)
@@ -115,6 +121,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                     ? new FileFilter { Categories = settings.Categories.ToList() }
                     : FileFilter.MainAndOptional,
                 VerifyDownloads = services.Settings.VerifyDownloads,
+                MaxConcurrency = services.Settings.MaxConcurrentDownloads,
                 AutoRename = services.Settings.AutoRename,
                 OrganizeByCategory = services.Settings.OrganizeByCategory,
                 StatusCallback = status => Console.WriteLine($"[SCAN] {status}")
@@ -130,6 +137,7 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 if (errors.Count > 0)
                 {
                     LiveProgressDisplay.ShowWarning($"Skipping {backend.DisplayName}: {string.Join(", ", errors)}");
+                    failures.Add((backend.DisplayName, "(whole backend)", string.Join(", ", errors)));
                     continue;
                 }
 
@@ -232,17 +240,21 @@ public sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
 
         // Reported synchronously: Progress<T> posts to the thread pool, so a failure
         // reported last could otherwise arrive after the summary is printed.
+        // Several files download at once, so reports arrive from several threads.
         var progress = new SyncProgress<DownloadProgress>(p =>
         {
-            if (p.Phase == DownloadPhase.Failed)
+            lock (failed)
             {
-                failed.Add((p.CurrentFile ?? "(unknown file)", p.Error ?? p.Status));
-                LiveProgressDisplay.ShowError($"[{p.Completed}/{p.Total}] {p.Status}");
+                if (p.Phase == DownloadPhase.Failed)
+                {
+                    failed.Add((p.CurrentFile ?? "(unknown file)", p.Error ?? p.Status));
+                    LiveProgressDisplay.ShowError($"[{p.Completed}/{p.Total}] {p.Status}");
+                }
+                else if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
+                    Console.WriteLine($"[{p.Completed}/{p.Total}] {p.Status}");
+                else if (p.Phase == DownloadPhase.Scanning)
+                    Console.WriteLine($"[SCAN] {p.Status}");
             }
-            else if (p.Phase == DownloadPhase.Downloading && p.Total > 0)
-                Console.WriteLine($"[{p.Completed}/{p.Total}] {p.Status}");
-            else if (p.Phase == DownloadPhase.Scanning)
-                Console.WriteLine($"[SCAN] {p.Status}");
         });
 
         await backend.DownloadModsAsync(

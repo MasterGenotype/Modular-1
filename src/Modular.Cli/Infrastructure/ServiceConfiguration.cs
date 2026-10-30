@@ -145,23 +145,7 @@ public sealed class RuntimeServices : IDisposable
 
         var loggerFactory = verbose ? ServiceConfiguration.CreateLoggerFactory(verbose) : null;
 
-        // If no API key and SSO is enabled, run the SSO flow
-        if (string.IsNullOrWhiteSpace(settings.NexusApiKey) && settings.NexusSsoEnabled)
-        {
-            Console.WriteLine("No NexusMods API key found. Starting browser authorization...");
-            Console.WriteLine("A browser window will open. Please log in and authorize Modular.");
-            Console.WriteLine();
-
-            var ssoClient = new NexusSsoClient(
-                settings.NexusApplicationSlug,
-                loggerFactory?.CreateLogger<NexusSsoClient>());
-
-            settings.NexusApiKey = await ssoClient.AuthenticateAsync(
-                url => Console.WriteLine($"If the browser didn't open, visit: {url}"));
-            await configService.SaveAsync(settings);
-            Console.WriteLine("Authorization successful! API key saved to config.");
-        }
-
+        await LogInIfNeededAsync(settings, configService, loggerFactory);
         configService.Validate(settings, requireNexusKey: true);
 
         var rateLimiter = new NexusRateLimiter(loggerFactory?.CreateLogger<NexusRateLimiter>());
@@ -188,6 +172,31 @@ public sealed class RuntimeServices : IDisposable
             LoggerFactory = loggerFactory,
             Telemetry = telemetry
         };
+    }
+
+    /// <summary>
+    /// Logs in to NexusMods through the browser when there is no key yet, so a command
+    /// that needs NexusMods doesn't stop to ask for one.
+    /// </summary>
+    /// <returns>Whether a key is available.</returns>
+    public Task<bool> EnsureNexusLoginAsync(CancellationToken ct = default) =>
+        LogInIfNeededAsync(Settings, ConfigService, LoggerFactory, ct);
+
+    private static async Task<bool> LogInIfNeededAsync(
+        AppSettings settings, ConfigurationService configService, ILoggerFactory? loggerFactory,
+        CancellationToken ct = default)
+    {
+        var login = new NexusLogin(settings, configService, new NexusSsoClient(
+            settings.NexusApplicationSlug, loggerFactory?.CreateLogger<NexusSsoClient>()));
+        if (login.HasKey || !settings.NexusSsoEnabled)
+            return login.HasKey;
+
+        Console.WriteLine("Not logged in to NexusMods. Opening the browser to log in...");
+        Console.WriteLine("Log in there and authorize Modular.");
+        Console.WriteLine();
+        await login.EnsureKeyAsync(url => Console.WriteLine($"If the browser didn't open, visit: {url}"), ct);
+        Console.WriteLine("Logged in. The key is saved to the config.");
+        return true;
     }
 
     /// <summary>

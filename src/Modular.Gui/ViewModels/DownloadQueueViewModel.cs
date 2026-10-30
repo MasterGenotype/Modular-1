@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
+using Modular.Core.Authentication;
 using Modular.Core.Backends;
 using Modular.Core.Database;
 using Modular.Sdk.Backends.Common;
@@ -37,9 +38,9 @@ public partial class DownloadQueueViewModel : ViewModelBase
     private readonly DownloadDatabase? _downloadDatabase;
     private readonly IDialogService? _dialogService;
     private readonly ChangesetManager? _changesets;
+    private readonly NexusLogin? _nexusLogin;
     private readonly ResumableDownloader _downloader;
     private readonly ConcurrentQueue<DownloadItemModel> _pendingQueue = new();
-    private readonly SemaphoreSlim _downloadSemaphore = new(1, 1); // Single concurrent download
     private CancellationTokenSource? _downloadCts;
     
     // Track domains that need reorganization after download batch completes
@@ -112,8 +113,10 @@ public partial class DownloadQueueViewModel : ViewModelBase
         DownloadDatabase downloadDatabase,
         ResumableDownloader downloader,
         IDialogService dialogService,
-        ChangesetManager changesets)
+        ChangesetManager changesets,
+        NexusLogin nexusLogin)
     {
+        _nexusLogin = nexusLogin;
         _dialogService = dialogService;
         _changesets = changesets;
         _nexusBackend = nexusBackend;
@@ -193,27 +196,49 @@ public partial class DownloadQueueViewModel : ViewModelBase
         }
 
         _downloadCts = new CancellationTokenSource();
+        var token = _downloadCts.Token;
         IsDownloading = true;
+
+        // Up to max_concurrent_downloads items at once. This runs on the UI thread, and so
+        // does each item between awaits, so the batch state below needs no locking.
+        var limit = Math.Max(1, _settings.MaxConcurrentDownloads);
+        using var slots = new SemaphoreSlim(limit, limit);
+        var running = new List<Task>();
+
+        async Task RunAsync(DownloadItemModel item)
+        {
+            try
+            {
+                await DownloadItemAsync(item, token);
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }
 
         try
         {
-            while (_pendingQueue.TryDequeue(out var item))
+            while (true)
             {
-                _downloadCts.Token.ThrowIfCancellationRequested();
-
-                // Items paused or removed while waiting in the queue are skipped.
-                if (item.State != DownloadItemState.Queued)
-                    continue;
-
-                await _downloadSemaphore.WaitAsync(_downloadCts.Token);
-                try
+                while (_pendingQueue.TryDequeue(out var item))
                 {
-                    await DownloadItemAsync(item, _downloadCts.Token);
+                    token.ThrowIfCancellationRequested();
+
+                    // Items paused or removed while waiting in the queue are skipped.
+                    if (item.State != DownloadItemState.Queued)
+                        continue;
+
+                    await slots.WaitAsync(token);
+                    running.Add(RunAsync(item));
                 }
-                finally
-                {
-                    _downloadSemaphore.Release();
-                }
+
+                // Items queued while these run are picked up on the next pass.
+                if (running.Count == 0)
+                    break;
+                var finished = await Task.WhenAny(running);
+                running.Remove(finished);
+                await finished;
             }
         }
         catch (OperationCanceledException)
@@ -222,6 +247,15 @@ public partial class DownloadQueueViewModel : ViewModelBase
         }
         finally
         {
+            // Let cancelled transfers wind down before their folders are reorganized.
+            try
+            {
+                await Task.WhenAll(running);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
             IsDownloading = false;
             _downloadCts = null;
             
@@ -352,6 +386,15 @@ public partial class DownloadQueueViewModel : ViewModelBase
             {
                 if (item.Mod.BackendId == BackendIds.NexusMods && _nexusBackend != null)
                 {
+                    // Not logged in yet: log in through the browser instead of failing.
+                    // Items running side by side share the one login.
+                    if (_nexusLogin != null && !_nexusLogin.HasKey &&
+                        !await _nexusLogin.EnsureKeyAsync(
+                            authUrl => StatusMessage = $"Log in to NexusMods in your browser. If it didn't open, visit: {authUrl}",
+                            itemToken))
+                        throw new InvalidOperationException(
+                            "Not logged in to NexusMods. Use Login via Browser in Settings.");
+
                     url = await _nexusBackend.ResolveDownloadUrlAsync(
                         item.Mod.ModId,
                         item.File.FileId,

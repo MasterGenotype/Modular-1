@@ -22,7 +22,11 @@ public sealed class InteractiveCommand : AsyncCommand
             {
                 using var services = await RuntimeServices.InitializeMinimalAsync();
                 var registry = services.CreateBackendRegistry();
-                var configured = registry.GetConfigured();
+                // NexusMods is offered before login too: choosing it logs in through the browser.
+                var configured = registry.GetAll()
+                    .Where(b => b.ValidateConfiguration().Count == 0 ||
+                                (b.Id == BackendIds.NexusMods && services.Settings.NexusSsoEnabled))
+                    .ToList();
 
                 // Build menu dynamically from configured backends + Rename option
                 var menuItems = configured.Select(b => b.DisplayName).Append("Rename").ToArray();
@@ -35,6 +39,8 @@ public sealed class InteractiveCommand : AsyncCommand
                 {
                     // Selected a backend
                     var backend = configured[choice - 1];
+                    if (backend.Id == BackendIds.NexusMods && !await services.EnsureNexusLoginAsync())
+                        continue;
                     string? gameDomain = null;
 
                     // Prompt for game domain if backend requires it
@@ -92,6 +98,7 @@ public sealed class InteractiveCommand : AsyncCommand
             Force = false,
             OrganizeByCategory = services.Settings.OrganizeByCategory,
             AutoRename = services.Settings.AutoRename,
+            MaxConcurrency = services.Settings.MaxConcurrentDownloads,
             Filter = FileFilter.MainAndOptional
         };
 

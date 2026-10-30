@@ -297,6 +297,7 @@ public sealed class CollectionDownloadCommand : AsyncCommand<CollectionDownloadC
         try
         {
             using var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
+            await services.EnsureNexusLoginAsync();
             var registry = services.CreateBackendRegistry();
             var backend = registry.Get(BackendIds.NexusMods)!;
             var repo = new ModCollectionRepository();
@@ -313,7 +314,8 @@ public sealed class CollectionDownloadCommand : AsyncCommand<CollectionDownloadC
             var options = new DownloadOptions
             {
                 DryRun = settings.DryRun,
-                VerifyDownloads = settings.Verify
+                VerifyDownloads = settings.Verify,
+                MaxConcurrency = services.Settings.MaxConcurrentDownloads
             };
 
             var progress = new Progress<DownloadProgress>(p =>

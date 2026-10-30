@@ -131,7 +131,8 @@ public class ConfigurationService
         if (requireNexusKey && string.IsNullOrWhiteSpace(settings.NexusApiKey))
         {
             throw new ConfigException(
-                "NexusMods API key is required. Set NEXUS_API_KEY environment variable or add 'nexus_api_key' to config file.",
+                "Not logged in to NexusMods. Run 'modular login' (or Login via Browser in Settings). " +
+                "Without SSO, set NEXUS_API_KEY or add 'nexus_api_key' to the config file.",
                 "nexus_api_key");
         }
 
@@ -155,8 +156,13 @@ public class ConfigurationService
         // NEXUS_API_KEY or API_KEY
         var nexusKey = Environment.GetEnvironmentVariable("NEXUS_API_KEY")
                     ?? Environment.GetEnvironmentVariable("API_KEY");
-        if (!string.IsNullOrWhiteSpace(nexusKey))
+        // A key from the SSO login wins: the variable is for when there is no login.
+        var ssoKey = settings.NexusApiKeyFromSso && !string.IsNullOrWhiteSpace(settings.NexusApiKey);
+        if (!string.IsNullOrWhiteSpace(nexusKey) && !ssoKey)
+        {
             settings.NexusApiKey = nexusKey;
+            settings.NexusApiKeyFromSso = false;
+        }
 
         // GB_USER_ID
         var gbUserId = Environment.GetEnvironmentVariable("GB_USER_ID");

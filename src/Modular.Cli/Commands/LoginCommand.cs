@@ -24,21 +24,18 @@ public sealed class LoginCommand : AsyncCommand
             Console.WriteLine();
 
             using var loggerFactory = ServiceConfiguration.CreateLoggerFactory(settings.Verbose);
-            var ssoClient = new NexusSsoClient(
+            var login = new NexusLogin(settings, configService, new NexusSsoClient(
                 settings.NexusApplicationSlug,
-                loggerFactory.CreateLogger<NexusSsoClient>());
-
-            settings.NexusApiKey = await ssoClient.AuthenticateAsync(
-                url => Console.WriteLine($"If the browser didn't open, visit: {url}"));
-            await configService.SaveAsync(settings);
+                loggerFactory.CreateLogger<NexusSsoClient>()));
+            await login.LoginAsync(url => Console.WriteLine($"If the browser didn't open, visit: {url}"));
 
             LiveProgressDisplay.ShowSuccess("Login successful! API key saved to config.");
             return 0;
         }
         catch (TimeoutException)
         {
-            LiveProgressDisplay.ShowError("SSO authorization timed out.");
-            Console.Error.WriteLine("You can set the API key manually:");
+            LiveProgressDisplay.ShowError("SSO authorization timed out. Run 'modular login' to try again.");
+            Console.Error.WriteLine("Without SSO, you can set an API key by hand:");
             Console.Error.WriteLine("  export NEXUS_API_KEY=your_key_here");
             Console.Error.WriteLine("  or add 'nexus_api_key' to ~/.config/Modular/config.json");
             return 1;

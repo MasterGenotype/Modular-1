@@ -105,39 +105,43 @@ public class ModCollectionService
 
         progress?.Report(DownloadProgress.Scanning($"Downloading collection '{collection.Name}' ({total} mods)..."));
 
-        foreach (var entry in entries)
+        // Up to MaxConcurrency mods at once.
+        await Parallel.ForEachAsync(
+            entries,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.MaxConcurrency), CancellationToken = ct },
+            async (entry, itemCt) =>
         {
-            ct.ThrowIfCancellationRequested();
+            itemCt.ThrowIfCancellationRequested();
 
             // Resolve file ID if not pinned
             var fileId = entry.FileId;
             if (string.IsNullOrEmpty(fileId))
             {
-                var files = await _backend.GetModFilesAsync(entry.ModId, collection.GameId, ct: ct);
+                var files = await _backend.GetModFilesAsync(entry.ModId, collection.GameId, ct: itemCt);
                 var latestFile = files.OrderByDescending(f => f.UploadedAt).FirstOrDefault();
                 if (latestFile == null)
                 {
                     _logger?.LogWarning("No files found for mod {ModId} ({Name}), skipping", entry.ModId, entry.Name);
-                    completed++;
-                    continue;
+                    Interlocked.Increment(ref completed);
+                    return;
                 }
                 fileId = latestFile.FileId;
             }
 
-            var url = await _backend.ResolveDownloadUrlAsync(entry.ModId, fileId, collection.GameId, ct);
+            var url = await _backend.ResolveDownloadUrlAsync(entry.ModId, fileId, collection.GameId, itemCt);
             if (string.IsNullOrEmpty(url))
             {
                 _logger?.LogWarning("Could not resolve download URL for mod {ModId} file {FileId}", entry.ModId, fileId);
-                completed++;
-                continue;
+                Interlocked.Increment(ref completed);
+                return;
             }
 
             if (options.DryRun)
             {
-                completed++;
+                Interlocked.Increment(ref completed);
                 progress?.Report(DownloadProgress.Downloading(
-                    $"[DRY RUN] {entry.Name}", completed, total, entry.FileName ?? entry.Name));
-                continue;
+                    $"[DRY RUN] {entry.Name}", Volatile.Read(ref completed), total, entry.FileName ?? entry.Name));
+                return;
             }
 
             var fileName = entry.FileName ?? $"{entry.ModId}_{fileId}";
@@ -149,13 +153,13 @@ public class ModCollectionService
                 FileUtils.EnsureDirectoryExists(modDir);
                 // Use a simple HttpClient download since we have the resolved URL
                 using var httpClient = new HttpClient();
-                var data = await httpClient.GetByteArrayAsync(url, ct);
-                await File.WriteAllBytesAsync(outputPath, data, ct);
+                var data = await httpClient.GetByteArrayAsync(url, itemCt);
+                await File.WriteAllBytesAsync(outputPath, data, itemCt);
 
                 // Verify MD5 if available
                 if (options.VerifyDownloads && !string.IsNullOrEmpty(entry.Md5))
                 {
-                    var actualMd5 = await Md5Calculator.CalculateMd5Async(outputPath, ct);
+                    var actualMd5 = await Md5Calculator.CalculateMd5Async(outputPath, itemCt);
                     if (!actualMd5.Equals(entry.Md5, StringComparison.OrdinalIgnoreCase))
                         _logger?.LogWarning("MD5 mismatch for {FileName}: expected {Expected}, got {Actual}",
                             fileName, entry.Md5, actualMd5);
@@ -168,10 +172,10 @@ public class ModCollectionService
                 _logger?.LogError(ex, "Failed to download mod {ModId} ({Name})", entry.ModId, entry.Name);
             }
 
-            completed++;
+            Interlocked.Increment(ref completed);
             progress?.Report(DownloadProgress.Downloading(
-                $"Downloaded {entry.Name}", completed, total, fileName));
-        }
+                $"Downloaded {entry.Name}", Volatile.Read(ref completed), total, fileName));
+        });
 
         progress?.Report(DownloadProgress.Done(total));
     }

@@ -23,7 +23,11 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly ConfigurationService? _configService;
     private readonly AppSettings? _settings;
     private readonly IDialogService? _dialogService;
-    private readonly NexusSsoClient? _ssoClient;
+    private readonly NexusLogin? _nexusLogin;
+
+    // The key as last loaded or saved. Downloads can log in while this page is open, so
+    // an unedited key field must not be saved back over the key they got.
+    private string _savedNexusApiKey = string.Empty;
     private readonly DiagnosticService? _diagnosticService;
     private readonly TelemetryService? _telemetryService;
 
@@ -180,7 +184,7 @@ public partial class SettingsViewModel : ViewModelBase
         ConfigurationService configService,
         AppSettings settings,
         IDialogService dialogService,
-        NexusSsoClient ssoClient,
+        NexusLogin nexusLogin,
         DiagnosticService diagnosticService,
         TelemetryService telemetryService,
         ProfilesViewModel profilesViewModel,
@@ -189,7 +193,7 @@ public partial class SettingsViewModel : ViewModelBase
         _configService = configService;
         _settings = settings;
         _dialogService = dialogService;
-        _ssoClient = ssoClient;
+        _nexusLogin = nexusLogin;
         _diagnosticService = diagnosticService;
         _telemetryService = telemetryService;
         ProfilesViewModel = profilesViewModel;
@@ -204,6 +208,7 @@ public partial class SettingsViewModel : ViewModelBase
 
         // NexusMods
         NexusApiKey = _settings.NexusApiKey ?? string.Empty;
+        _savedNexusApiKey = NexusApiKey;
         NexusApplicationSlug = _settings.NexusApplicationSlug ?? "vortex";
         NexusSsoEnabled = _settings.NexusSsoEnabled;
 
@@ -347,7 +352,13 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             // NexusMods
-            _settings.NexusApiKey = NexusApiKey;
+            if (NexusApiKey != _savedNexusApiKey)
+            {
+                // Typed or pasted here: not the SSO login's key.
+                _settings.NexusApiKey = NexusApiKey;
+                _settings.NexusApiKeyFromSso = false;
+                _savedNexusApiKey = NexusApiKey;
+            }
             _settings.NexusApplicationSlug = NexusApplicationSlug;
             _settings.NexusSsoEnabled = NexusSsoEnabled;
 
@@ -485,7 +496,7 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoginViaSsoAsync()
     {
-        if (_ssoClient == null)
+        if (_nexusLogin == null)
         {
             SsoStatusMessage = "SSO client not available";
             return;
@@ -496,12 +507,13 @@ public partial class SettingsViewModel : ViewModelBase
 
         try
         {
-            var apiKey = await _ssoClient.AuthenticateAsync(
+            // Saved as soon as it arrives, so downloads use it straight away.
+            var apiKey = await _nexusLogin.LoginAsync(
                 url => SsoStatusMessage = $"Waiting for authorization. If the browser didn't open, visit: {url}");
 
             NexusApiKey = apiKey;
-            HasUnsavedChanges = true;
-            SsoStatusMessage = "Login successful! Save settings to persist the API key.";
+            _savedNexusApiKey = apiKey;
+            SsoStatusMessage = "Logged in. The key is saved.";
         }
         catch (TimeoutException)
         {

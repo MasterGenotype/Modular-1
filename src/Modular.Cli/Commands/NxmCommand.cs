@@ -21,10 +21,6 @@ public sealed class NxmCommand : AsyncCommand<NxmCommand.Settings>
     private const string DesktopFileName = "modular-nxm.desktop";
     private const string NxmMimeType = "x-scheme-handler/nxm";
 
-    // Browsers launch one handler per click; this keeps them from writing the
-    // download database at the same time.
-    private static readonly TimeSpan LockWait = TimeSpan.FromMinutes(30);
-
     public sealed class Settings : CommandSettings
     {
         [CommandArgument(0, "[url]")]
@@ -54,10 +50,9 @@ public sealed class NxmCommand : AsyncCommand<NxmCommand.Settings>
         if (settings.Register)
             return await RegisterAsync();
 
-        NxmLink link;
         try
         {
-            link = NxmLink.Parse(settings.Url!);
+            NxmLink.Parse(settings.Url!);
         }
         catch (FormatException ex)
         {
@@ -73,72 +68,42 @@ public sealed class NxmCommand : AsyncCommand<NxmCommand.Settings>
         };
         Console.CancelKeyPress += cancelHandler;
 
+        // Each click runs this. The link joins the shared queue; whichever process is the
+        // worker downloads it, so clicks run side by side instead of waiting their turn.
+        var queue = NxmLinkQueue.Default;
+        queue.Add(settings.Url!);
+
+        var failures = 0;
         try
         {
-            using var hold = await AcquireLockAsync(cts.Token);
-
-            // Loads state only once the lock is held, so it sees the previous click's records.
-            // Runs SSO first when no API key is configured.
-            using var services = await RuntimeServices.InitializeAsync(settings.Verbose);
-            var backend = new NexusModsBackend(
-                services.Settings,
-                services.RateLimiter,
-                services.Database,
-                services.MetadataCache,
-                services.LoggerFactory?.CreateLogger<NexusModsBackend>(),
-                services.Downloader);
-
-            var options = new DownloadOptions
+            while (true)
             {
-                Force = settings.Force,
-                VerifyDownloads = services.Settings.VerifyDownloads
-            };
-
-            LiveProgressDisplay.ShowInfo(
-                $"Downloading {link.GameDomain} mod {link.ModId}, file {link.FileId}...");
-            var lastPercent = -10;
-            var (fileName, alreadyDownloaded) = await backend.DownloadNxmAsync(
-                link,
-                services.Settings.ModsDirectory,
-                options,
-                new SyncProgress<(long downloaded, long total)>(p =>
+                using (var worker = queue.TryBecomeWorker())
                 {
-                    if (p.total <= 0) return;
-                    var percent = (int)(p.downloaded * 100 / p.total);
-                    if (percent / 10 == lastPercent / 10) return;
-                    lastPercent = percent;
-                    Console.WriteLine($"  {percent}%");
-                }),
-                cts.Token);
+                    if (worker == null)
+                    {
+                        Console.WriteLine("Another Modular process is downloading nxm links; this one joins its queue.");
+                        return 0;
+                    }
 
-            if (alreadyDownloaded)
-            {
-                LiveProgressDisplay.ShowInfo($"{fileName} is already downloaded (use --force to download it again).");
-                Notify("Already downloaded", fileName);
-                return 0;
+                    // Loaded while holding the lock, so the previous worker's records are seen.
+                    var (taken, failed) = await DrainAsync(queue, settings, cts.Token);
+                    failures += failed;
+                    if (taken == 0)
+                        break;
+                }
+
+                // Released first, then checked: a link added meanwhile is picked up here,
+                // or by the process that added it.
+                if (!queue.HasPending)
+                    break;
             }
 
-            // Same follow-up as 'modular download'.
-            if (services.Settings.AutoRename)
-            {
-                var renameService = new RenameService(services.Settings, services.RateLimiter,
-                    services.MetadataCache, services.LoggerFactory?.CreateLogger<RenameService>());
-                var gameDomainPath = renameService.GetGameDomainPath(link.GameDomain);
-                await renameService.ReorganizeAndRenameModsAsync(
-                    gameDomainPath, services.Settings.OrganizeByCategory, cts.Token);
-                if (services.Settings.OrganizeByCategory)
-                    await renameService.RenameCategoryFoldersAsync(gameDomainPath, cts.Token);
-            }
-
-            await services.SaveStateAsync();
-
-            LiveProgressDisplay.ShowSuccess($"Downloaded {fileName}");
-            Notify("Downloaded", fileName);
-            return 0;
+            return failures == 0 ? 0 : 1;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            LiveProgressDisplay.ShowWarning("Cancelled. Run the same link again to resume.");
+            LiveProgressDisplay.ShowWarning("Cancelled. Click the links again to resume them.");
             return 130;
         }
         catch (Exception ex)
@@ -152,31 +117,131 @@ public sealed class NxmCommand : AsyncCommand<NxmCommand.Settings>
         }
     }
 
-    private static async Task<FileStream> AcquireLockAsync(CancellationToken ct)
+    /// <summary>
+    /// Downloads queued links until none are left, up to max_concurrent_downloads at once.
+    /// </summary>
+    /// <returns>How many links were taken from the queue, and how many failed.</returns>
+    private static async Task<(int Taken, int Failed)> DrainAsync(
+        NxmLinkQueue queue, Settings settings, CancellationToken ct)
     {
-        var path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".config", "Modular", "nxm.lock");
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        // Runs SSO first when no API key is configured.
+        using var services = await RuntimeServices.InitializeAsync(settings.Verbose);
+        var backend = new NexusModsBackend(
+            services.Settings,
+            services.RateLimiter,
+            services.Database,
+            services.MetadataCache,
+            services.LoggerFactory?.CreateLogger<NexusModsBackend>(),
+            services.Downloader);
+        var options = new DownloadOptions
+        {
+            Force = settings.Force,
+            VerifyDownloads = services.Settings.VerifyDownloads
+        };
 
-        var deadline = DateTime.UtcNow + LockWait;
-        var announced = false;
-        while (true)
+        var limit = Math.Max(1, services.Settings.MaxConcurrentDownloads);
+        using var slots = new SemaphoreSlim(limit, limit);
+        var running = new List<Task>();
+        var downloadedGames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var taken = 0;
+        var failed = 0;
+
+        async Task DownloadOneAsync(string url)
         {
             try
             {
-                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch (IOException) when (DateTime.UtcNow < deadline)
-            {
-                if (!announced)
+                var link = NxmLink.Parse(url);
+                var label = $"{link.GameDomain} mod {link.ModId}, file {link.FileId}";
+                LiveProgressDisplay.ShowInfo($"Downloading {label}...");
+                var lastPercent = -10;
+                var (fileName, alreadyDownloaded) = await backend.DownloadNxmAsync(
+                    link,
+                    services.Settings.ModsDirectory,
+                    options,
+                    new SyncProgress<(long downloaded, long total)>(p =>
+                    {
+                        if (p.total <= 0) return;
+                        var percent = (int)(p.downloaded * 100 / p.total);
+                        if (percent / 10 == lastPercent / 10) return;
+                        lastPercent = percent;
+                        Console.WriteLine($"  {label}: {percent}%");
+                    }),
+                    ct);
+
+                if (alreadyDownloaded)
                 {
-                    Console.WriteLine("Waiting for another nxm download to finish...");
-                    announced = true;
+                    LiveProgressDisplay.ShowInfo($"{fileName} is already downloaded (use --force to download it again).");
+                    Notify("Already downloaded", fileName);
+                    return;
                 }
-                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+
+                lock (downloadedGames)
+                    downloadedGames.Add(link.GameDomain);
+                LiveProgressDisplay.ShowSuccess($"Downloaded {fileName}");
+                Notify("Downloaded", fileName);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref failed);
+                Fail(ex.Message);
+            }
+            finally
+            {
+                slots.Release();
             }
         }
+
+        try
+        {
+            while (true)
+            {
+                foreach (var url in queue.TakeAll())
+                {
+                    taken++;
+                    await slots.WaitAsync(ct);
+                    running.Add(DownloadOneAsync(url));
+                }
+
+                running.RemoveAll(t => t.IsCompleted);
+                if (running.Count == 0 && !queue.HasPending)
+                    break;
+
+                // Wake when a download finishes, or soon after, to take newly clicked links.
+                await Task.WhenAny(running.Append(Task.Delay(TimeSpan.FromSeconds(1), ct)));
+            }
+        }
+        finally
+        {
+            try
+            {
+                await Task.WhenAll(running);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        // Same follow-up as 'modular download', once per game for the whole batch.
+        if (services.Settings.AutoRename)
+        {
+            var renameService = new RenameService(services.Settings, services.RateLimiter,
+                services.MetadataCache, services.LoggerFactory?.CreateLogger<RenameService>());
+            foreach (var game in downloadedGames)
+            {
+                var gameDomainPath = renameService.GetGameDomainPath(game);
+                await renameService.ReorganizeAndRenameModsAsync(
+                    gameDomainPath, services.Settings.OrganizeByCategory, ct);
+                if (services.Settings.OrganizeByCategory)
+                    await renameService.RenameCategoryFoldersAsync(gameDomainPath, ct);
+            }
+        }
+
+        await services.SaveStateAsync();
+        return (taken, failed);
     }
 
     private static async Task<int> RegisterAsync()
