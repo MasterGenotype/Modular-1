@@ -28,6 +28,17 @@ public sealed class DeploymentResult
     /// <summary>Files removed because no enabled mod ships them any more.</summary>
     public List<string> Removed { get; } = new();
 
+    /// <summary>
+    /// Of <see cref="Removed"/>, the files that belonged to the mod a
+    /// <see cref="DeploymentService.RemoveModAsync"/> took out.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Removed"/> alone overstates what an uninstall removed: the redeploy
+    /// also renames other mods' files when their place in the order changes, such as
+    /// Baldur's Gate 3 paks whose name carries their load-order position.
+    /// </remarks>
+    public List<string> RemovedForMod { get; } = new();
+
     /// <summary>Vanilla files put back after their mod was removed.</summary>
     public List<string> Restored { get; } = new();
 

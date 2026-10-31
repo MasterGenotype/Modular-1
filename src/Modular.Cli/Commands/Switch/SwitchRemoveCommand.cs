@@ -37,7 +37,7 @@ public sealed class SwitchRemoveCommand : AsyncCommand<SwitchRemoveCommand.Setti
     {
         if (!SwitchTitleId.TryParse(settings.TitleId, out var titleId))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
             return 1;
         }
 
@@ -97,12 +97,12 @@ public sealed class SwitchRemoveCommand : AsyncCommand<SwitchRemoveCommand.Setti
                 mod.InstalledHash = string.Empty;
                 mod.SnapshotPath  = string.Empty;
                 state.Upsert(mod);
-                AnsiConsole.MarkupLine($"[green]Removed:[/] {mod.Name}");
+                AnsiConsole.MarkupLine($"[green]Removed:[/] {Markup.Escape(mod.Name)}");
                 removed++;
             }
             else
             {
-                AnsiConsole.MarkupLine($"[red]Failed to remove {mod.Name}:[/] {result.Error}");
+                AnsiConsole.MarkupLine($"[red]Failed to remove {Markup.Escape(mod.Name)}:[/] {Markup.Escape(result.Error ?? string.Empty)}");
                 failed++;
             }
         }

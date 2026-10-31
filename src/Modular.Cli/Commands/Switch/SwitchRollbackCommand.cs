@@ -31,7 +31,7 @@ public sealed class SwitchRollbackCommand : AsyncCommand<SwitchRollbackCommand.S
     {
         if (!SwitchTitleId.TryParse(settings.TitleId, out var titleId))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
             return 1;
         }
 
@@ -79,7 +79,7 @@ public sealed class SwitchRollbackCommand : AsyncCommand<SwitchRollbackCommand.S
 
         foreach (var mod in targets)
         {
-            AnsiConsole.MarkupLine($"[grey]Rolling back:[/] {mod.Name}");
+            AnsiConsole.MarkupLine($"[grey]Rolling back:[/] {Markup.Escape(mod.Name)}");
             var result = await installer.RollbackAsync(mod);
             if (result.Success)
             {
@@ -87,12 +87,12 @@ public sealed class SwitchRollbackCommand : AsyncCommand<SwitchRollbackCommand.S
                 mod.InstalledHash = string.Empty;
                 mod.SnapshotPath  = string.Empty;
                 state.Upsert(mod);
-                AnsiConsole.MarkupLine($"  [green]✓[/] {mod.Name}");
+                AnsiConsole.MarkupLine($"  [green]✓[/] {Markup.Escape(mod.Name)}");
                 ok++;
             }
             else
             {
-                AnsiConsole.MarkupLine($"  [red]✗[/] {mod.Name}: {result.Error}");
+                AnsiConsole.MarkupLine($"  [red]✗[/] {Markup.Escape(mod.Name)}: {Markup.Escape(result.Error ?? string.Empty)}");
                 fail++;
             }
         }

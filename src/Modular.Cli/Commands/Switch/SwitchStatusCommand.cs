@@ -27,7 +27,7 @@ public sealed class SwitchStatusCommand : AsyncCommand<SwitchStatusCommand.Setti
     {
         if (!SwitchTitleId.TryParse(settings.TitleId, out var titleId))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
             return 1;
         }
 
@@ -47,7 +47,7 @@ public sealed class SwitchStatusCommand : AsyncCommand<SwitchStatusCommand.Setti
         // Header info
         var yuzu = YuzuPaths.DataRoot;
         AnsiConsole.MarkupLine($"[bold]TitleID:[/] {titleId}");
-        AnsiConsole.MarkupLine($"[bold]Yuzu load dir:[/] {YuzuPaths.LoadDir(titleId)}");
+        AnsiConsole.MarkupLine($"[bold]Yuzu load dir:[/] {Markup.Escape(YuzuPaths.LoadDir(titleId))}");
         AnsiConsole.MarkupLine($"[bold]Known mods:[/] {gameMods.Count}");
         AnsiConsole.WriteLine();
 
@@ -82,7 +82,7 @@ public sealed class SwitchStatusCommand : AsyncCommand<SwitchStatusCommand.Setti
             table.AddRow(
                 Markup.Escape(mod.Name),
                 mod.Category.ToString(),
-                mod.Version,
+                Markup.Escape(mod.Version ?? string.Empty),
                 statusMarkup,
                 hashMarkup,
                 slotMarkup,

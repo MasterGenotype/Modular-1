@@ -40,7 +40,7 @@ public sealed class SwitchScanCommand : AsyncCommand<SwitchScanCommand.Settings>
         {
             if (!SwitchTitleId.TryParse(settings.TitleId, out var tid))
             {
-                AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+                AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
                 return 1;
             }
             filter = tid;
@@ -49,11 +49,11 @@ public sealed class SwitchScanCommand : AsyncCommand<SwitchScanCommand.Settings>
         var searchPath = Path.GetFullPath(settings.SearchPath);
         if (!Directory.Exists(searchPath) && !File.Exists(searchPath))
         {
-            AnsiConsole.MarkupLine($"[red]Path not found:[/] {searchPath}");
+            AnsiConsole.MarkupLine($"[red]Path not found:[/] {Markup.Escape(searchPath)}");
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[grey]Scanning:[/] {searchPath}");
+        AnsiConsole.MarkupLine($"[grey]Scanning:[/] {Markup.Escape(searchPath)}");
         AnsiConsole.WriteLine();
 
         var scanner = new SwitchModScanner();
@@ -63,7 +63,7 @@ public sealed class SwitchScanCommand : AsyncCommand<SwitchScanCommand.Settings>
             .Spinner(Spinner.Known.Dots)
             .StartAsync("Scanning for Switch mods...", async ctx2 =>
             {
-                var progress = new Progress<string>(msg => ctx2.Status(msg));
+                var progress = new Progress<string>(msg => ctx2.Status(Markup.Escape(msg)));
                 mods = await scanner.ScanAsync(searchPath, filter, progress, cts.Token);
             });
 
@@ -89,7 +89,7 @@ public sealed class SwitchScanCommand : AsyncCommand<SwitchScanCommand.Settings>
                 Markup.Escape(mod.Name),
                 $"[cyan]{mod.TitleId}[/]",
                 $"[yellow]{mod.Category}[/]",
-                mod.Version,
+                Markup.Escape(mod.Version ?? string.Empty),
                 $"[grey]{Path.GetFileName(mod.SourcePath)}[/]");
         }
 

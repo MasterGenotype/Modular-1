@@ -75,7 +75,7 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
             }
             else if (!string.IsNullOrWhiteSpace(settings.ChangesetId))
             {
-                AnsiConsole.MarkupLine($"[bold]Uninstalling changeset:[/] {settings.ChangesetId}");
+                AnsiConsole.MarkupLine($"[bold]Uninstalling changeset:[/] {Markup.Escape(settings.ChangesetId)}");
                 AnsiConsole.WriteLine();
 
                 result = await installService.UninstallAsync(settings.ChangesetId, cts.Token);
@@ -94,10 +94,17 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
                 AnsiConsole.MarkupLine($"[green]Uninstall complete[/]");
                 AnsiConsole.MarkupLine($"  Files removed:  {result.FilesRemoved}");
                 AnsiConsole.MarkupLine($"  Files restored: {result.FilesRestored}");
+                if (result.OtherFilesReplaced > 0)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"  [grey]Other mods' files re-placed by the redeploy: {result.OtherFilesReplaced}[/]");
+                }
+                if (result.StagingRemoved)
+                    AnsiConsole.MarkupLine("  [grey]Staging removed[/]");
             }
             else
             {
-                AnsiConsole.MarkupLine($"[red]Uninstall failed:[/] {result.Error}");
+                AnsiConsole.MarkupLine($"[red]Uninstall failed:[/] {Markup.Escape(result.Error ?? string.Empty)}");
                 await db.DisposeAsync();
                 services.Dispose();
                 return 1;
@@ -114,7 +121,7 @@ public class UninstallCommand : AsyncCommand<UninstallCommand.Settings>
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             if (settings.Verbose)
                 AnsiConsole.WriteException(ex);
             return 1;

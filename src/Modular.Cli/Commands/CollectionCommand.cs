@@ -149,7 +149,7 @@ public sealed class CollectionShowCommand : AsyncCommand<CollectionShowCommand.S
                 foreach (var entry in collection.Entries)
                 {
                     table.AddRow(
-                        entry.ModId,
+                        Markup.Escape(entry.ModId),
                         Markup.Escape(entry.Name),
                         Markup.Escape(entry.Author ?? "—"),
                         Markup.Escape(entry.Version ?? "—"),

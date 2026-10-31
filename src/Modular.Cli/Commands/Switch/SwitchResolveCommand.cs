@@ -38,7 +38,7 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
     {
         if (!SwitchTitleId.TryParse(settings.TitleId, out var titleId))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
             return 1;
         }
 
@@ -82,19 +82,19 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
 
         if (!result.Success)
         {
-            AnsiConsole.MarkupLine($"[red]Resolution failed:[/] {result.Error}");
+            AnsiConsole.MarkupLine($"[red]Resolution failed:[/] {Markup.Escape(result.Error ?? string.Empty)}");
 
             if (result.MissingDependencies.Count > 0)
             {
                 AnsiConsole.MarkupLine("\n[yellow]Missing dependencies:[/]");
                 foreach (var dep in result.MissingDependencies)
-                    AnsiConsole.MarkupLine($"  [grey]• {dep}[/]");
+                    AnsiConsole.MarkupLine($"  [grey]• {Markup.Escape(dep)}[/]");
             }
             if (result.Conflicts.Count > 0)
             {
                 AnsiConsole.MarkupLine("\n[red]Conflicts:[/]");
                 foreach (var (a, b) in result.Conflicts)
-                    AnsiConsole.MarkupLine($"  [red]• {a} ↔ {b}[/]");
+                    AnsiConsole.MarkupLine($"  [red]• {Markup.Escape(a)} ↔ {Markup.Escape(b)}[/]");
                 if (!settings.AllowConflicts)
                     AnsiConsole.MarkupLine("[grey]Hint: use --allow-conflicts to override declared conflicts[/]");
             }
@@ -102,14 +102,14 @@ public sealed class SwitchResolveCommand : AsyncCommand<SwitchResolveCommand.Set
             {
                 AnsiConsole.MarkupLine("\n[red]Circular dependencies:[/]");
                 foreach (var c in result.Cycles)
-                    AnsiConsole.MarkupLine($"  [red]• {c}[/]");
+                    AnsiConsole.MarkupLine($"  [red]• {Markup.Escape(c)}[/]");
             }
             return 1;
         }
 
         // Show warnings
         foreach (var warning in result.Warnings)
-            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {warning}");
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(warning)}");
 
         // Success — print install order
         AnsiConsole.MarkupLine($"[green]Resolved {result.InstallOrder.Count} mod(s) for {titleId}[/]\n");

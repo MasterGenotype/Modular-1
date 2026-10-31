@@ -98,6 +98,113 @@ public class StagingManager
     }
 
     /// <summary>
+    /// Opens a staging session for a new version of an installed mod, beside its current
+    /// staging rather than over it.
+    /// </summary>
+    /// <param name="changesetId">Changeset this staging belongs to.</param>
+    /// <param name="gameKey">Game key, normally the Steam AppID.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <returns>The session. Persistent: disposing it does not delete the staged tree.</returns>
+    /// <remarks>
+    /// Until the new files are in and pass validation, the installed mod's row and the
+    /// game folder still point at its current staging. Staging over it would leave the
+    /// installed mod half-replaced whenever the reinstall failed. <see cref="SwapIn"/>
+    /// moves the new tree into place.
+    /// </remarks>
+    public StagingSession CreateIncomingSession(string changesetId, string gameKey, string modId)
+    {
+        var directory = GetIncomingDirectory(gameKey, modId, changesetId);
+
+        if (Directory.Exists(directory))
+            Directory.Delete(directory, recursive: true);
+
+        Directory.CreateDirectory(directory);
+
+        _logger?.LogInformation(
+            "Staging a new version of {ModId} for game {GameKey} at {Path}", modId, gameKey, directory);
+
+        return new StagingSession(changesetId, directory, _logger, persistent: true);
+    }
+
+    /// <summary>
+    /// Directory a reinstall stages into before it replaces the mod's staging.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <param name="changesetId">The reinstall's changeset.</param>
+    /// <returns>The absolute path. Not created.</returns>
+    public string GetIncomingDirectory(string gameKey, string modId, string changesetId) =>
+        GetModStagingDirectory(gameKey, modId) + ".incoming-" + SanitizeSegment(changesetId);
+
+    /// <summary>
+    /// Directory the replaced staging waits in until the reinstall has deployed.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <param name="changesetId">The reinstall's changeset.</param>
+    /// <returns>The absolute path. Not created.</returns>
+    public string GetPreviousDirectory(string gameKey, string modId, string changesetId) =>
+        GetModStagingDirectory(gameKey, modId) + ".previous-" + SanitizeSegment(changesetId);
+
+    /// <summary>
+    /// Puts a reinstall's staged tree in the mod's staging folder, keeping the replaced one.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <param name="changesetId">The reinstall's changeset.</param>
+    /// <returns>The mod's staging folder, now holding the new version.</returns>
+    /// <remarks>
+    /// The replaced tree goes to <see cref="GetPreviousDirectory"/>, so a failed deploy can
+    /// put it back with <see cref="RestoreReplaced"/>; <see cref="DropReplaced"/> deletes
+    /// it once the new version is deployed.
+    /// </remarks>
+    public string SwapIn(string gameKey, string modId, string changesetId)
+    {
+        var current = GetModStagingDirectory(gameKey, modId);
+        var incoming = GetIncomingDirectory(gameKey, modId, changesetId);
+        var previous = GetPreviousDirectory(gameKey, modId, changesetId);
+
+        if (Directory.Exists(previous))
+            Directory.Delete(previous, recursive: true);
+        if (Directory.Exists(current))
+            Directory.Move(current, previous);
+        Directory.Move(incoming, current);
+
+        return current;
+    }
+
+    /// <summary>
+    /// Undoes <see cref="SwapIn"/>: the replaced staging goes back, the new one is deleted.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <param name="changesetId">The reinstall's changeset.</param>
+    public void RestoreReplaced(string gameKey, string modId, string changesetId)
+    {
+        var current = GetModStagingDirectory(gameKey, modId);
+        var previous = GetPreviousDirectory(gameKey, modId, changesetId);
+
+        if (!Directory.Exists(previous))
+            return;
+        if (Directory.Exists(current))
+            Directory.Delete(current, recursive: true);
+        Directory.Move(previous, current);
+    }
+
+    /// <summary>
+    /// Deletes the staging a reinstall replaced, once the new version is deployed.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modId">Mod identifier.</param>
+    /// <param name="changesetId">The reinstall's changeset.</param>
+    public void DropReplaced(string gameKey, string modId, string changesetId)
+    {
+        var previous = GetPreviousDirectory(gameKey, modId, changesetId);
+        if (Directory.Exists(previous))
+            Directory.Delete(previous, recursive: true);
+    }
+
+    /// <summary>
     /// Opens a throwaway staging session, deleted when the session is disposed
     /// uncommitted.
     /// </summary>
@@ -109,7 +216,7 @@ public class StagingManager
     /// </remarks>
     public StagingSession CreateTransientSession(string changesetId)
     {
-        var directory = Path.Combine(BasePath, "_transient", SanitizeSegment(changesetId));
+        var directory = GetTransientDirectory(changesetId);
 
         if (Directory.Exists(directory))
             Directory.Delete(directory, recursive: true);
@@ -118,6 +225,14 @@ public class StagingManager
 
         return new StagingSession(changesetId, directory, _logger, persistent: false);
     }
+
+    /// <summary>
+    /// Directory of a changeset's throwaway staging session.
+    /// </summary>
+    /// <param name="changesetId">Changeset the session belongs to.</param>
+    /// <returns>The absolute path. Not created.</returns>
+    public string GetTransientDirectory(string changesetId) =>
+        Path.Combine(BasePath, "_transient", SanitizeSegment(changesetId));
 
     /// <summary>
     /// Deletes a mod's staged tree.

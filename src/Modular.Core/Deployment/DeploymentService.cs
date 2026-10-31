@@ -220,9 +220,20 @@ public sealed class DeploymentService
 
         var record = await _mods.GetAsync(installation.GameKey, modId, ct);
 
+        // Read before the redeploy rewrites it: the manifest is the only record of which
+        // deployed files were this mod's.
+        var modFiles = DeploymentManifest
+            .Load(_layout.GetGameStagingDirectory(installation.GameKey), installation.GameKey)
+            .Files
+            .Where(f => string.Equals(f.ModId, modId, StringComparison.OrdinalIgnoreCase))
+            .Select(f => $"{f.Root}/{f.Path}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         await _mods.RemoveAsync(installation.GameKey, modId, ct);
 
         var result = await DeployAsync(installation, ct: ct);
+
+        result.RemovedForMod.AddRange(result.Removed.Where(modFiles.Contains));
 
         if (result.Success && record != null && Directory.Exists(record.StagingPath))
         {

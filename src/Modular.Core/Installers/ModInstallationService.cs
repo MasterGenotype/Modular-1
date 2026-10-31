@@ -275,6 +275,11 @@ public class ModInstallationService
         StagingSession? stagingSession = null;
         string? supersededChangesetId = null;
 
+        // A reinstall's new tree, staged beside the installed one until it is swapped in.
+        GameModRecord? replacedRow = null;
+        var swapped = false;
+        string? stagingDirectory = null;
+
         try
         {
             // Step 2: Register archive in database
@@ -444,11 +449,19 @@ public class ModInstallationService
             StagingRedirection? redirection = null;
             if (staged)
             {
-                stagingSession = _stagingManager.CreateSession(changesetId, gameKey, modId);
+                // A reinstall stages beside the installed copy, not over it: the installed
+                // mod's row and the game folder point at that copy until the new one is in
+                // and valid, and staging over it left the mod half-replaced whenever the
+                // reinstall failed.
+                replacedRow = await _deployment.Mods.GetAsync(gameKey, modId, ct);
+                stagingSession = replacedRow != null
+                    ? _stagingManager.CreateIncomingSession(changesetId, gameKey, modId)
+                    : _stagingManager.CreateSession(changesetId, gameKey, modId);
+                stagingDirectory = stagingSession.StagingDirectory;
                 redirection = _stagingManager.RedirectPlan(
                     plan, targetDirectory, stagingSession.StagingDirectory);
 
-                result.StagingPath = stagingSession.StagingDirectory;
+                result.StagingPath = stagingDirectory;
             }
 
             // Step 6: Sort operations by dependencies (DAG)
@@ -516,6 +529,15 @@ public class ModInstallationService
                     }
                 }
 
+                // The new version is complete and valid: only now does it replace the
+                // installed one's staging, which waits aside until the deploy succeeds.
+                if (replacedRow != null)
+                {
+                    stagingDirectory = _stagingManager.SwapIn(gameKey, modId, changesetId);
+                    swapped = true;
+                    result.StagingPath = stagingDirectory;
+                }
+
                 // Step 7c: Register the mod in the game's deployment, then deploy the
                 // whole ordered set. Registering before deploying is what makes the
                 // deployment the single source of truth for what is in the game folder.
@@ -539,7 +561,7 @@ public class ModInstallationService
                     ModId = modId,
                     ModuleId = module?.ModuleId,
                     InstallerId = selection.Installer.InstallerId,
-                    StagingPath = stagingSession.StagingDirectory,
+                    StagingPath = stagingDirectory!,
                     DisplayName = options.ModId,
                     Source = options.Source,
                     SourceFileId = options.SourceFileId,
@@ -562,6 +584,12 @@ public class ModInstallationService
                     if (!deployment.Success)
                     {
                         result.Error = deployment.Error ?? "Deployment failed";
+                        if (swapped)
+                        {
+                            await RestoreReplacedAsync(gameKey, modId, changesetId, replacedRow!);
+                            swapped = false;
+                            result.StagingPath = replacedRow!.StagingPath;
+                        }
                         await _changesetManager.UpdateStateAsync(
                             changesetId, ChangesetState.Failed, ct: ct);
                         return result;
@@ -590,7 +618,7 @@ public class ModInstallationService
             {
                 managedBy = staged ? "deployment" : "legacy",
                 gameKey = staged ? gameKey : null,
-                stagingPath = stagingSession?.StagingDirectory,
+                stagingPath = stagingDirectory,
                 stagedFiles = result.StagedFiles,
                 deployedFiles = staged ? installResult.InstalledFiles : null,
                 installedFiles = staged ? new List<string>() : installResult.InstalledFiles,
@@ -598,6 +626,12 @@ public class ModInstallationService
                 manifest = installResult.Manifest
             });
             await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Committed, operationsData, ct);
+
+            if (swapped)
+            {
+                swapped = false;
+                _stagingManager.DropReplaced(gameKey, modId, changesetId);
+            }
 
             // Left committed, the replaced changeset is listed as a second copy of the mod,
             // and undoing it would delete files and staging that are now this one's.
@@ -649,12 +683,14 @@ public class ModInstallationService
         {
             result.Error = "Installation cancelled";
             result.Cancelled = true;
+            await UndoReinstallStagingAsync(gameKey, modId, changesetId, replacedRow, swapped);
             await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Failed, ct: CancellationToken.None);
             return result;
         }
         catch (Exception ex)
         {
             result.Error = ex.Message;
+            await UndoReinstallStagingAsync(gameKey, modId, changesetId, replacedRow, swapped);
             await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.Failed, ct: CancellationToken.None);
             _logger?.LogError(ex, "Installation failed for {Archive}", archivePath);
             _telemetry?.RecordInstallerResult("unknown", false, stopwatch.Elapsed);
@@ -685,6 +721,20 @@ public class ModInstallationService
         {
             result.Error = $"Changeset '{changesetId}' not found";
             return result;
+        }
+
+        if (IsUnfinished(changeset.State))
+        {
+            try
+            {
+                return await UndoUnfinishedAsync(changeset, result, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                result.Error = ex.Message;
+                _logger?.LogError(ex, "Cleaning up unfinished changeset {Id} failed", changesetId);
+                return result;
+            }
         }
 
         if (changeset.State != ChangesetState.Committed)
@@ -849,6 +899,181 @@ public class ModInstallationService
     }
 
     /// <summary>
+    /// Whether a changeset is an install that never reached <see cref="ChangesetState.Committed"/>.
+    /// </summary>
+    /// <param name="state">The changeset's state.</param>
+    /// <returns>
+    /// True for an install still in flight when its process died, and for one that
+    /// failed: either can leave a staging tree, and a failed deploy also leaves the mod
+    /// registered.
+    /// </returns>
+    private static bool IsUnfinished(ChangesetState state) =>
+        state is ChangesetState.Planned or ChangesetState.Staging or ChangesetState.Ready
+            or ChangesetState.Committing or ChangesetState.Failed;
+
+    /// <summary>
+    /// Puts back the installed version a failed reinstall swapped out: its staging and
+    /// its row, so the deployment again describes what was there before.
+    /// </summary>
+    private async Task RestoreReplacedAsync(
+        string gameKey, string modId, string changesetId, GameModRecord replacedRow)
+    {
+        _stagingManager.RestoreReplaced(gameKey, modId, changesetId);
+        await _deployment.Mods.UpsertAsync(replacedRow, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Undoes a reinstall's staging after it failed with an exception.
+    /// </summary>
+    /// <remarks>
+    /// Swapped in, the installed version goes back. Not yet swapped, the half-written new
+    /// tree is discarded: unlike a rejected layout, there is nothing in it to inspect.
+    /// </remarks>
+    private async Task UndoReinstallStagingAsync(
+        string gameKey, string modId, string changesetId, GameModRecord? replacedRow, bool swapped)
+    {
+        if (replacedRow == null)
+            return;
+
+        try
+        {
+            if (swapped)
+            {
+                await RestoreReplacedAsync(gameKey, modId, changesetId, replacedRow);
+                return;
+            }
+
+            var incoming = _stagingManager.GetIncomingDirectory(gameKey, modId, changesetId);
+            if (Directory.Exists(incoming))
+                Directory.Delete(incoming, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogError(ex, "Could not undo the staging of failed reinstall {Id}", changesetId);
+        }
+    }
+
+    /// <summary>
+    /// Clears away what an install that never committed left behind.
+    /// </summary>
+    /// <param name="changeset">The unfinished changeset.</param>
+    /// <param name="result">Result to fill in.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The result.</returns>
+    /// <remarks>
+    /// An install killed outright, by a crash on another thread or the process being
+    /// stopped, never reaches its catch blocks, so it stays in its last state with no
+    /// operations recorded. Such a changeset could not be uninstalled, and nothing
+    /// else cleared its staging tree.
+    /// </remarks>
+    private async Task<ModUninstallResult> UndoUnfinishedAsync(
+        ChangesetRecord changeset,
+        ModUninstallResult result,
+        CancellationToken ct)
+    {
+        // Registered before it stopped: the mod is in the deployment set and may be in
+        // the game folder, so it comes out the way a finished install does.
+        if (changeset.ManagedBy == ChangesetOwnership.Deployment &&
+            !string.IsNullOrEmpty(changeset.TargetDirectory) &&
+            await UninstallManagedAsync(changeset, result, ct))
+        {
+            if (result.Success)
+            {
+                // The version it replaced cannot come back: the row now describes this
+                // install. Its set-aside staging is only clutter.
+                ClearReinstallLeftovers(changeset, restorePrevious: false, result);
+                await _changesetManager.UpdateStateAsync(
+                    changeset.ChangesetId, ChangesetState.RolledBack, ct: ct);
+            }
+
+            return result;
+        }
+
+        // Nothing reached the deployment, so only staging can be left. A reinstall that
+        // had swapped its new tree in gets the installed version back.
+        ClearReinstallLeftovers(changeset, restorePrevious: true, result);
+
+        // A first install's staging tree goes; a tree an installed mod owns stays.
+        if (changeset.ManagedBy == ChangesetOwnership.Deployment && changeset.GameKey != null)
+        {
+            var modId = changeset.ModId ??
+                        (changeset.ArchivePath != null ? Path.GetFileNameWithoutExtension(changeset.ArchivePath) : null);
+
+            if (modId != null &&
+                await _deployment.Mods.GetAsync(changeset.GameKey, modId, ct) == null)
+            {
+                var staging = _stagingManager.GetModStagingDirectory(changeset.GameKey, modId);
+                if (Directory.Exists(staging))
+                {
+                    Directory.Delete(staging, recursive: true);
+                    result.StagingRemoved = true;
+                }
+            }
+        }
+
+        var transient = _stagingManager.GetTransientDirectory(changeset.ChangesetId);
+        if (Directory.Exists(transient))
+        {
+            Directory.Delete(transient, recursive: true);
+            result.StagingRemoved = true;
+        }
+
+        await _changesetManager.UpdateStateAsync(
+            changeset.ChangesetId, ChangesetState.RolledBack, ct: ct);
+
+        result.Success = true;
+        _logger?.LogInformation(
+            "Cleared unfinished changeset {Id} (was {State})", changeset.ChangesetId, changeset.State);
+        return result;
+    }
+
+    /// <summary>
+    /// Deals with the staging folders a reinstall sets aside, found by changeset id.
+    /// </summary>
+    /// <param name="changeset">The reinstall's changeset.</param>
+    /// <param name="restorePrevious">
+    /// Whether the replaced version goes back into the mod's staging folder, or is deleted.
+    /// </param>
+    /// <param name="result">Marked when anything was removed.</param>
+    /// <remarks>
+    /// Searched for rather than computed, because the mod id the changeset recorded is not
+    /// the folder's when the install took over a mod that deploys the same files.
+    /// </remarks>
+    private void ClearReinstallLeftovers(ChangesetRecord changeset, bool restorePrevious, ModUninstallResult result)
+    {
+        if (changeset.ManagedBy != ChangesetOwnership.Deployment || changeset.GameKey == null)
+            return;
+
+        var gameStaging = _stagingManager.GetGameStagingDirectory(changeset.GameKey);
+        if (!Directory.Exists(gameStaging))
+            return;
+
+        var previousSuffix = ".previous-" + changeset.ChangesetId;
+        foreach (var previous in Directory.EnumerateDirectories(gameStaging, "*" + previousSuffix).ToList())
+        {
+            if (restorePrevious)
+            {
+                var current = previous[..^previousSuffix.Length];
+                if (Directory.Exists(current))
+                    Directory.Delete(current, recursive: true);
+                Directory.Move(previous, current);
+            }
+            else
+            {
+                Directory.Delete(previous, recursive: true);
+            }
+
+            result.StagingRemoved = true;
+        }
+
+        foreach (var incoming in Directory.EnumerateDirectories(gameStaging, "*.incoming-" + changeset.ChangesetId).ToList())
+        {
+            Directory.Delete(incoming, recursive: true);
+            result.StagingRemoved = true;
+        }
+    }
+
+    /// <summary>
     /// The deployment service behind this install service.
     /// </summary>
     public DeploymentService Deployment => _deployment;
@@ -908,7 +1133,8 @@ public class ModInstallationService
         }
 
         result.Success = true;
-        result.FilesRemoved = deployment.Removed.Count;
+        result.FilesRemoved = deployment.RemovedForMod.Count;
+        result.OtherFilesReplaced = deployment.Removed.Count - deployment.RemovedForMod.Count;
         result.FilesRestored = deployment.Restored.Count;
         result.StagingRemoved = deployment.StagingRemoved.Count > 0;
         result.Deployment = deployment;
@@ -973,7 +1199,8 @@ public class ModInstallationService
         }
 
         result.Success = true;
-        result.FilesRemoved = deployment.Removed.Count;
+        result.FilesRemoved = deployment.RemovedForMod.Count;
+        result.OtherFilesReplaced = deployment.Removed.Count - deployment.RemovedForMod.Count;
         result.FilesRestored = deployment.Restored.Count;
         result.StagingRemoved = deployment.StagingRemoved.Count > 0;
         result.Deployment = deployment;
@@ -1196,16 +1423,49 @@ public class ModInstallationService
 
         committed = committed.Where(c => !superseded.Contains(c.ChangesetId)).ToList();
 
-        if (targetDirectory != null)
+        return FilterByTarget(committed, targetDirectory);
+    }
+
+    /// <summary>
+    /// Lists installs that stopped before committing, optionally filtered by target directory.
+    /// </summary>
+    /// <param name="targetDirectory">Game directory to filter on, or <c>null</c> for all.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The changesets, newest first.</returns>
+    /// <remarks>
+    /// A process killed mid-install leaves its changeset in the state it had reached, and
+    /// nothing lists those. <see cref="UninstallAsync"/> clears one away. An install still
+    /// running in another process is listed too.
+    /// </remarks>
+    public async Task<List<ChangesetRecord>> ListInterruptedAsync(
+        string? targetDirectory = null,
+        CancellationToken ct = default)
+    {
+        var interrupted = new List<ChangesetRecord>();
+        foreach (var state in new[]
+                 {
+                     ChangesetState.Planned, ChangesetState.Staging,
+                     ChangesetState.Ready, ChangesetState.Committing
+                 })
         {
-            var fullTarget = Path.GetFullPath(targetDirectory);
-            committed = committed.Where(c =>
-                c.TargetDirectory != null &&
-                Path.GetFullPath(c.TargetDirectory).Equals(fullTarget, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            interrupted.AddRange(await _changesetManager.ListByStateAsync(state, ct));
         }
 
-        return committed;
+        return FilterByTarget(
+            interrupted.OrderByDescending(c => c.CreatedAtUtc, StringComparer.Ordinal).ToList(),
+            targetDirectory);
+    }
+
+    private static List<ChangesetRecord> FilterByTarget(List<ChangesetRecord> changesets, string? targetDirectory)
+    {
+        if (targetDirectory == null)
+            return changesets;
+
+        var fullTarget = Path.GetFullPath(targetDirectory);
+        return changesets.Where(c =>
+                c.TargetDirectory != null &&
+                Path.GetFullPath(c.TargetDirectory).Equals(fullTarget, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     /// <summary>
@@ -1734,7 +1994,15 @@ public class ModUninstallResult
 
     public bool Success { get; set; }
     public string ChangesetId { get; set; } = string.Empty;
+    /// <summary>Files of the uninstalled mod taken out of the game folder.</summary>
     public int FilesRemoved { get; set; }
     public int FilesRestored { get; set; }
+
+    /// <summary>
+    /// Other mods' files the redeploy removed and placed again, such as Baldur's Gate 3
+    /// paks renamed because their load-order position moved up.
+    /// </summary>
+    public int OtherFilesReplaced { get; set; }
+
     public string? Error { get; set; }
 }

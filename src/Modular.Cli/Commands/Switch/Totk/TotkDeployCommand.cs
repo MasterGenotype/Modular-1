@@ -28,13 +28,13 @@ public sealed class TotkDeployCommand : AsyncCommand<TotkDeployCommand.Settings>
         switch (result.Outcome)
         {
             case TotkDeployOutcome.Linked:
-                AnsiConsole.MarkupLine($"[green]Linked[/] {target} [grey]-> {Markup.Escape(cli.Service.MergedOutputFolder)}[/]");
+                AnsiConsole.MarkupLine($"[green]Linked[/] {Markup.Escape(target)} [grey]-> {Markup.Escape(cli.Service.MergedOutputFolder)}[/]");
                 return 0;
             case TotkDeployOutcome.AlreadyLinked:
-                AnsiConsole.MarkupLine($"[green]Already linked:[/] {target}");
+                AnsiConsole.MarkupLine($"[green]Already linked:[/] {Markup.Escape(target)}");
                 return 0;
             case TotkDeployOutcome.Copied:
-                AnsiConsole.MarkupLine($"[yellow]Copied[/] the merge output to {target} [grey](symlinks unavailable; deploy again after each merge)[/]");
+                AnsiConsole.MarkupLine($"[yellow]Copied[/] the merge output to {Markup.Escape(target)} [grey](symlinks unavailable; deploy again after each merge)[/]");
                 return 0;
             case TotkDeployOutcome.Skipped:
                 AnsiConsole.MarkupLine($"[grey]{Markup.Escape(result.Message ?? "Nothing to do.")}[/]");

@@ -64,7 +64,7 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
 
         if (!SwitchTitleId.TryParse(settings.TitleId, out var titleId))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {settings.TitleId}");
+            AnsiConsole.MarkupLine($"[red]Invalid TitleID:[/] {Markup.Escape(settings.TitleId ?? string.Empty)}");
             return 1;
         }
 
@@ -122,7 +122,7 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
 
         if (!resolution.Success)
         {
-            AnsiConsole.MarkupLine($"[red]Dependency resolution failed:[/] {resolution.Error}");
+            AnsiConsole.MarkupLine($"[red]Dependency resolution failed:[/] {Markup.Escape(resolution.Error ?? string.Empty)}");
             if (resolution.Conflicts.Count > 0)
                 AnsiConsole.MarkupLine("[grey]Hint: use --allow-conflicts to override declared conflicts[/]");
             return 1;
@@ -130,7 +130,7 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
 
         // Show any warnings from conflict override
         foreach (var warning in resolution.Warnings)
-            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {warning}");
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(warning)}");
 
         // File overlap detection
         var overlapReport = await SwitchFileOverlapDetector.DetectAsync(resolution.InstallOrder, cts.Token);
@@ -168,6 +168,7 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
                         .Required()
                         .PageSize(15)
                         .InstructionsText("[grey](Space to toggle, Enter to confirm)[/]")
+                        .UseConverter(Markup.Escape)
                         .AddChoices(names));
 
                 // Add any unselected mods at the beginning (keep them in original order)
@@ -338,7 +339,7 @@ public sealed class SwitchInstallCommand : AsyncCommand<SwitchInstallCommand.Set
             AnsiConsole.MarkupLine("[grey]Writing Lutris pre-launch hook...[/]");
             await LutrisHookWriter.WriteAsync(titleId, installedNames, settings.AutoApplyHook, cts.Token);
             var hookPath = LutrisHookWriter.HookPath(titleId);
-            AnsiConsole.MarkupLine($"[green]Hook written:[/] {hookPath}");
+            AnsiConsole.MarkupLine($"[green]Hook written:[/] {Markup.Escape(hookPath)}");
 
             var injected = await LutrisHookWriter.TryInjectLutrisConfigAsync(titleId, cts.Token);
             if (injected)

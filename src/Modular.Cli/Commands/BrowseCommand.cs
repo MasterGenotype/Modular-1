@@ -80,7 +80,7 @@ public sealed class BrowseCommand : AsyncCommand<BrowseCommand.Settings>
 
             var table = new Table();
             table.Border(TableBorder.Rounded);
-            table.Title($"[bold]{feedType.ToUpperInvariant()}[/] — {gameDomain}");
+            table.Title($"[bold]{Markup.Escape(feedType.ToUpperInvariant())}[/] — {Markup.Escape(gameDomain)}");
             table.AddColumn("Mod ID");
             table.AddColumn("Name");
             table.AddColumn("Author");
@@ -91,7 +91,7 @@ public sealed class BrowseCommand : AsyncCommand<BrowseCommand.Settings>
             foreach (var mod in mods)
             {
                 table.AddRow(
-                    mod.ModId,
+                    Markup.Escape(mod.ModId),
                     Markup.Escape(mod.Name),
                     Markup.Escape(mod.Author ?? "—"),
                     mod.DownloadCount?.ToString("N0") ?? "—",

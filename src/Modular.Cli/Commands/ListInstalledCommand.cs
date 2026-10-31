@@ -54,17 +54,19 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
                         settings.Game, cts.Token);
                     if (targetDir == null)
                     {
-                        AnsiConsole.MarkupLine($"[red]Could not find game:[/] {settings.Game}");
+                        AnsiConsole.MarkupLine($"[red]Could not find game:[/] {Markup.Escape(settings.Game)}");
                         return 1;
                     }
                 }
             }
 
             var installed = await installService.ListInstalledAsync(targetDir, cts.Token);
+            var interrupted = await installService.ListInterruptedAsync(targetDir, cts.Token);
 
             if (installed.Count == 0)
             {
                 AnsiConsole.MarkupLine("[grey]No installed mods found.[/]");
+                WriteInterrupted(interrupted);
                 await db.DisposeAsync();
                 services.Dispose();
                 return 0;
@@ -80,15 +82,16 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
             foreach (var changeset in installed)
             {
                 table.AddRow(
-                    changeset.ChangesetId,
-                    changeset.ModId ?? "[grey]-[/]",
-                    changeset.ArchivePath != null ? Path.GetFileName(changeset.ArchivePath) : "[grey]-[/]",
-                    changeset.TargetDirectory != null ? ShortenPath(changeset.TargetDirectory) : "[grey]-[/]",
+                    Markup.Escape(changeset.ChangesetId),
+                    changeset.ModId != null ? Markup.Escape(changeset.ModId) : "[grey]-[/]",
+                    changeset.ArchivePath != null ? Markup.Escape(Path.GetFileName(changeset.ArchivePath)) : "[grey]-[/]",
+                    changeset.TargetDirectory != null ? Markup.Escape(ShortenPath(changeset.TargetDirectory)) : "[grey]-[/]",
                     FormatDate(changeset.CreatedAtUtc));
             }
 
             AnsiConsole.MarkupLine($"[bold]Installed mods ({installed.Count}):[/]");
             AnsiConsole.Write(table);
+            WriteInterrupted(interrupted);
 
             await db.DisposeAsync();
             services.Dispose();
@@ -96,7 +99,7 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             if (settings.Verbose)
                 AnsiConsole.WriteException(ex);
             return 1;
@@ -116,5 +119,26 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
         return DateTime.TryParse(isoDate, out var dt)
             ? dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
             : isoDate;
+    }
+
+    /// <summary>
+    /// Names the installs that stopped before committing, which no other listing shows.
+    /// </summary>
+    private static void WriteInterrupted(List<ChangesetRecord> interrupted)
+    {
+        if (interrupted.Count == 0)
+            return;
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[yellow]{interrupted.Count} install(s) stopped before finishing[/] " +
+            "[grey](clear one with 'modular uninstall <changeset>')[/]:");
+        foreach (var changeset in interrupted)
+        {
+            AnsiConsole.MarkupLine(
+                $"  {Markup.Escape(changeset.ChangesetId)} " +
+                $"{Markup.Escape(changeset.ModId ?? Path.GetFileName(changeset.ArchivePath ?? "?"))} " +
+                $"[grey]({changeset.State.ToString().ToLowerInvariant()}, {FormatDate(changeset.CreatedAtUtc)})[/]");
+        }
     }
 }

@@ -154,10 +154,13 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                 {
                     var progress = new Progress<InstallProgress>(p =>
                     {
+                        // The status line is markup, parsed on Spectre's refresh thread: a file
+                        // name such as "Mod [No Scars].pak" read as a style tag there throws
+                        // where nothing can catch it, killing the install mid-commit.
                         var status = p.CurrentFile != null
                             ? $"{p.CurrentOperation} ({p.FilesProcessed}/{p.TotalFiles}) {p.CurrentFile}"
                             : p.CurrentOperation;
-                        ctx.Status(status);
+                        ctx.Status(Markup.Escape(status ?? string.Empty));
                     });
 
                     result = await installService.InstallAsync(

@@ -128,7 +128,7 @@ public sealed class SearchCommand : AsyncCommand<SearchCommand.Settings>
             foreach (var mod in mods)
             {
                 table.AddRow(
-                    mod.ModId,
+                    Markup.Escape(mod.ModId),
                     Markup.Escape(mod.Name),
                     Markup.Escape(mod.Author ?? "—"),
                     mod.DownloadCount?.ToString("N0") ?? "—",

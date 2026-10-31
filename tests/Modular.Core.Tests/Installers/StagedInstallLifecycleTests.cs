@@ -19,6 +19,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
     private ChangesetManager _changesets = null!;
     private string _backupBase = null!;
     private string _archiveBase = null!;
+    private string _stagingBase = null!;
 
     /// <inheritdoc />
     public async Task InitializeAsync()
@@ -32,9 +33,10 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var configRoot = NewDir("config");
         _backupBase = Path.Combine(configRoot, "backups");
         _archiveBase = Path.Combine(configRoot, "archives");
+        _stagingBase = Path.Combine(configRoot, "staging");
 
         _service = new ModInstallationService(
-            _database, stagingBasePath: Path.Combine(configRoot, "staging"));
+            _database, stagingBasePath: _stagingBase);
         _changesets = new ChangesetManager(_database);
     }
 
@@ -664,6 +666,154 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
 
         process.WaitForExit();
         process.ExitCode.Should().Be(0, process.StandardError.ReadToEnd());
+    }
+
+    // ── failed and interrupted installs ─────────────────────────────────────
+
+    [Fact]
+    public async Task InstallAsync_AReinstallThatFails_LeavesTheInstalledVersionAlone()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        first.Success.Should().BeTrue(first.Error);
+
+        // Stop the reinstall once its new staging exists: that used to be the installed
+        // mod's own folder, already emptied.
+        using var cts = new CancellationTokenSource();
+        var stopAtCommit = new CancelOn(cts, "Installing files...");
+        var second = await _service.InstallAsync(
+            CreateZip(("data/thing.dat", "v2")), game, options, stopAtCommit, cts.Token);
+
+        second.Success.Should().BeFalse();
+        stopAtCommit.Fired.Should().BeTrue();
+        File.ReadAllText(Path.Combine(first.StagingPath!, "game", "data", "thing.dat")).Should().Be("v1");
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("v1");
+        Directory.GetDirectories(Path.GetDirectoryName(first.StagingPath!)!, "*.incoming-*").Should().BeEmpty();
+
+        (await _service.ListInstalledAsync()).Should().ContainSingle()
+            .Which.ChangesetId.Should().Be(first.ChangesetId);
+    }
+
+    [Fact]
+    public async Task InstallAsync_AReinstall_LeavesNoSetAsideStaging()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+        await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+        var second = await _service.InstallAsync(CreateZip(("data/thing.dat", "v2")), game, options);
+
+        second.Success.Should().BeTrue(second.Error);
+        File.ReadAllText(Path.Combine(second.StagingPath!, "game", "data", "thing.dat")).Should().Be("v2");
+        Directory.GetDirectories(Path.GetDirectoryName(second.StagingPath!)!)
+            .Where(d => d.Contains(".incoming-") || d.Contains(".previous-"))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UninstallAsync_AnInstallKilledMidCommit_ClearsItsStagingAndRollsItBack()
+    {
+        var game = NewDir("game");
+        var probe = await _service.InstallAsync(CreateZip(("x.dat", "x")), game,
+            new ModInstallationOptions { ModId = "probe", AutoSnapshot = false, NoDeploy = true });
+        var gameKey = probe.GameKey!;
+
+        // What a process killed while committing leaves: no operations, staged files.
+        var changesetId = await _changesets.CreateChangesetAsync(
+            modId: "killed", archivePath: CreateZip(("a.dat", "a")), targetDirectory: game,
+            managedBy: ChangesetOwnership.Deployment, gameKey: gameKey);
+        await _changesets.UpdateStateAsync(changesetId, ChangesetState.Committing);
+        var staging = Path.Combine(_stagingBase, gameKey, "killed");
+        Directory.CreateDirectory(Path.Combine(staging, "game"));
+        File.WriteAllText(Path.Combine(staging, "game", "a.dat"), "a");
+
+        (await _service.ListInterruptedAsync(game)).Should().ContainSingle()
+            .Which.ChangesetId.Should().Be(changesetId);
+
+        var uninstall = await _service.UninstallAsync(changesetId);
+
+        uninstall.Success.Should().BeTrue(uninstall.Error);
+        uninstall.StagingRemoved.Should().BeTrue();
+        Directory.Exists(staging).Should().BeFalse();
+        (await _changesets.GetChangesetAsync(changesetId))!.State.Should().Be(ChangesetState.RolledBack);
+        (await _service.ListInterruptedAsync(game)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UninstallAsync_AReinstallKilledAfterSwappingIn_PutsTheInstalledVersionBack()
+    {
+        var game = NewDir("game");
+        var options = new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false };
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game, options);
+
+        var changesetId = await _changesets.CreateChangesetAsync(
+            modId: "mod-a", archivePath: CreateZip(("data/thing.dat", "v2")), targetDirectory: game,
+            managedBy: ChangesetOwnership.Deployment, gameKey: first.GameKey);
+        await _changesets.UpdateStateAsync(changesetId, ChangesetState.Committing);
+
+        // Swapped in, not yet registered: the new tree holds the folder, the old waits aside.
+        var current = first.StagingPath!;
+        Directory.Move(current, current + ".previous-" + changesetId);
+        Directory.CreateDirectory(Path.Combine(current, "game", "data"));
+        File.WriteAllText(Path.Combine(current, "game", "data", "thing.dat"), "v2");
+
+        var uninstall = await _service.UninstallAsync(changesetId);
+
+        uninstall.Success.Should().BeTrue(uninstall.Error);
+        File.ReadAllText(Path.Combine(current, "game", "data", "thing.dat")).Should().Be("v1");
+        Directory.Exists(current + ".previous-" + changesetId).Should().BeFalse();
+        (await _service.ListInstalledAsync()).Should().ContainSingle()
+            .Which.ChangesetId.Should().Be(first.ChangesetId);
+    }
+
+    [Fact]
+    public async Task UninstallAsync_AnInterruptedInstallOfAnInstalledMod_KeepsThatModsStaging()
+    {
+        var game = NewDir("game");
+        var first = await _service.InstallAsync(CreateZip(("data/thing.dat", "v1")), game,
+            new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
+
+        var changesetId = await _changesets.CreateChangesetAsync(
+            modId: "mod-a", targetDirectory: game,
+            managedBy: ChangesetOwnership.Deployment, gameKey: first.GameKey);
+        await _changesets.UpdateStateAsync(changesetId, ChangesetState.Staging);
+
+        var uninstall = await _service.UninstallAsync(changesetId);
+
+        uninstall.Success.Should().BeTrue(uninstall.Error);
+        File.ReadAllText(Path.Combine(first.StagingPath!, "game", "data", "thing.dat")).Should().Be("v1");
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("v1");
+    }
+
+    [Fact]
+    public async Task UninstallAsync_CountsOnlyTheRemovedModsFiles()
+    {
+        var game = NewDir("game");
+        await _service.InstallAsync(CreateZip(("a/one.dat", "1"), ("a/two.dat", "2")), game,
+            new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
+        var b = await _service.InstallAsync(CreateZip(("b/three.dat", "3")), game,
+            new ModInstallationOptions { ModId = "mod-b", AutoSnapshot = false });
+
+        var uninstall = await _service.UninstallAsync(b.ChangesetId!);
+
+        uninstall.Success.Should().BeTrue(uninstall.Error);
+        uninstall.FilesRemoved.Should().Be(1);
+        File.Exists(Path.Combine(game, "a", "one.dat")).Should().BeTrue();
+    }
+
+    /// <summary>Cancels the install the moment it reports a given step.</summary>
+    private sealed class CancelOn(CancellationTokenSource cts, string operation)
+        : IProgress<Modular.Sdk.Installers.InstallProgress>
+    {
+        public bool Fired { get; private set; }
+
+        public void Report(Modular.Sdk.Installers.InstallProgress value)
+        {
+            if (value.CurrentOperation != operation)
+                return;
+            Fired = true;
+            cts.Cancel();
+        }
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
