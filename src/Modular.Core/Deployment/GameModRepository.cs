@@ -8,9 +8,10 @@ namespace Modular.Core.Deployment;
 /// The deployed mod set for each game, and the deployment method each game uses.
 /// </summary>
 /// <remarks>
-/// This is the table the deployer reads. Load order comes from, in priority order, a
-/// profile's explicit list, then the stored <c>order_index</c>, then install sequence —
-/// and "later wins" is the one rule the user has to learn.
+/// This is the table the deployer reads. The install order comes from, in priority order,
+/// a profile's explicit list, then the stored <c>order_index</c>, then install sequence —
+/// and "later wins" is the one rule the user has to learn. Games that apply mods in an
+/// order of their own also keep <c>load_index</c>, which follows the same rule.
 /// </remarks>
 public sealed class GameModRepository
 {
@@ -48,14 +49,22 @@ public sealed class GameModRepository
             ?? existing?.OrderIndex
             ?? await GetNextOrderIndexAsync(record.GameKey, ct);
 
+        // The load order works the same way, and separately: a reinstall keeps its load
+        // position, and a new mod loads last.
+        var loadIndex = record.LoadIndex
+            ?? existing?.LoadIndex
+            ?? await GetNextLoadIndexAsync(record.GameKey, ct);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO game_mod
                 (game_key, mod_id, module_id, installer_id, staging_path, order_index,
-                 enabled, installed_at, source, source_file_id, changeset_id, display_name)
+                 enabled, installed_at, source, source_file_id, changeset_id, display_name,
+                 load_index)
             VALUES
                 ($gameKey, $modId, $moduleId, $installerId, $stagingPath, $orderIndex,
-                 $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName)
+                 $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName,
+                 $loadIndex)
             ON CONFLICT(game_key, mod_id) DO UPDATE SET
                 module_id      = excluded.module_id,
                 installer_id   = excluded.installer_id,
@@ -66,7 +75,8 @@ public sealed class GameModRepository
                 source         = excluded.source,
                 source_file_id = excluded.source_file_id,
                 changeset_id   = excluded.changeset_id,
-                display_name   = excluded.display_name;
+                display_name   = excluded.display_name,
+                load_index     = excluded.load_index;
             """;
 
         cmd.Parameters.AddWithValue("$gameKey", record.GameKey);
@@ -82,6 +92,7 @@ public sealed class GameModRepository
         cmd.Parameters.AddWithValue("$sourceFileId", (object?)record.SourceFileId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$changesetId", (object?)record.ChangesetId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$displayName", (object?)record.DisplayName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$loadIndex", loadIndex);
 
         await cmd.ExecuteNonQueryAsync(ct);
 
@@ -89,7 +100,7 @@ public sealed class GameModRepository
             "Recorded mod {ModId} for {GameKey} at order {Order}",
             record.ModId, record.GameKey, orderIndex);
 
-        return record with { OrderIndex = orderIndex };
+        return record with { OrderIndex = orderIndex, LoadIndex = loadIndex };
     }
 
     /// <summary>
@@ -107,7 +118,8 @@ public sealed class GameModRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
-                   enabled, installed_at, source, source_file_id, changeset_id, display_name
+                   enabled, installed_at, source, source_file_id, changeset_id, display_name,
+                   load_index
             FROM game_mod
             WHERE game_key = $gameKey {(enabledOnly ? "AND enabled = 1" : string.Empty)}
             ORDER BY order_index, mod_id
@@ -138,7 +150,8 @@ public sealed class GameModRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
-                   enabled, installed_at, source, source_file_id, changeset_id, display_name
+                   enabled, installed_at, source, source_file_id, changeset_id, display_name,
+                   load_index
             FROM game_mod WHERE game_key = $gameKey AND mod_id = $modId
             """;
         cmd.Parameters.AddWithValue("$gameKey", gameKey);
@@ -162,7 +175,8 @@ public sealed class GameModRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
-                   enabled, installed_at, source, source_file_id, changeset_id, display_name
+                   enabled, installed_at, source, source_file_id, changeset_id, display_name,
+                   load_index
             FROM game_mod WHERE changeset_id = $changesetId LIMIT 1
             """;
         cmd.Parameters.AddWithValue("$changesetId", changesetId);
@@ -192,7 +206,7 @@ public sealed class GameModRepository
     }
 
     /// <summary>
-    /// Rewrites a game's load order.
+    /// Rewrites a game's install order.
     /// </summary>
     /// <param name="gameKey">Game key.</param>
     /// <param name="modIdsInOrder">Mod ids, first to last; the last wins.</param>
@@ -202,16 +216,46 @@ public sealed class GameModRepository
     /// Mods not named keep their relative order after the ones that were, so a partial
     /// reorder is a valid request rather than a way to lose mods.
     /// </remarks>
-    public async Task SetOrderAsync(
-        string gameKey, IReadOnlyList<string> modIdsInOrder, CancellationToken ct = default)
+    public Task SetOrderAsync(
+        string gameKey, IReadOnlyList<string> modIdsInOrder, CancellationToken ct = default) =>
+        SetPositionsAsync(gameKey, modIdsInOrder, "order_index", m => m.OrderIndex ?? 0, ct);
+
+    /// <summary>
+    /// Rewrites a game's load order, the one kept apart from the install order.
+    /// </summary>
+    /// <param name="gameKey">Game key.</param>
+    /// <param name="modIdsInOrder">Mod ids, first loaded to last; the last wins.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the order is stored.</returns>
+    /// <remarks>
+    /// As with <see cref="SetOrderAsync"/>, mods not named keep their relative load order
+    /// after the ones that were.
+    /// </remarks>
+    public Task SetLoadOrderAsync(
+        string gameKey, IReadOnlyList<string> modIdsInOrder, CancellationToken ct = default) =>
+        SetPositionsAsync(gameKey, modIdsInOrder, "load_index", m => m.LoadIndex ?? m.OrderIndex ?? 0, ct);
+
+    // Numbers the named mods 0..n in the given order, then the rest in their current
+    // order by the same column. The column is a constant from this class, never input.
+    private async Task SetPositionsAsync(
+        string gameKey,
+        IReadOnlyList<string> modIdsInOrder,
+        string column,
+        Func<GameModRecord, int> current,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(modIdsInOrder);
 
-        var existing = await ListAsync(gameKey, enabledOnly: false, ct);
+        var existing = (await ListAsync(gameKey, enabledOnly: false, ct))
+            .OrderBy(current)
+            .ThenBy(m => m.ModId, StringComparer.Ordinal)
+            .ToList();
 
         var ordered = modIdsInOrder
-            .Where(id => existing.Any(m =>
-                string.Equals(m.ModId, id, StringComparison.OrdinalIgnoreCase)))
+            .Select(id => existing.FirstOrDefault(m =>
+                string.Equals(m.ModId, id, StringComparison.OrdinalIgnoreCase))?.ModId)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         ordered.AddRange(existing
@@ -227,8 +271,8 @@ public sealed class GameModRepository
             {
                 await using var cmd = connection.CreateCommand();
                 cmd.Transaction = (Microsoft.Data.Sqlite.SqliteTransaction)transaction;
-                cmd.CommandText = """
-                    UPDATE game_mod SET order_index = $order
+                cmd.CommandText = $"""
+                    UPDATE game_mod SET {column} = $order
                     WHERE game_key = $gameKey AND mod_id = $modId
                     """;
                 cmd.Parameters.AddWithValue("$order", i);
@@ -309,10 +353,12 @@ public sealed class GameModRepository
                 insert.CommandText = """
                     INSERT INTO game_mod
                         (game_key, mod_id, module_id, installer_id, staging_path, order_index,
-                         enabled, installed_at, source, source_file_id, changeset_id, display_name)
+                         enabled, installed_at, source, source_file_id, changeset_id, display_name,
+                         load_index)
                     VALUES
                         ($gameKey, $modId, $moduleId, $installerId, $stagingPath, $orderIndex,
-                         $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName)
+                         $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName,
+                         $loadIndex)
                     """;
                 insert.Parameters.AddWithValue("$gameKey", gameKey);
                 insert.Parameters.AddWithValue("$modId", record.ModId);
@@ -328,6 +374,7 @@ public sealed class GameModRepository
                 insert.Parameters.AddWithValue("$sourceFileId", (object?)record.SourceFileId ?? DBNull.Value);
                 insert.Parameters.AddWithValue("$changesetId", (object?)record.ChangesetId ?? DBNull.Value);
                 insert.Parameters.AddWithValue("$displayName", (object?)record.DisplayName ?? DBNull.Value);
+                insert.Parameters.AddWithValue("$loadIndex", record.LoadIndex ?? record.OrderIndex ?? i);
                 await insert.ExecuteNonQueryAsync(ct);
             }
 
@@ -438,6 +485,19 @@ public sealed class GameModRepository
         return value is long next ? (int)next : 0;
     }
 
+    private async Task<int> GetNextLoadIndexAsync(string gameKey, CancellationToken ct)
+    {
+        var connection = await _database.GetConnectionAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT COALESCE(MAX(load_index), -1) + 1 FROM game_mod WHERE game_key = $gameKey";
+        cmd.Parameters.AddWithValue("$gameKey", gameKey);
+
+        var value = await cmd.ExecuteScalarAsync(ct);
+        return value is long next ? (int)next : 0;
+    }
+
     private static GameModRecord Read(Microsoft.Data.Sqlite.SqliteDataReader reader) => new()
     {
         GameKey = reader.GetString(0),
@@ -451,7 +511,8 @@ public sealed class GameModRepository
         Source = reader.IsDBNull(8) ? "local" : reader.GetString(8),
         SourceFileId = reader.IsDBNull(9) ? null : reader.GetString(9),
         ChangesetId = reader.IsDBNull(10) ? null : reader.GetString(10),
-        DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11)
+        DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11),
+        LoadIndex = reader.IsDBNull(12) ? reader.GetInt32(5) : reader.GetInt32(12)
     };
 }
 
@@ -476,9 +537,16 @@ public sealed record GameModRecord
     public required string StagingPath { get; init; }
 
     /// <summary>
-    /// Position in the load order, later winning. Null on insert means "append".
+    /// Position in the install order, later winning: which mod's file is deployed when two
+    /// mods ship the same one. Null on insert means "append".
     /// </summary>
     public int? OrderIndex { get; init; }
+
+    /// <summary>
+    /// Position in the game's load order, later winning, for games that keep one apart
+    /// from the install order. Null on insert means "load last".
+    /// </summary>
+    public int? LoadIndex { get; init; }
 
     /// <summary>Whether the mod is deployed.</summary>
     public bool Enabled { get; init; } = true;

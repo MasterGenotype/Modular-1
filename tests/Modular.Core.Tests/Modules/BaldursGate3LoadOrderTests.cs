@@ -507,6 +507,93 @@ public sealed class BaldursGate3LoadOrderTests : IDisposable
         result.Warnings.Should().ContainSingle().Which.Should().Contain("'Mine'");
     }
 
+    // ── a load order the user sets ──────────────────────────────────────────
+
+    [Fact]
+    public void SetOrder_PutsTheEntriesInTheGivenOrder_KeepingEachEntryIntact()
+    {
+        var path = NewModSettings(ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("A", A), ("B", B), ("C", C)));
+        var before = XDocument.Parse(File.ReadAllText(path));
+
+        var written = BG3ModSettings.SetOrder(
+            path, [BG3ModSettings.GustavXUuid, C, A, B], [Meta(A, "A"), Meta(B, "B"), Meta(C, "C")]);
+
+        written.Should().BeTrue();
+        BG3ModSettings.ReadOrder(path).Should().Equal("GustavX", "C", "A", "B");
+
+        var after = XDocument.Parse(File.ReadAllText(path));
+        Entry(after, C).ToString().Should().Be(Entry(before, C).ToString());
+        File.Exists(path + ".modular.bak").Should().BeTrue();
+    }
+
+    [Fact]
+    public void SetOrder_TheOrderAlreadyThere_WritesNothing()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("A", A), ("B", B)));
+
+        BG3ModSettings.SetOrder(path, [BG3ModSettings.GustavXUuid, A, B], [],
+                mayWrite: () => throw new InvalidOperationException("nothing should need writing"))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void SetOrder_AnOrderThatLeavesAnEntryOut_IsRefused()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("A", A), ("B", B)));
+        var before = File.ReadAllText(path);
+
+        var act = () => BG3ModSettings.SetOrder(path, [BG3ModSettings.GustavXUuid, B], []);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*not a reordering*leaves out 'A'*");
+        File.ReadAllText(path).Should().Be(before);
+    }
+
+    [Fact]
+    public void SetOrder_MovingTheBaseCampaignOffTheTop_IsRefused()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("A", A)));
+
+        var act = () => BG3ModSettings.SetOrder(path, [A, BG3ModSettings.GustavXUuid], []);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GustavX*has to stay first*");
+    }
+
+    [Fact]
+    public void SetOrder_LoadingAModBeforeItsDependency_IsRefused_NamingBoth()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("Framework", A), ("Addon", B)));
+        var before = File.ReadAllText(path);
+
+        var act = () => BG3ModSettings.SetOrder(
+            path, [BG3ModSettings.GustavXUuid, B, A], [Meta(A, "Framework"), Meta(B, "Addon", A)]);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*load a mod before one it depends on*'Addon' needs 'Framework'*");
+        File.ReadAllText(path).Should().Be(before);
+    }
+
+    [Fact]
+    public void SetOrder_ThenADeploy_KeepsTheOrder_EvenWhenAModIsAdded()
+    {
+        var path = NewModSettings(ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("In-game", A)));
+        var body = new BG3ManagedPak(Meta(B, "Body").Module, BG3LoadOrderClassifier.Appearance, 0);
+        var race = new BG3ManagedPak(Meta(C, "Race").Module, BG3LoadOrderClassifier.Appearance, 1);
+        var installed = new List<BG3PakMeta> { Meta(A, "In-game"), Meta(B, "Body"), Meta(C, "Race") };
+
+        BG3ModSettings.Update(path, installed, [body, race])
+            .Order.Should().Equal("GustavX", "In-game", "Body", "Race");
+
+        // The user wants the race-specific body to load first, under the in-game mod.
+        BG3ModSettings.SetOrder(path, [BG3ModSettings.GustavXUuid, C, A, B], installed);
+
+        installed.Add(Meta(D, "New"));
+        var fresh = new BG3ManagedPak(Meta(D, "New").Module, BG3LoadOrderClassifier.Appearance, 2);
+        var result = BG3ModSettings.Update(path, installed, [body, race, fresh]);
+
+        result.Order.Should().Equal("GustavX", "Race", "In-game", "Body", "New");
+    }
+
     // ── the module, end to end ──────────────────────────────────────────────
 
     [Fact]
@@ -536,6 +623,53 @@ public sealed class BaldursGate3LoadOrderTests : IDisposable
 
         module.DescribeEngineOrder(installation, [])!.Value.Entries
             .Should().Equal("GustavX", "In-game", "Race", "Heads");
+    }
+
+    [Fact]
+    public async Task EngineOrder_ReadsEveryEntry_SaysWhichAreModulars_AndSetsANewOrder()
+    {
+        var installation = Installation();
+        var module = new BaldursGate3GameModule { IsGameRunning = () => false };
+        var mods = ModsFolder(module, installation);
+        var settingsPath = BaldursGate3GameModule.ResolveModSettingsPath(installation)!;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, ExistingFile(
+            ("GustavX", BG3ModSettings.GustavXUuid), ("In-game", A), ("Body", B), ("Race", C)));
+
+        Bg3TestPak.WriteMod(Path.Combine(mods, "ingame.pak"), A, "In-game");
+        Bg3TestPak.WriteMod(Path.Combine(mods, "70-000_Body.pak"), B, "Body");
+        Bg3TestPak.WriteMod(Path.Combine(mods, "70-001_Race.pak"), C, "Race");
+
+        var deployed = new[] { Deployed("body", 0, "70-000_Body.pak"), Deployed("race", 1, "70-001_Race.pak") };
+        var order = module.ReadEngineOrder(installation, deployed)!;
+
+        order.Entries.Select(e => (e.Name, e.ModId, e.Locked)).Should().Equal(
+            ("GustavX", null, true), ("In-game", null, false), ("Body", "body", false), ("Race", "race", false));
+        order.Mechanism.Should().Be(settingsPath);
+
+        await module.SetEngineOrderAsync(installation, [BG3ModSettings.GustavXUuid, C, A, B]);
+
+        BG3ModSettings.ReadOrder(settingsPath).Should().Equal("GustavX", "Race", "In-game", "Body");
+    }
+
+    [Fact]
+    public async Task EngineOrder_WhileTheGameIsRunning_IsNotChanged()
+    {
+        var installation = Installation();
+        var module = new BaldursGate3GameModule { IsGameRunning = () => true };
+        ModsFolder(module, installation);
+        var settingsPath = BaldursGate3GameModule.ResolveModSettingsPath(installation)!;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, ExistingFile(("GustavX", BG3ModSettings.GustavXUuid), ("A", A), ("B", B)));
+        var before = File.ReadAllText(settingsPath);
+
+        var act = () => module.SetEngineOrderAsync(installation, [BG3ModSettings.GustavXUuid, B, A]);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*is running*");
+        File.ReadAllText(settingsPath).Should().Be(before);
+        module.LoadOrderKind.Should().Be(LoadOrderKind.External);
     }
 
     [Fact]

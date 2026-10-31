@@ -106,13 +106,20 @@ public readonly record struct PackageRoute(
 /// </summary>
 /// <param name="RootName">Name of the root the file was staged under.</param>
 /// <param name="RelativePath">Path relative to that root, using forward slashes.</param>
-/// <param name="OrderIndex">Zero-based position of the owning mod in the load order.</param>
+/// <param name="OrderIndex">
+/// Zero-based position of the owning mod in the install order, which decides a file two
+/// mods both deploy.
+/// </param>
 /// <param name="EnabledModCount">Number of enabled mods, so prefixes can be zero-padded consistently.</param>
 /// <param name="ModId">Identifier of the mod that staged this file.</param>
 /// <param name="PackageType">Package type label from the install plan, when known.</param>
 /// <param name="StagedFilePath">
 /// Absolute path of the staged file, for a module that has to look inside it to decide
 /// where it goes. Null when the caller has no file to point at.
+/// </param>
+/// <param name="LoadIndex">
+/// Zero-based position of the owning mod in the game's load order, when it has been set
+/// apart from the install order. Null means the two are the same.
 /// </param>
 public readonly record struct DeployPathContext(
     string RootName,
@@ -121,7 +128,15 @@ public readonly record struct DeployPathContext(
     int EnabledModCount,
     string ModId,
     string? PackageType = null,
-    string? StagedFilePath = null);
+    string? StagedFilePath = null,
+    int? LoadIndex = null)
+{
+    /// <summary>
+    /// Where the owning mod sits in the load order: <see cref="LoadIndex"/> when set,
+    /// otherwise <see cref="OrderIndex"/>. What a module encodes into file names.
+    /// </summary>
+    public int LoadPosition => LoadIndex ?? OrderIndex;
+}
 
 /// <summary>
 /// Output of <see cref="IGameModule.MapDeployPath"/>: the root and path a staged
@@ -180,8 +195,23 @@ public sealed class DeployedMod
     /// <summary>Human-readable mod name, when known.</summary>
     public string? DisplayName { get; init; }
 
-    /// <summary>Zero-based position in the load order. Later wins.</summary>
+    /// <summary>
+    /// Zero-based position in the install order, which decides a file two mods both
+    /// deploy. Later wins.
+    /// </summary>
     public int OrderIndex { get; init; }
+
+    /// <summary>
+    /// Zero-based position in the game's load order, when it has been set apart from the
+    /// install order. Null means the two are the same. Later wins.
+    /// </summary>
+    public int? LoadIndex { get; init; }
+
+    /// <summary>
+    /// Where the mod sits in the load order: <see cref="LoadIndex"/> when set, otherwise
+    /// <see cref="OrderIndex"/>. What a module's load-order manifest follows.
+    /// </summary>
+    public int LoadPosition => LoadIndex ?? OrderIndex;
 
     /// <summary>Whether the mod is currently enabled.</summary>
     public bool Enabled { get; init; } = true;
@@ -211,6 +241,50 @@ public readonly record struct EngineOrderDescription(
     string Rule,
     IReadOnlyList<string> Entries,
     string? Mechanism = null);
+
+/// <summary>
+/// Whether a game has a load order of its own, apart from Modular's install order, and
+/// who keeps it.
+/// </summary>
+public enum LoadOrderKind
+{
+    /// <summary>
+    /// The game has one order: the install order, which decides every file conflict.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// Modular keeps the load order, and the module renders it into the game, such as a
+    /// manifest or file name prefixes.
+    /// </summary>
+    Managed,
+
+    /// <summary>
+    /// The game keeps the load order in a file of its own, which other tools also write
+    /// and which lists mods Modular did not install. The module reads and writes it in
+    /// place through <see cref="IGameModule.ReadEngineOrder"/> and
+    /// <see cref="IGameModule.SetEngineOrderAsync"/>.
+    /// </summary>
+    External
+}
+
+/// <summary>
+/// One entry in a load order the game keeps itself.
+/// </summary>
+/// <param name="Id">The engine's own identifier for the entry, such as a module UUID.</param>
+/// <param name="Name">The entry's name, as the engine lists it.</param>
+/// <param name="ModId">The Modular mod that owns the entry, or <c>null</c> for one it did not install.</param>
+/// <param name="Locked">
+/// Whether the entry must stay where it is, such as a base game module the engine expects first.
+/// </param>
+public sealed record EngineOrderEntry(string Id, string Name, string? ModId, bool Locked = false);
+
+/// <summary>
+/// A load order the game keeps itself, first loaded to last; the last wins.
+/// </summary>
+/// <param name="Entries">Every entry, whoever added it.</param>
+/// <param name="Mechanism">Where the order is kept, such as a file path.</param>
+public sealed record EngineOrder(IReadOnlyList<EngineOrderEntry> Entries, string? Mechanism = null);
 
 /// <summary>
 /// A dependency a mod on disk declares in its own metadata, for which nothing is installed.

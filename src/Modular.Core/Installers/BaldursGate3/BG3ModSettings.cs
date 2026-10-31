@@ -247,27 +247,154 @@ public static class BG3ModSettings
                 $"{FileName} needs updating but may not be written right now");
         }
 
-        modsChildren.ReplaceNodes(entries.Select(e => e.Node));
-        MirrorModOrder(document, after);
-
-        var text = Serialize(document, originalText);
-
-        if (originalText != null)
-        {
-            // The first file ever replaced is kept for good; the latest one is kept too,
-            // so a single bad write is always one copy away from undone.
-            var original = modSettingsPath + OriginalSuffix;
-            if (!File.Exists(original))
-                File.Copy(modSettingsPath, original);
-
-            File.Copy(modSettingsPath, modSettingsPath + BackupSuffix, overwrite: true);
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(modSettingsPath)!);
-        WriteAtomically(modSettingsPath, text);
+        Write(modSettingsPath, document, modsChildren, entries, originalText);
         WriteOwnership(ownershipPath, owned, previouslyOwned);
 
         return result with { Written = true };
+    }
+
+    /// <summary>
+    /// Puts the load order's entries in a new order the user chose.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    /// <param name="uuidsInOrder">
+    /// Every entry's UUID, first loaded to last. It must be a reordering of the list as it
+    /// stands: adding and removing entries stays <see cref="Update"/>'s job.
+    /// </param>
+    /// <param name="installed">
+    /// Every module with a pak in the user <c>Mods</c> folder, for their dependencies.
+    /// </param>
+    /// <param name="mayWrite">
+    /// Asked only when the order actually changes; returning false refuses the write.
+    /// </param>
+    /// <returns>Whether the file was written.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The order cannot be used as given: it is not a reordering of the list, it moves the
+    /// base campaign off the top, it loads a mod before one it depends on, or
+    /// <paramref name="mayWrite"/> refused. The message says which, and nothing is written.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The existing file is not a <c>modsettings.lsx</c> this code understands.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// The order is refused rather than repaired when it puts a mod above something it
+    /// depends on. <see cref="Update"/> moves such a mod back below its dependency on the
+    /// next deployment, so accepting the order would only undo it later, silently.
+    /// </para>
+    /// <para>
+    /// Every entry keeps its own node, so nothing the game or another tool recorded in it
+    /// is lost; only the order changes. The ownership record is untouched.
+    /// </para>
+    /// </remarks>
+    public static bool SetOrder(
+        string modSettingsPath,
+        IReadOnlyList<string> uuidsInOrder,
+        IReadOnlyList<BG3PakMeta> installed,
+        Func<bool>? mayWrite = null)
+    {
+        ArgumentNullException.ThrowIfNull(modSettingsPath);
+        ArgumentNullException.ThrowIfNull(uuidsInOrder);
+        ArgumentNullException.ThrowIfNull(installed);
+
+        if (!File.Exists(modSettingsPath))
+            throw new InvalidOperationException($"{FileName} does not exist yet, so there is no order to change.");
+
+        var originalText = File.ReadAllText(modSettingsPath);
+        var document = Parse(originalText);
+        var modsChildren = FindModsChildren(document);
+
+        var entries = modsChildren.Elements("node")
+            .Where(n => HasId(n, "ModuleShortDesc"))
+            .Select(n => new Entry(ReadAttribute(n, "UUID").ToLowerInvariant(), ReadAttribute(n, "Name"), n))
+            .Where(e => e.Uuid.Length > 0)
+            .DistinctBy(e => e.Uuid)
+            .ToList();
+
+        var byUuid = entries.ToDictionary(e => e.Uuid, StringComparer.OrdinalIgnoreCase);
+        var requested = uuidsInOrder.Select(u => u.ToLowerInvariant()).ToList();
+
+        var unknown = requested.Where(u => !byUuid.ContainsKey(u)).ToList();
+        var missing = entries.Where(e => !requested.Contains(e.Uuid)).Select(e => e.Name).ToList();
+
+        if (unknown.Count > 0 || missing.Count > 0 || requested.Distinct().Count() != requested.Count)
+        {
+            throw new InvalidOperationException(
+                $"The new order is not a reordering of {FileName} as it stands" +
+                (missing.Count > 0 ? $"; it leaves out {string.Join(", ", missing.Select(n => $"'{n}'"))}" : string.Empty) +
+                (unknown.Count > 0 ? $"; {unknown.Count} of its entries are not in the file" : string.Empty) +
+                ". Refresh and try again.");
+        }
+
+        if (entries.Count > 0 && entries[0].Uuid == GustavXUuid && requested[0] != GustavXUuid)
+            throw new InvalidOperationException("GustavX, the base campaign, has to stay first in the load order.");
+
+        var ordered = requested.Select(u => byUuid[u]).ToList();
+
+        var installedByUuid = installed
+            .GroupBy(m => m.Module.Uuid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var dependsOn = DependencyMap(installedByUuid);
+        var position = ordered
+            .Select((e, i) => (e.Uuid, i))
+            .ToDictionary(x => x.Uuid, x => x.i, StringComparer.OrdinalIgnoreCase);
+
+        var violations = new List<string>();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (!dependsOn.TryGetValue(ordered[i].Uuid, out var needs))
+                continue;
+
+            foreach (var need in needs)
+            {
+                if (position.TryGetValue(need, out var at) && at > i)
+                    violations.Add($"'{ordered[i].Name}' needs '{ordered[at].Name}' loaded before it");
+            }
+        }
+
+        if (violations.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "That order would load a mod before one it depends on: " +
+                string.Join("; ", violations) + ".");
+        }
+
+        if (ordered.Select(e => e.Uuid).SequenceEqual(entries.Select(e => e.Uuid)))
+            return false;
+
+        if (mayWrite != null && !mayWrite())
+            throw new InvalidOperationException($"{FileName} may not be written right now");
+
+        Write(modSettingsPath, document, modsChildren, ordered, originalText);
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the load order as it stands, with each entry's UUID.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    /// <returns>
+    /// The entries, first loaded to last; empty when the file is missing or unreadable.
+    /// </returns>
+    public static IReadOnlyList<(string Uuid, string Name)> ReadEntries(string modSettingsPath)
+    {
+        try
+        {
+            if (!File.Exists(modSettingsPath))
+                return [];
+
+            return FindModsChildren(Parse(File.ReadAllText(modSettingsPath)))
+                .Elements("node")
+                .Where(n => HasId(n, "ModuleShortDesc"))
+                .Select(n => (Uuid: ReadAttribute(n, "UUID").ToLowerInvariant(), Name: ReadAttribute(n, "Name")))
+                .Where(e => e.Uuid.Length > 0)
+                .DistinctBy(e => e.Uuid)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return [];
+        }
     }
 
     /// <summary>
@@ -537,6 +664,35 @@ public static class BG3ModSettings
 
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + settings.NewLineChars +
                body + settings.NewLineChars;
+    }
+
+    // Puts the entries into the file in the given order and writes it, keeping a copy of
+    // the file it replaces.
+    private static void Write(
+        string modSettingsPath,
+        XDocument document,
+        XElement modsChildren,
+        IReadOnlyList<Entry> entries,
+        string? originalText)
+    {
+        modsChildren.ReplaceNodes(entries.Select(e => e.Node));
+        MirrorModOrder(document, entries.Select(e => e.Uuid).ToList());
+
+        var text = Serialize(document, originalText);
+
+        if (originalText != null)
+        {
+            // The first file ever replaced is kept for good; the latest one is kept too,
+            // so a single bad write is always one copy away from undone.
+            var original = modSettingsPath + OriginalSuffix;
+            if (!File.Exists(original))
+                File.Copy(modSettingsPath, original);
+
+            File.Copy(modSettingsPath, modSettingsPath + BackupSuffix, overwrite: true);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(modSettingsPath)!);
+        WriteAtomically(modSettingsPath, text);
     }
 
     // Written beside the target and moved over it, so the game never finds half a file.

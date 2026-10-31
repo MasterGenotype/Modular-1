@@ -9,17 +9,27 @@ using Spectre.Console.Cli;
 namespace Modular.Cli.Commands.Deployment;
 
 /// <summary>
-/// Shows a game's load order, and the engine order each module derives from it.
+/// Shows a game's install order and, for a game that has one, its load order.
 /// </summary>
 public sealed class OrderListCommand : AsyncCommand<OrderListCommand.Settings>
 {
     /// <summary>Command settings.</summary>
     public sealed class Settings : CommandSettings
     {
-        /// <summary>The game whose order to show.</summary>
+        /// <summary>The game whose orders to show.</summary>
         [CommandOption("--game <GAME>")]
         [Description("Steam AppID, NexusMods slug, display name or install path")]
         public string Game { get; init; } = string.Empty;
+
+        /// <summary>Show only the install order.</summary>
+        [CommandOption("--install")]
+        [Description("Show only the install order (which mod wins a file both deploy)")]
+        public bool InstallOnly { get; init; }
+
+        /// <summary>Show only the load order.</summary>
+        [CommandOption("--load")]
+        [Description("Show only the game's load order")]
+        public bool LoadOnly { get; init; }
 
         /// <summary>Whether to enable verbose output.</summary>
         [CommandOption("--verbose")]
@@ -51,39 +61,56 @@ public sealed class OrderListCommand : AsyncCommand<OrderListCommand.Settings>
                 return 1;
             }
 
-            var mods = await installService.Deployment.Mods.ListAsync(installation.GameKey);
+            var orders = await installService.LoadOrder.GetAsync(installation);
+            var gameName = installation.DisplayName ?? installation.GameId;
 
-            if (mods.Count == 0)
+            if (!settings.LoadOnly)
             {
-                AnsiConsole.MarkupLine(
-                    $"[yellow]No mods are deployed for {Markup.Escape(installation.DisplayName ?? settings.Game)}.[/]");
-                return 0;
+                if (orders.Install.Count == 0)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Modular has no mods for {Markup.Escape(gameName)}.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[bold]Install order for {Markup.Escape(gameName)}[/] " +
+                        "[grey](which mod's file wins when two deploy the same one; later wins)[/]");
+                    AnsiConsole.Write(OrderRendering.Table(orders.Install, showOwner: false));
+                }
             }
 
-            var table = new Table().Border(TableBorder.Rounded);
-            table.AddColumn("#");
-            table.AddColumn("Mod");
-            table.AddColumn("Enabled");
-            table.AddColumn("Installer");
-            table.AddColumn("Source");
-
-            foreach (var mod in mods)
+            if (!settings.InstallOnly)
             {
-                table.AddRow(
-                    (mod.OrderIndex ?? 0).ToString(),
-                    Markup.Escape(mod.DisplayName ?? mod.ModId),
-                    mod.Enabled ? "[green]yes[/]" : "[grey]no[/]",
-                    Markup.Escape(mod.InstallerId ?? "—"),
-                    Markup.Escape(mod.Source));
+                if (!settings.LoadOnly)
+                    AnsiConsole.WriteLine();
+
+                if (orders.Kind == LoadOrderKind.None)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[bold]Load order[/] [grey]— {Markup.Escape(gameName)} applies mods in one order, " +
+                        "the install order.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[bold]Load order for {Markup.Escape(gameName)}[/] [grey]({Markup.Escape(orders.Rule)})[/]");
+
+                    if (orders.Mechanism != null)
+                        AnsiConsole.MarkupLine($"[grey]kept in {Markup.Escape(orders.Mechanism)}[/]");
+
+                    if (orders.Load.Count == 0)
+                        AnsiConsole.MarkupLine("[grey]  (empty)[/]");
+                    else
+                        AnsiConsole.Write(OrderRendering.Table(orders.Load, showOwner: orders.Kind == LoadOrderKind.External));
+                }
             }
 
-            AnsiConsole.MarkupLine(
-                $"[bold]Load order for {Markup.Escape(installation.DisplayName ?? installation.GameId)}[/] " +
-                "[grey](later wins)[/]");
-            AnsiConsole.Write(table);
-
-            RenderEngineOrder(installService, installation, mods);
             return 0;
+        }
+        catch (LoadOrderException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(ex.Message)}[/]");
+            return 1;
         }
         catch (Exception ex)
         {
@@ -96,47 +123,262 @@ public sealed class OrderListCommand : AsyncCommand<OrderListCommand.Settings>
             services.Dispose();
         }
     }
+}
+
+/// <summary>
+/// Moves a mod to a new place in a game's install order or load order.
+/// </summary>
+public sealed class OrderMoveCommand : AsyncCommand<OrderMoveCommand.Settings>
+{
+    /// <summary>Command settings.</summary>
+    public sealed class Settings : CommandSettings
+    {
+        /// <summary>What to move.</summary>
+        [CommandArgument(0, "<mod>")]
+        [Description("Mod id, name, part of a name, or a position such as #3")]
+        public string Mod { get; init; } = string.Empty;
+
+        /// <summary>The game.</summary>
+        [CommandOption("--game <GAME>")]
+        [Description("Steam AppID, NexusMods slug, display name or install path")]
+        public string Game { get; init; } = string.Empty;
+
+        /// <summary>Change the load order rather than the install order.</summary>
+        [CommandOption("--load")]
+        [Description("Move it in the game's load order instead of the install order")]
+        public bool Load { get; init; }
+
+        /// <summary>Put it directly before this entry.</summary>
+        [CommandOption("--before <MOD>")]
+        [Description("Put it directly before this entry (so this entry wins over it)")]
+        public string? Before { get; init; }
+
+        /// <summary>Put it directly after this entry.</summary>
+        [CommandOption("--after <MOD>")]
+        [Description("Put it directly after this entry (so it wins over this entry)")]
+        public string? After { get; init; }
+
+        /// <summary>Put it at a position.</summary>
+        [CommandOption("--to <POSITION>")]
+        [Description("Put it at this 1-based position")]
+        public int? To { get; init; }
+
+        /// <summary>Put it first.</summary>
+        [CommandOption("--top")]
+        [Description("Put it first, where everything else wins over it")]
+        public bool Top { get; init; }
+
+        /// <summary>Put it last.</summary>
+        [CommandOption("--bottom")]
+        [Description("Put it last, where it wins over everything")]
+        public bool Bottom { get; init; }
+
+        /// <summary>Whether to skip the deployment afterwards.</summary>
+        [CommandOption("--no-deploy")]
+        [Description("Store the new order without redeploying")]
+        public bool NoDeploy { get; init; }
+
+        /// <summary>Whether to enable verbose output.</summary>
+        [CommandOption("--verbose")]
+        [Description("Enable verbose output")]
+        public bool Verbose { get; init; }
+
+        /// <inheritdoc />
+        public override ValidationResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(Game))
+                return ValidationResult.Error("--game is required.");
+
+            return OrderRendering.PlacementFrom(Before, After, To, Top, Bottom, "", required: true) is { Error: { } error }
+                ? ValidationResult.Error(error)
+                : ValidationResult.Success();
+        }
+    }
+
+    /// <inheritdoc />
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+        var placement = OrderRendering.PlacementFrom(
+            settings.Before, settings.After, settings.To, settings.Top, settings.Bottom, "", required: true).Placement!;
+
+        var services = await RuntimeServices.InitializeMinimalAsync(settings.Verbose);
+        var db = await DeployCommand.OpenDatabaseAsync();
+
+        try
+        {
+            var installService = services.CreateInstallationService(db);
+            var installation = await installService.Deployment.ResolveInstallationAsync(settings.Game, cts.Token);
+
+            if (installation == null)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[red]Could not resolve game:[/] {Markup.Escape(settings.Game)}");
+                return 1;
+            }
+
+            var list = settings.Load ? OrderListKind.Load : OrderListKind.Install;
+            var result = await installService.LoadOrder.MoveAsync(
+                installation, list, settings.Mod, placement, deploy: !settings.NoDeploy, cts.Token);
+
+            var what = list == OrderListKind.Install ? "install order" : "load order";
+            var moved = string.Join(", ", result.Moved.Select(m => $"'{m.Name}'"));
+
+            if (!result.Changed)
+            {
+                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(moved)} is already there in the {what}.[/]");
+                return 0;
+            }
+
+            AnsiConsole.MarkupLine($"[green]Moved[/] {Markup.Escape(moved)} in the {what}:");
+            OrderRendering.Neighbourhood(result.Order, result.Moved);
+
+            if (result.Deployment is { } deployment)
+            {
+                if (!deployment.Success)
+                {
+                    AnsiConsole.MarkupLine(
+                        $"[red]Deploy failed:[/] {Markup.Escape(deployment.Error ?? "unknown error")}");
+                    return 1;
+                }
+
+                DeploymentReport.Render(deployment, settings.Verbose);
+            }
+            else if (settings.NoDeploy)
+            {
+                AnsiConsole.MarkupLine("[grey]Not deployed. Run 'modular deploy --game <g>' to apply it.[/]");
+            }
+
+            return 0;
+        }
+        catch (LoadOrderException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(ex.Message)}[/]");
+            return 1;
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+            return 130;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            return 1;
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            services.Dispose();
+        }
+    }
+}
+
+/// <summary>
+/// Shared rendering and option parsing for the order commands and install's placement flags.
+/// </summary>
+internal static class OrderRendering
+{
+    /// <summary>
+    /// A numbered table of an order.
+    /// </summary>
+    /// <param name="items">The order, first to last.</param>
+    /// <param name="showOwner">Whether to show which entries Modular installed.</param>
+    /// <returns>The table.</returns>
+    public static Table Table(IReadOnlyList<OrderItem> items, bool showOwner)
+    {
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("#");
+        table.AddColumn("Name");
+        table.AddColumn(showOwner ? "Modular mod" : "Mod id");
+        table.AddColumn(showOwner ? "Note" : "Enabled");
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var note = showOwner
+                ? item.Locked ? "[grey]locked[/]" : item.Managed ? string.Empty : "[grey]not Modular's[/]"
+                : item.Enabled ? "[green]yes[/]" : "[grey]no[/]";
+
+            table.AddRow(
+                (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Markup.Escape(item.Name),
+                Markup.Escape(item.ModId ?? "—"),
+                note);
+        }
+
+        return table;
+    }
 
     /// <summary>
-    /// Shows the engine's own ordering next to Modular's, when the module translates them
-    /// differently.
+    /// Prints the moved entries with their new neighbours.
     /// </summary>
-    /// <remarks>
-    /// Cyberpunk's legacy archives are the case that makes this worth showing: the first
-    /// archive loaded wins, so the manifest Modular writes is Modular's order reversed.
-    /// Seeing both side by side is the only way that translation is visible.
-    /// </remarks>
-    private static void RenderEngineOrder(
-        ModInstallationService installService,
-        GameInstallation installation,
-        IReadOnlyList<GameModRecord> mods)
+    /// <param name="order">The order after the move.</param>
+    /// <param name="moved">The entries that moved.</param>
+    public static void Neighbourhood(IReadOnlyList<OrderItem> order, IReadOnlyList<OrderItem> moved)
     {
-        var module = installService.ModuleRegistry.GetByModuleId(installation.ModuleId);
-        if (module == null)
-            return;
+        var keys = moved.Select(m => m.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var first = order.ToList().FindIndex(i => keys.Contains(i.Key));
+        var last = order.ToList().FindLastIndex(i => keys.Contains(i.Key));
 
-        var deployed = mods
-            .Where(m => m.Enabled)
-            .Select((m, i) => new DeployedMod
-            {
-                ModId = m.ModId,
-                DisplayName = m.DisplayName,
-                OrderIndex = i,
-                Enabled = true
-            })
-            .ToList();
+        for (var i = Math.Max(0, first - 1); i <= Math.Min(order.Count - 1, last + 1); i++)
+        {
+            var mark = keys.Contains(order[i].Key) ? "[green]→[/]" : " ";
+            AnsiConsole.MarkupLine($"  {mark} {i + 1,4}. {Markup.Escape(order[i].Name)}");
+        }
+    }
 
-        if (EngineLoadOrder.Describe(module, installation, deployed) is not { } engineOrder)
-            return;
+    /// <summary>
+    /// Turns placement options into a placement.
+    /// </summary>
+    /// <param name="before">Entry to go before.</param>
+    /// <param name="after">Entry to go after.</param>
+    /// <param name="to">1-based position.</param>
+    /// <param name="top">Go first.</param>
+    /// <param name="bottom">Go last.</param>
+    /// <param name="prefix">Option name prefix, such as <c>load-</c>, for messages.</param>
+    /// <param name="required">Whether giving none of the options is an error.</param>
+    /// <param name="positionName">The position option's name without prefix, such as <c>to</c>.</param>
+    /// <param name="offerBottom">Whether the command has a bottom option to mention.</param>
+    /// <returns>The placement, <c>null</c> when no option was given, or an error.</returns>
+    public static (OrderPlacement? Placement, string? Error) PlacementFrom(
+        string? before, string? after, int? to, bool top, bool bottom, string prefix,
+        bool required = false, string positionName = "to", bool offerBottom = true)
+    {
+        var options = $"--{prefix}before, --{prefix}after, --{prefix}{positionName}" +
+                      (offerBottom ? $", --{prefix}top or --{prefix}bottom" : $" or --{prefix}top");
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[bold]Engine order[/] [grey]({Markup.Escape(engineOrder.Rule)})[/]");
+        var given = new List<OrderPlacement>();
 
-        if (engineOrder.Mechanism != null)
-            AnsiConsole.MarkupLine($"[grey]via {Markup.Escape(engineOrder.Mechanism)}[/]");
+        if (!string.IsNullOrWhiteSpace(before))
+            given.Add(OrderPlacement.Before(before));
+        if (!string.IsNullOrWhiteSpace(after))
+            given.Add(OrderPlacement.After(after));
+        if (to is { } position)
+            given.Add(OrderPlacement.At(position));
+        if (top)
+            given.Add(OrderPlacement.Top);
+        if (bottom)
+            given.Add(OrderPlacement.Bottom);
 
-        for (var i = 0; i < engineOrder.Entries.Count; i++)
-            AnsiConsole.MarkupLine($"  {i}. {Markup.Escape(engineOrder.Entries[i])}");
+        if (given.Count > 1)
+        {
+            return (null, $"Give only one of {options}.");
+        }
+
+        if (to is < 1)
+            return (null, $"--{prefix}{positionName} counts from 1.");
+
+        if (given.Count == 0)
+        {
+            return required
+                ? (null, $"Say where to put it: {options}.")
+                : (null, null);
+        }
+
+        return (given[0], null);
     }
 }
 

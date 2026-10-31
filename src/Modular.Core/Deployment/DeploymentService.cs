@@ -110,7 +110,8 @@ public sealed class DeploymentService
                 record.ModId,
                 record.StagingPath,
                 i,
-                StagingManager.EnumerateStagedFiles(record.StagingPath)));
+                StagingManager.EnumerateStagedFiles(record.StagingPath),
+                record.LoadIndex));
         }
 
         var current = DeploymentManifest.Load(
@@ -188,6 +189,21 @@ public sealed class DeploymentService
     public Task<GameInstallation?> ResolveInstallationAsync(
         string gameRef, CancellationToken ct = default) =>
         _resolver.ResolveAsync(gameRef, persist: true, ct);
+
+    /// <summary>
+    /// The module that owns a game.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>The module; the generic one when no specific module claims the game.</returns>
+    public IGameModule GetModule(GameInstallation installation) => _resolver.GetModule(installation);
+
+    /// <summary>
+    /// What Modular has deployed for a game right now.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>The deployment manifest; an empty one when nothing is deployed.</returns>
+    public DeploymentManifest LoadManifest(GameInstallation installation) =>
+        DeploymentManifest.Load(_layout.GetGameStagingDirectory(installation.GameKey), installation.GameKey);
 
     /// <summary>
     /// Records a staged mod as part of a game's deployment.

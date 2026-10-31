@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using Modular.Cli.Commands.Deployment;
 using Modular.Cli.Infrastructure;
+using Modular.Core.Deployment;
 using Modular.Core.Database;
 using Modular.Core.Installers;
 using Modular.Core.Plugins;
@@ -50,9 +52,69 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
         [Description("Version to install when the archive offers several (e.g. \"Option A\"); repeatable")]
         public string[] Options { get; init; } = [];
 
+        /// <summary>Install-order placement: directly before this mod.</summary>
+        [CommandOption("--before <MOD>")]
+        [Description("Place it in the install order directly before this mod")]
+        public string? Before { get; init; }
+
+        /// <summary>Install-order placement: directly after this mod.</summary>
+        [CommandOption("--after <MOD>")]
+        [Description("Place it in the install order directly after this mod")]
+        public string? After { get; init; }
+
+        /// <summary>Install-order placement: at a 1-based position.</summary>
+        [CommandOption("--at <POSITION>")]
+        [Description("Place it at this 1-based position in the install order")]
+        public int? At { get; init; }
+
+        /// <summary>Install-order placement: first.</summary>
+        [CommandOption("--top")]
+        [Description("Place it first in the install order")]
+        public bool Top { get; init; }
+
+        /// <summary>Load-order placement: directly before this entry.</summary>
+        [CommandOption("--load-before <MOD>")]
+        [Description("Place it in the game's load order directly before this entry")]
+        public string? LoadBefore { get; init; }
+
+        /// <summary>Load-order placement: directly after this entry.</summary>
+        [CommandOption("--load-after <MOD>")]
+        [Description("Place it in the game's load order directly after this entry")]
+        public string? LoadAfter { get; init; }
+
+        /// <summary>Load-order placement: at a 1-based position.</summary>
+        [CommandOption("--load-at <POSITION>")]
+        [Description("Place it at this 1-based position in the game's load order")]
+        public int? LoadAt { get; init; }
+
+        /// <summary>Load-order placement: first.</summary>
+        [CommandOption("--load-top")]
+        [Description("Place it first in the game's load order")]
+        public bool LoadTop { get; init; }
+
         [CommandOption("--verbose")]
         [Description("Enable verbose output")]
         public bool Verbose { get; init; }
+
+        /// <summary>Where the mod goes in the install order, when asked.</summary>
+        internal (OrderPlacement? Placement, string? Error) InstallPlacement =>
+            OrderRendering.PlacementFrom(Before, After, At, Top, bottom: false, prefix: "", positionName: "at", offerBottom: false);
+
+        /// <summary>Where the mod goes in the load order, when asked.</summary>
+        internal (OrderPlacement? Placement, string? Error) LoadPlacement =>
+            OrderRendering.PlacementFrom(LoadBefore, LoadAfter, LoadAt, LoadTop, bottom: false, prefix: "load-", positionName: "at", offerBottom: false);
+
+        /// <inheritdoc />
+        public override ValidationResult Validate()
+        {
+            if (InstallPlacement.Error is { } installError)
+                return ValidationResult.Error(installError);
+
+            if (LoadPlacement.Error is { } loadError)
+                return ValidationResult.Error(loadError);
+
+            return ValidationResult.Success();
+        }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -114,6 +176,31 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
 
             var installService = services.CreateInstallationService(db, pluginLoader);
 
+            var installPlacement = settings.InstallPlacement.Placement;
+            var loadPlacement = settings.LoadPlacement.Placement;
+            var placing = installPlacement != null || loadPlacement != null;
+
+            // A game with one order has no load order to place the mod in; say so before
+            // anything is installed.
+            var loadKind = Modular.Sdk.Modules.LoadOrderKind.None;
+            if (loadPlacement != null)
+            {
+                var gameInstallation = await installService.Deployment.ResolveInstallationAsync(settings.Game!, cts.Token);
+                loadKind = gameInstallation == null
+                    ? Modular.Sdk.Modules.LoadOrderKind.None
+                    : installService.Deployment.GetModule(gameInstallation).LoadOrderKind;
+
+                if (loadKind == Modular.Sdk.Modules.LoadOrderKind.None)
+                {
+                    AnsiConsole.MarkupLine(
+                        "[red]This game applies mods in one order, the install order.[/] " +
+                        "Use --before, --after, --at or --top instead of the --load- options.");
+                    await db.DisposeAsync();
+                    services.Dispose();
+                    return 1;
+                }
+            }
+
             var options = new ModInstallationOptions
             {
                 ModId = settings.ModId ?? Path.GetFileNameWithoutExtension(archivePath),
@@ -122,7 +209,9 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                 AllowOverwrite = settings.Force,
                 CreateBackups = !settings.NoBackup,
                 DryRun = settings.DryRun,
-                NoDeploy = settings.NoDeploy
+
+                // Placing the mod comes before its single deployment.
+                NoDeploy = settings.NoDeploy || (placing && !settings.DryRun)
             };
 
             // Show install header
@@ -189,12 +278,26 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
                     AnsiConsole.MarkupLine($"  [grey]... and {result.PlannedOperations.Count - 20} more[/]");
                 foreach (var warning in result.Warnings)
                     AnsiConsole.MarkupLine($"[yellow]![/] {Markup.Escape(warning)}");
+
+                if (installPlacement != null)
+                    AnsiConsole.MarkupLine($"[bold]Install order:[/] would go {Markup.Escape(installPlacement.Describe())}");
+                if (loadPlacement != null)
+                    AnsiConsole.MarkupLine($"[bold]Load order:[/] would go {Markup.Escape(loadPlacement.Describe())}");
+            }
+            else if (result.Success && placing &&
+                     !await PlaceAsync(installService, result, options, settings, installPlacement, loadPlacement, loadKind, cts.Token))
+            {
+                await db.DisposeAsync();
+                services.Dispose();
+                return 1;
             }
             else if (result.Success)
             {
                 if (result.Deployed)
                 {
-                    AnsiConsole.MarkupLine($"[green]Installed {result.InstalledFiles.Count} files[/]");
+                    // A placed install deploys afterwards, so its count is what it staged.
+                    var count = result.InstalledFiles.Count > 0 ? result.InstalledFiles.Count : result.StagedFiles.Count;
+                    AnsiConsole.MarkupLine($"[green]Installed {count} files[/]");
                 }
                 else
                 {
@@ -253,6 +356,92 @@ public class InstallCommand : AsyncCommand<InstallCommand.Settings>
             if (settings.Verbose)
                 AnsiConsole.WriteException(ex);
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// Puts a just-installed mod where the placement options asked, then deploys it once.
+    /// </summary>
+    /// <returns>False when a placement could not be made; the mod stays installed.</returns>
+    /// <remarks>
+    /// The install order, and a load order Modular keeps, are stored before the deploy so
+    /// it renders them. A load order the game keeps can only be changed after the deploy,
+    /// which is what adds the mod's entry to it.
+    /// </remarks>
+    private static async Task<bool> PlaceAsync(
+        ModInstallationService installService,
+        ModInstallationResult result,
+        ModInstallationOptions options,
+        Settings settings,
+        OrderPlacement? installPlacement,
+        OrderPlacement? loadPlacement,
+        Modular.Sdk.Modules.LoadOrderKind loadKind,
+        CancellationToken ct)
+    {
+        var installation = await installService.Deployment.ResolveInstallationAsync(
+            result.GameKey ?? settings.Game!, ct);
+        if (installation == null)
+        {
+            AnsiConsole.MarkupLine("[red]Installed, but the game could not be resolved to place it.[/]");
+            return false;
+        }
+
+        var modId = result.ReplacedModId ?? options.ModId!;
+        var loadOrder = installService.LoadOrder;
+
+        try
+        {
+            if (installPlacement != null)
+            {
+                await loadOrder.MoveAsync(installation, OrderListKind.Install, modId, installPlacement, deploy: false, ct);
+                AnsiConsole.MarkupLine($"[grey]Install order: placed {Markup.Escape(installPlacement.Describe())}[/]");
+            }
+
+            if (loadPlacement != null && loadKind == Modular.Sdk.Modules.LoadOrderKind.Managed)
+            {
+                await loadOrder.MoveAsync(installation, OrderListKind.Load, modId, loadPlacement, deploy: false, ct);
+                AnsiConsole.MarkupLine($"[grey]Load order: placed {Markup.Escape(loadPlacement.Describe())}[/]");
+            }
+
+            if (settings.NoDeploy)
+            {
+                if (loadPlacement != null && loadKind == Modular.Sdk.Modules.LoadOrderKind.External)
+                {
+                    AnsiConsole.MarkupLine(
+                        "[yellow]![/] The game's load order only lists the mod once it is deployed, so " +
+                        "--load- placement was not applied. Deploy, then use 'modular order move --load'.");
+                }
+
+                return true;
+            }
+
+            var deployment = await installService.Deployment.DeployAsync(installation, ct: ct);
+            result.Deployment = deployment;
+            result.Deployed = deployment.Success;
+
+            if (!deployment.Success)
+            {
+                AnsiConsole.MarkupLine($"[red]Deploy failed:[/] {Markup.Escape(deployment.Error ?? "unknown error")}");
+                return false;
+            }
+
+            if (loadPlacement != null && loadKind == Modular.Sdk.Modules.LoadOrderKind.External)
+            {
+                var moved = await loadOrder.MoveAsync(installation, OrderListKind.Load, modId, loadPlacement, deploy: true, ct);
+                if (moved.Deployment != null)
+                    result.Deployment = moved.Deployment;
+
+                AnsiConsole.MarkupLine($"[grey]Load order: placed {Markup.Escape(loadPlacement.Describe())}[/]");
+            }
+
+            return true;
+        }
+        catch (LoadOrderException ex)
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Installed, but could not place it:[/] {Markup.Escape(ex.Message)} " +
+                "[grey]Use 'modular order move' to place it.[/]");
+            return false;
         }
     }
 

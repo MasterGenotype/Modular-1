@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 6;
+    private const int CurrentSchemaVersion = 7;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -189,6 +189,7 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             await CreateV4TablesAsync(connection, (SqliteTransaction)transaction);
             await CreateV5SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
+            await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
@@ -231,6 +232,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             if (fromVersion < 6)
             {
                 await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 7)
+            {
+                await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
             }
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
@@ -536,6 +542,39 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
                 CREATE INDEX IF NOT EXISTS idx_snapshot_game_mod_snapshot
                     ON snapshot_game_mod(snapshot_id);
                 """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// Creates the v7 schema: a load order kept apart from the install order.
+    /// </summary>
+    /// <param name="connection">Open connection.</param>
+    /// <param name="transaction">Enclosing transaction.</param>
+    /// <returns>A task that completes when the schema is current.</returns>
+    /// <remarks>
+    /// <para>
+    /// <c>order_index</c> stays the install order, which decides a file two mods both
+    /// deploy. <c>load_index</c> is the order the game applies mods in, for the modules
+    /// that render one. Every existing row starts with the two equal, so no game's
+    /// behaviour changes until the user moves something.
+    /// </para>
+    /// <para>
+    /// Its own version rather than an addition to v6, which some databases have already
+    /// recorded: extending it would leave them without the column for good.
+    /// </para>
+    /// </remarks>
+    private static async Task CreateV7SchemaAsync(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        foreach (var table in new[] { "game_mod", "snapshot_game_mod" })
+        {
+            await AddColumnIfMissingAsync(
+                connection, transaction, table: table, column: "load_index", definition: "INTEGER");
+
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = $"UPDATE {table} SET load_index = order_index WHERE load_index IS NULL;";
             await cmd.ExecuteNonQueryAsync();
         }
     }

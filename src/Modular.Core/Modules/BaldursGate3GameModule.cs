@@ -205,7 +205,7 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
 
         // Pad to the width the whole list needs, so filenames sort the same way numbers do.
         var width = Math.Max(3, context.EnabledModCount.ToString().Length);
-        var order = context.OrderIndex.ToString(
+        var order = context.LoadPosition.ToString(
             new string('0', width), System.Globalization.CultureInfo.InvariantCulture);
 
         return new DeployTarget(context.RootName, $"{tier.Rank:00}-{order}_{fileName}");
@@ -261,7 +261,7 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
                 managed.Add(new BG3ManagedPak(
                     profile.Meta.Module,
                     BG3LoadOrderClassifier.Classify(profile, CategoryOf(mod.ModId)),
-                    mod.OrderIndex));
+                    mod.LoadPosition));
             }
         }
 
@@ -314,6 +314,101 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
             "it after something it depends on",
             order,
             modSettingsPath);
+    }
+
+    /// <summary>
+    /// The game keeps its own load order, in <c>modsettings.lsx</c>, which the in-game mod
+    /// manager and other tools also write.
+    /// </summary>
+    public override LoadOrderKind LoadOrderKind => LoadOrderKind.External;
+
+    /// <summary>
+    /// Reads <c>modsettings.lsx</c> as it stands, saying which entries are Modular's.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="mods">The game's mods, to match entries to them.</param>
+    /// <returns>Every entry, or <c>null</c> when the file cannot be found.</returns>
+    /// <remarks>
+    /// An entry is a Modular mod's when one of that mod's deployed paks declares the
+    /// entry's module. GustavX, the base campaign, is locked first.
+    /// </remarks>
+    public override EngineOrder? ReadEngineOrder(
+        GameInstallation installation,
+        IReadOnlyList<DeployedMod> mods)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentNullException.ThrowIfNull(mods);
+
+        var modSettingsPath = ResolveModSettingsPath(installation);
+        if (modSettingsPath == null)
+            return null;
+
+        var modsDirectory = ResolveModPaths(installation).GetRoot(ModsRoot);
+        var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (modsDirectory != null)
+        {
+            foreach (var mod in mods)
+            {
+                foreach (var file in mod.DeployedFiles.Where(f => IsModPak(f.RootName, f.RelativePath)))
+                {
+                    var meta = BG3PakProfile.Read(Path.Combine(
+                        modsDirectory, file.RelativePath.Replace('/', Path.DirectorySeparatorChar)))?.Meta;
+
+                    if (meta != null)
+                        owners.TryAdd(meta.Module.Uuid, mod.ModId);
+                }
+            }
+        }
+
+        var entries = BG3ModSettings.ReadEntries(modSettingsPath)
+            .Select(e => new EngineOrderEntry(
+                e.Uuid,
+                e.Name,
+                owners.GetValueOrDefault(e.Uuid),
+                Locked: string.Equals(e.Uuid, BG3ModSettings.GustavXUuid, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        return new EngineOrder(entries, modSettingsPath);
+    }
+
+    /// <summary>
+    /// Rewrites the order of <c>modsettings.lsx</c> to the user's choice.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="entryIds">Every entry's module UUID, first loaded to last.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the file is written.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The game is running, the file cannot be found, or the order is refused; see
+    /// <see cref="BG3ModSettings.SetOrder"/>.
+    /// </exception>
+    public override Task SetEngineOrderAsync(
+        GameInstallation installation,
+        IReadOnlyList<string> entryIds,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentNullException.ThrowIfNull(entryIds);
+
+        var modsDirectory = ResolveModPaths(installation).GetRoot(ModsRoot);
+        var modSettingsPath = ResolveModSettingsPath(installation);
+
+        if (modsDirectory == null || modSettingsPath == null)
+            throw new InvalidOperationException("the game's user data folder could not be located");
+
+        // Checked first, so the user hears the reason that applies whatever the order is.
+        if (IsGameRunning())
+        {
+            throw new InvalidOperationException(
+                "Baldur's Gate 3 is running, and rewrites modsettings.lsx when it exits, so the " +
+                "load order was not changed. Close the game and try again.");
+        }
+
+        BG3ModSettings.SetOrder(
+            modSettingsPath, entryIds, ReadInstalledMetas(modsDirectory), () => !IsGameRunning());
+
+        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -155,11 +155,17 @@ public sealed class FF7RemakeGameModule : GameModuleBase
 
         // Pad to the width the whole list needs, so filenames sort the same way numbers do.
         var width = Math.Max(3, context.EnabledModCount.ToString().Length);
-        var prefix = context.OrderIndex.ToString(
+        var prefix = context.LoadPosition.ToString(
             new string('0', width), System.Globalization.CultureInfo.InvariantCulture);
 
         return new DeployTarget(context.RootName, $"{folder}/{prefix}_{fileName}");
     }
+
+    /// <summary>
+    /// Modular keeps FF7 Remake's load order and writes it into the <c>~mods</c> pak
+    /// prefixes; the install order still decides loose files such as hooks and INIs.
+    /// </summary>
+    public override LoadOrderKind LoadOrderKind => LoadOrderKind.Managed;
 
     /// <inheritdoc />
     public override EngineOrderDescription? DescribeEngineOrder(
@@ -167,7 +173,7 @@ public sealed class FF7RemakeGameModule : GameModuleBase
         IReadOnlyList<DeployedMod> mods)
     {
         var paks = mods
-            .OrderBy(m => m.OrderIndex)
+            .OrderBy(m => m.LoadPosition)
             .SelectMany(m => m.DeployedFiles)
             .Where(f =>
                 string.Equals(f.RootName, ModRoots.Game, StringComparison.OrdinalIgnoreCase) &&

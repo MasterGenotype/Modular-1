@@ -693,11 +693,14 @@ public sealed class Deployer : IDeployer
         DeploymentResult result,
         CancellationToken ct)
     {
+        var loadOrder = plan.LoadOrder.Count == plan.ModOrder.Count ? plan.LoadOrder : plan.ModOrder;
+
         var mods = plan.ModOrder
             .Select((modId, index) => new DeployedMod
             {
                 ModId = modId,
                 OrderIndex = index,
+                LoadIndex = loadOrder.FindIndex(id => string.Equals(id, modId, StringComparison.OrdinalIgnoreCase)),
                 Enabled = true,
                 DeployedFiles = plan.Files
                     .Where(f => string.Equals(f.ModId, modId, StringComparison.OrdinalIgnoreCase))

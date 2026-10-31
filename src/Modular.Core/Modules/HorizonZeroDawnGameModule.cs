@@ -117,13 +117,21 @@ public sealed class HorizonZeroDawnGameModule : GameModuleBase
         }
 
         var width = Math.Max(3, context.EnabledModCount.ToString().Length);
-        var prefix = context.OrderIndex.ToString(
+        var prefix = context.LoadPosition.ToString(
             new string('0', width), System.Globalization.CultureInfo.InvariantCulture);
 
         var remainder = fileName["Patch_".Length..];
 
         return new DeployTarget(context.RootName, $"{folder}/Patch_{prefix}_{remainder}");
     }
+
+    /// <summary>
+    /// With order prefixing on, Modular keeps the load order and writes it into the patch
+    /// file names. With it off the authors' file names decide, so there is only the
+    /// install order.
+    /// </summary>
+    public override LoadOrderKind LoadOrderKind =>
+        _orderPrefixEnabled ? LoadOrderKind.Managed : LoadOrderKind.None;
 
     /// <inheritdoc />
     public override EngineOrderDescription? DescribeEngineOrder(

@@ -157,6 +157,9 @@ public sealed class SnapshotGameModRecord
     /// <summary>Position in the load order; later wins.</summary>
     public int OrderIndex { get; init; }
 
+    /// <summary>Position in the game's load order when captured; null for an older snapshot.</summary>
+    public int? LoadIndex { get; init; }
+
     /// <summary>Whether the mod was enabled.</summary>
     public bool Enabled { get; init; } = true;
 
@@ -298,11 +301,11 @@ public class SnapshotManager
                     INSERT INTO snapshot_game_mod
                         (snapshot_id, game_key, mod_id, module_id, installer_id, staging_path,
                          staging_hash, order_index, enabled, changeset_id, source,
-                         source_file_id, display_name)
+                         source_file_id, display_name, load_index)
                     VALUES
                         (@sid, @gameKey, @modId, @moduleId, @installerId, @stagingPath,
                          @stagingHash, @orderIndex, @enabled, @changesetId, @source,
-                         @sourceFileId, @displayName)
+                         @sourceFileId, @displayName, @loadIndex)
                     """;
                 cmd.Parameters.AddWithValue("@sid", snapshotId);
                 cmd.Parameters.AddWithValue("@gameKey", mod.GameKey);
@@ -318,6 +321,7 @@ public class SnapshotManager
                 cmd.Parameters.AddWithValue("@source", mod.Source);
                 cmd.Parameters.AddWithValue("@sourceFileId", (object?)mod.SourceFileId ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@displayName", (object?)mod.DisplayName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@loadIndex", (object?)(mod.LoadIndex ?? mod.OrderIndex) ?? DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -748,7 +752,8 @@ public class SnapshotManager
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, staging_hash,
-                   order_index, enabled, changeset_id, source, source_file_id, display_name
+                   order_index, enabled, changeset_id, source, source_file_id, display_name,
+                   load_index
             FROM snapshot_game_mod
             WHERE snapshot_id = @sid
             ORDER BY order_index, mod_id
@@ -773,7 +778,8 @@ public class SnapshotManager
                 ChangesetId = reader.IsDBNull(8) ? null : reader.GetString(8),
                 Source = reader.IsDBNull(9) ? "local" : reader.GetString(9),
                 SourceFileId = reader.IsDBNull(10) ? null : reader.GetString(10),
-                DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11)
+                DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11),
+                LoadIndex = reader.IsDBNull(12) ? null : reader.GetInt32(12)
             });
         }
 
@@ -856,6 +862,7 @@ public class SnapshotManager
                 InstallerId = d.InstallerId,
                 StagingPath = d.StagingPath,
                 OrderIndex = d.OrderIndex,
+                LoadIndex = d.LoadIndex,
                 Enabled = d.Enabled,
                 Source = d.Source,
                 SourceFileId = d.SourceFileId,

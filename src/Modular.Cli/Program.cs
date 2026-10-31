@@ -240,11 +240,18 @@ class Program
 
             config.AddBranch("order", order =>
             {
-                order.SetDescription("Inspect and set a game's load order");
+                order.SetDescription("Inspect and change a game's install order and load order");
 
                 order.AddCommand<OrderListCommand>("list")
-                    .WithDescription("Show the load order, and the engine order it maps to")
-                    .WithExample("order", "list", "--game", "1091500");
+                    .WithDescription("Show the install order and, for games that have one, the load order")
+                    .WithExample("order", "list", "--game", "1091500")
+                    .WithExample("order", "list", "--game", "1086940", "--load");
+
+                order.AddCommand<OrderMoveCommand>("move")
+                    .WithDescription("Move a mod in the install order, or with --load in the load order")
+                    .WithExample("order", "move", "\"Better Tails\"", "--game", "1086940", "--load", "--after", "\"Female Dragonborn Reshaped\"")
+                    .WithExample("order", "move", "my-mod", "--game", "1091500", "--to", "1")
+                    .WithExample("order", "move", "#12", "--game", "1091500", "--bottom");
 
                 order.AddCommand<OrderSetCommand>("set")
                     .WithDescription("Set the load order; the last mod wins")

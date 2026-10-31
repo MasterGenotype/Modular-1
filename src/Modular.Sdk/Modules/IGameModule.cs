@@ -83,13 +83,15 @@ public interface IGameModule
     /// Writes the engine's own load-order manifest, if it has one.
     /// </summary>
     /// <param name="installation">The resolved installation.</param>
-    /// <param name="mods">Deployed mods in Modular order, where later wins.</param>
+    /// <param name="mods">Deployed mods in install order, where later wins.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes when the manifest has been written.</returns>
     /// <remarks>
     /// Modular's single user-facing rule is "later in the order list wins". A module
     /// translates that into the engine's own convention here, which may mean writing
-    /// the list in reverse when the engine's first entry wins.
+    /// the list in reverse when the engine's first entry wins. The manifest follows each
+    /// mod's <see cref="DeployedMod.LoadPosition"/>, which the user can set apart from the
+    /// install order.
     /// </remarks>
     Task WriteLoadOrderAsync(
         GameInstallation installation,
@@ -114,6 +116,49 @@ public interface IGameModule
     EngineOrderDescription? DescribeEngineOrder(
         GameInstallation installation,
         IReadOnlyList<DeployedMod> mods) => null;
+
+    /// <summary>
+    /// Whether the game has a load order of its own, apart from the install order, and
+    /// who keeps it.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="LoadOrderKind.None"/> by default: the install order decides everything.
+    /// A <see cref="LoadOrderKind.Managed"/> module renders <see cref="DeployedMod.LoadPosition"/>
+    /// into the game. An <see cref="LoadOrderKind.External"/> one implements
+    /// <see cref="ReadEngineOrder"/> and <see cref="SetEngineOrderAsync"/>.
+    /// </remarks>
+    LoadOrderKind LoadOrderKind => LoadOrderKind.None;
+
+    /// <summary>
+    /// Reads the load order the game keeps itself, as it stands on disk.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="mods">The game's mods in install order, to say which entries are whose.</param>
+    /// <returns>Every entry, Modular's or not; <c>null</c> when the game keeps no such list.</returns>
+    EngineOrder? ReadEngineOrder(
+        GameInstallation installation,
+        IReadOnlyList<DeployedMod> mods) => null;
+
+    /// <summary>
+    /// Rewrites the load order the game keeps itself.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="entryIds">
+    /// Every entry's <see cref="EngineOrderEntry.Id"/>, first loaded to last. It must be a
+    /// reordering of what <see cref="ReadEngineOrder"/> returned: adding and removing
+    /// entries is deployment's job.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the order is written.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The order cannot be written as asked, such as a mod placed before one it depends on,
+    /// or the game is running. The message says why, and nothing is written.
+    /// </exception>
+    Task SetEngineOrderAsync(
+        GameInstallation installation,
+        IReadOnlyList<string> entryIds,
+        CancellationToken ct = default) =>
+        Task.FromException(new NotSupportedException("This game keeps no load order of its own."));
 
     /// <summary>
     /// Finds dependencies that mods in the game's mod folders declare but nothing satisfies.

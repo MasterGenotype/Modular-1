@@ -41,6 +41,25 @@ public sealed class GameModuleHookTests : IDisposable
     }
 
     [Fact]
+    public async Task Cyberpunk_ModListFollowsTheLoadOrder_NotTheInstallOrder()
+    {
+        // The user moved mod-a to load last; it installed first, so it still loses loose files.
+        var game = NewGameDir();
+        var module = new CyberpunkGameModule();
+
+        await module.WriteLoadOrderAsync(
+            Installation(game),
+            [
+                WithLoad(DeployedArchive("mod-a", 0, "a.archive"), 2),
+                WithLoad(DeployedArchive("mod-b", 1, "b.archive"), 0),
+                WithLoad(DeployedArchive("mod-c", 2, "c.archive"), 1)
+            ]);
+
+        ModListLines(game).Should().Equal("a.archive", "c.archive", "b.archive");
+        module.LoadOrderKind.Should().Be(LoadOrderKind.Managed);
+    }
+
+    [Fact]
     public async Task Cyberpunk_ModListIncludesUnmanagedArchivesAfterTheManagedOnes()
     {
         // A partial modlist.txt has ambiguous semantics: anything omitted is left to the
@@ -318,6 +337,18 @@ public sealed class GameModuleHookTests : IDisposable
             .Should().EndWith("001_a_P.pak");
         Map(module, "b_P.pak", order: 0, count: 2).RelativePath
             .Should().EndWith("000_b_P.pak");
+    }
+
+    [Fact]
+    public void FF7R_PrefixesFollowTheLoadOrder_WhenItIsSetApart()
+    {
+        var module = new FF7RemakeGameModule();
+
+        var target = module.MapDeployPath(new DeployPathContext(
+            ModRoots.Game, $"{FF7RemakeGameModule.PaksModsFolder}/a_P.pak", 0, 3, "mod-a", LoadIndex: 2));
+
+        target.RelativePath.Should().EndWith("002_a_P.pak");
+        module.LoadOrderKind.Should().Be(LoadOrderKind.Managed);
     }
 
     [Fact]
@@ -728,6 +759,15 @@ public sealed class GameModuleHookTests : IDisposable
         Files = gameRelativePaths
             .Select(p => new StagedFile(ModRoots.Game, p))
             .ToList()
+    };
+
+    private static DeployedMod WithLoad(DeployedMod mod, int loadIndex) => new()
+    {
+        ModId = mod.ModId,
+        OrderIndex = mod.OrderIndex,
+        LoadIndex = loadIndex,
+        Enabled = mod.Enabled,
+        DeployedFiles = mod.DeployedFiles
     };
 
     private static DeployedMod DeployedArchive(string modId, int order, string fileName) =>

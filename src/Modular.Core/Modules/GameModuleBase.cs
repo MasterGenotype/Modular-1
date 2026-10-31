@@ -150,6 +150,21 @@ public abstract class GameModuleBase : IGameModule
         IReadOnlyList<DeployedMod> mods) => null;
 
     /// <inheritdoc />
+    public virtual LoadOrderKind LoadOrderKind => LoadOrderKind.None;
+
+    /// <inheritdoc />
+    public virtual EngineOrder? ReadEngineOrder(
+        GameInstallation installation,
+        IReadOnlyList<DeployedMod> mods) => null;
+
+    /// <inheritdoc />
+    public virtual Task SetEngineOrderAsync(
+        GameInstallation installation,
+        IReadOnlyList<string> entryIds,
+        CancellationToken ct = default) =>
+        Task.FromException(new NotSupportedException("This game keeps no load order of its own."));
+
+    /// <inheritdoc />
     public virtual IReadOnlyList<UnmetDependency> FindUnmetDependencies(
         GameInstallation installation) => Array.Empty<UnmetDependency>();
 

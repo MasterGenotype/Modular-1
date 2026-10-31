@@ -345,6 +345,7 @@ sealed class Program
         // Sub-ViewModels for combined panels
         services.AddTransient<InstallViewModel>();
         services.AddTransient<InstalledModsViewModel>();
+        services.AddTransient<LoadOrderViewModel>();
         services.AddTransient<SwitchInstallViewModel>();
         services.AddTransient<TotkViewModel>();
         services.AddTransient<ProfilesViewModel>();

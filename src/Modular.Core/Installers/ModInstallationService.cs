@@ -1079,6 +1079,13 @@ public class ModInstallationService
     public DeploymentService Deployment => _deployment;
 
     /// <summary>
+    /// Reads and changes the install order and load order of this service's games.
+    /// </summary>
+    public LoadOrderService LoadOrder => _loadOrder ??= new LoadOrderService(_deployment);
+
+    private LoadOrderService? _loadOrder;
+
+    /// <summary>
     /// Deploys a game's whole ordered mod set.
     /// </summary>
     /// <param name="gameRef">AppID, slug, display name or path of the game.</param>

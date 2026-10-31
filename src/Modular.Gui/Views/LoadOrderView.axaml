@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.LoadOrderView"
+             x:DataType="vm:LoadOrderViewModel">
+
+    <Design.DataContext>
+        <vm:LoadOrderViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <Style Selector="Border.row">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Border.row.linked">
+            <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding Games}"
+                      SelectedItem="{Binding SelectedGame}"
+                      IsEnabled="{Binding !IsBusy}"
+                      MinWidth="260"
+                      ToolTip.Tip="The game whose orders to show">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LoadOrderGameOption">
+                        <TextBlock Text="{Binding DisplayName}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Column="2" Command="{Binding ApplyCommand}"
+                    IsEnabled="{Binding CanApply}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Save both orders and deploy">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                    <TextBlock Text="Apply"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="3" Command="{Binding RevertCommand}"
+                    IsEnabled="{Binding IsDirty}"
+                    Margin="0,0,8,0"
+                    ToolTip.Tip="Discard the changes not applied yet">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Undo" Width="16" Height="16"/>
+                    <TextBlock Text="Revert"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Command="{Binding RefreshCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    ToolTip.Tip="Read both orders again; the game or another tool may have changed its load order">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    <TextBlock Text="Refresh"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <TextBlock Grid.Row="1" Margin="0,0,0,8" Opacity="0.7" TextWrapping="Wrap"
+                   Text="Both lists run first to last, and the later entry wins. Drag a row, or select it and use the buttons below its list."/>
+
+        <!-- The two orders -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,16,*">
+            <!-- Install order -->
+            <DockPanel Grid.Column="0">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="Install order" FontWeight="SemiBold"/>
+                    <TextBlock Text="Which mod's file is deployed when two mods ship the same one"
+                               Opacity="0.7" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                    <Button Command="{Binding InstallTopCommand}" ToolTip.Tip="Move to the top">
+                        <mi:MaterialIcon Kind="ChevronDoubleUp" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding InstallUpCommand}" ToolTip.Tip="Move up one">
+                        <mi:MaterialIcon Kind="ChevronUp" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding InstallDownCommand}" ToolTip.Tip="Move down one">
+                        <mi:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding InstallBottomCommand}" ToolTip.Tip="Move to the bottom, where it wins">
+                        <mi:MaterialIcon Kind="ChevronDoubleDown" Width="16" Height="16"/>
+                    </Button>
+                    <TextBox Text="{Binding InstallPositionText}" Watermark="#" Width="64"/>
+                    <Button Command="{Binding InstallMoveToCommand}" Content="Move to #"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding InstallItems}"
+                         SelectedItem="{Binding SelectedInstallItem}"
+                         DragDrop.AllowDrop="True">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OrderRowModel">
+                            <Border Classes="row" Classes.linked="{Binding IsLinked}"
+                                    PointerPressed="OnRowPointerPressed">
+                                <Grid ColumnDefinitions="40,*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{Binding Position}" Opacity="0.6"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Item.Name}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Badge}" IsVisible="{Binding HasBadge}"
+                                               Opacity="0.6" Margin="8,0,0,0"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <!-- Load order -->
+            <DockPanel Grid.Column="2">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="Load order" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding RuleText}" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding HasLoadOrder}"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0"
+                            IsVisible="{Binding HasLoadOrder}">
+                    <Button Command="{Binding LoadTopCommand}" ToolTip.Tip="Move to the top">
+                        <mi:MaterialIcon Kind="ChevronDoubleUp" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding LoadUpCommand}" ToolTip.Tip="Move up one">
+                        <mi:MaterialIcon Kind="ChevronUp" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding LoadDownCommand}" ToolTip.Tip="Move down one">
+                        <mi:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding LoadBottomCommand}" ToolTip.Tip="Move to the bottom, where it wins">
+                        <mi:MaterialIcon Kind="ChevronDoubleDown" Width="16" Height="16"/>
+                    </Button>
+                    <TextBox Text="{Binding LoadPositionText}" Watermark="#" Width="64"/>
+                    <Button Command="{Binding LoadMoveToCommand}" Content="Move to #"/>
+                </StackPanel>
+                <Panel>
+                    <ListBox ItemsSource="{Binding LoadItems}"
+                             SelectedItem="{Binding SelectedLoadItem}"
+                             IsVisible="{Binding HasLoadOrder}"
+                             DragDrop.AllowDrop="True">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:OrderRowModel">
+                                <Border Classes="row" Classes.linked="{Binding IsLinked}"
+                                        PointerPressed="OnRowPointerPressed">
+                                    <Grid ColumnDefinitions="40,*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding Position}" Opacity="0.6"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Item.Name}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Badge}" IsVisible="{Binding HasBadge}"
+                                                   Opacity="0.6" Margin="8,0,0,0"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="{Binding SingleOrderNote}" IsVisible="{Binding !HasLoadOrder}"
+                               TextWrapping="Wrap" Opacity="0.7" Margin="0,8,0,0"/>
+                </Panel>
+            </DockPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Opacity="0.7" Margin="0,8,0,0" TextWrapping="Wrap"/>
+    </Grid>
+</UserControl>

@@ -71,6 +71,18 @@ public sealed class DeploymentPlanner
         // First versions of generated files, later mods winning.
         var seeds = new Dictionary<DeployKey, PlannedFile>();
 
+        // Each mod's place in the game's load order, numbered 0..n like the install order,
+        // so a module can encode it the same way. Ties keep the install order.
+        var loadOrder = mods
+            .Select((m, i) => (Mod: m, Index: i))
+            .OrderBy(x => x.Mod.LoadIndex ?? x.Mod.OrderIndex)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Mod.ModId)
+            .ToList();
+        var loadRank = loadOrder
+            .Select((id, rank) => (id, rank))
+            .ToDictionary(x => x.id, x => x.rank, StringComparer.OrdinalIgnoreCase);
+
         foreach (var mod in mods)
         {
             foreach (var staged in mod.Files)
@@ -85,7 +97,8 @@ public sealed class DeploymentPlanner
                     Path.Combine(
                         mod.StagingPath,
                         staged.RootName,
-                        staged.RelativePath.Replace('/', Path.DirectorySeparatorChar))));
+                        staged.RelativePath.Replace('/', Path.DirectorySeparatorChar)),
+                    loadRank[mod.ModId]));
 
                 var rootName = string.IsNullOrEmpty(target.RootName)
                     ? staged.RootName
@@ -170,6 +183,7 @@ public sealed class DeploymentPlanner
         plan.Seeds.AddRange(seeds.Values);
         plan.ConflictIndex = conflictIndex;
         plan.ModOrder = mods.Select(m => m.ModId).ToList();
+        plan.LoadOrder = loadOrder;
 
         foreach (var (name, path) in modPaths.Roots)
             plan.Roots[name] = path;
@@ -353,13 +367,18 @@ public sealed class DeploymentPlanner
 /// </summary>
 /// <param name="ModId">Mod identifier.</param>
 /// <param name="StagingPath">Root of the mod's staging tree.</param>
-/// <param name="OrderIndex">Position in the load order; later wins.</param>
+/// <param name="OrderIndex">Position in the install order; later wins a shared file.</param>
 /// <param name="Files">Normalised staged files.</param>
+/// <param name="LoadIndex">
+/// Position in the game's load order, when it is kept apart from the install order; later
+/// wins. Null means the same as <paramref name="OrderIndex"/>.
+/// </param>
 public readonly record struct DeploymentModInput(
     string ModId,
     string StagingPath,
     int OrderIndex,
-    IReadOnlyList<StagedFile> Files);
+    IReadOnlyList<StagedFile> Files,
+    int? LoadIndex = null);
 
 /// <summary>Root and root-relative path, compared case-insensitively.</summary>
 /// <param name="Root">Root name.</param>
@@ -432,8 +451,14 @@ public sealed class DeploymentPlan
     /// <summary>Resolved named roots at plan time.</summary>
     public Dictionary<string, string> Roots { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Mod ids in load order.</summary>
+    /// <summary>Mod ids in install order; the last wins a shared file.</summary>
     public List<string> ModOrder { get; set; } = new();
+
+    /// <summary>
+    /// Mod ids in the game's load order; the last wins. The same as <see cref="ModOrder"/>
+    /// unless the user set the load order apart.
+    /// </summary>
+    public List<string> LoadOrder { get; set; } = new();
 
     /// <summary>Overlaps expressed as the shared conflict index.</summary>
     public FileConflictIndex ConflictIndex { get; set; } = new();

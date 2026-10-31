@@ -229,6 +229,12 @@ public sealed class CyberpunkGameModule : GameModuleBase
         await File.WriteAllLinesAsync(manifestPath, lines, ct);
     }
 
+    /// <summary>
+    /// Modular keeps Cyberpunk's load order: <c>modlist.txt</c> and the REDmod deploy
+    /// order follow it, while the install order still decides loose files such as scripts.
+    /// </summary>
+    public override LoadOrderKind LoadOrderKind => LoadOrderKind.Managed;
+
     /// <inheritdoc />
     public override EngineOrderDescription? DescribeEngineOrder(
         GameInstallation installation,
@@ -620,9 +626,10 @@ public sealed class CyberpunkGameModule : GameModuleBase
     /// <returns>Filenames, highest engine priority first.</returns>
     private static List<string> ManagedArchiveNames(IReadOnlyList<DeployedMod> mods) =>
         mods
-            // Reverse: Modular's last mod wins, and for legacy archives that means it must
-            // be loaded first.
-            .OrderByDescending(m => m.OrderIndex)
+            // Reverse: the last mod in the load order wins, and for legacy archives that
+            // means it must be loaded first.
+            .OrderByDescending(m => m.LoadPosition)
+            .ThenByDescending(m => m.OrderIndex)
             .SelectMany(m => m.DeployedFiles)
             .Where(f =>
                 string.Equals(f.RootName, ModRoots.Game, StringComparison.OrdinalIgnoreCase) &&
@@ -636,13 +643,14 @@ public sealed class CyberpunkGameModule : GameModuleBase
             .ToList();
 
     /// <summary>
-    /// The REDmod folder names a deployment contains, in Modular order.
+    /// The REDmod folder names a deployment contains, in load order.
     /// </summary>
     /// <param name="mods">Deployed mods.</param>
     /// <returns>REDmod names for <c>redMod.exe deploy -mod=</c> arguments.</returns>
     private static List<string> RedModNames(IReadOnlyList<DeployedMod> mods) =>
         mods
-            .OrderBy(m => m.OrderIndex)
+            .OrderBy(m => m.LoadPosition)
+            .ThenBy(m => m.OrderIndex)
             .SelectMany(m => m.DeployedFiles)
             .Where(f =>
                 string.Equals(f.RootName, ModRoots.Game, StringComparison.OrdinalIgnoreCase) &&
