@@ -168,6 +168,11 @@ public sealed class MissingDependencyService
     private static readonly Regex OptionalNote = new(
         @"^\W*optional\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // The mod id an install was made with, when it is a NexusMods one: "16325", or
+    // "16325-eotb" for one of that mod's files installed on its own.
+    private static readonly Regex InstalledNexusId = new(
+        @"^(?<id>\d+)(?:-[A-Za-z0-9][\w-]*)?$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private readonly IReadOnlyList<IModBackend> _backends;
     private readonly Func<ChangesetRecord, CancellationToken, Task<(GameInstallation Installation, IGameModule Module)?>> _resolveGame;
     private readonly string? _modsDirectory;
@@ -633,7 +638,10 @@ public sealed class MissingDependencyService
         (GameInstallation Installation, IGameModule Module)? game,
         out DeclaredSource source)
     {
-        source = declared.Source!;
+        // The archive's own records come first. An archive kept in the archive store has
+        // none beside it, and a bare .pak has no id in its name, so the id the mod was
+        // installed with stands in.
+        source = declared.Source ?? SourceFromInstall(record, _modsDirectory)!;
         if (source == null)
             return false;
 
@@ -650,6 +658,23 @@ public sealed class MissingDependencyService
 
         source = source with { GameDomain = domain };
         return true;
+    }
+
+    // Other hubs number their mods too, so an archive filed under another hub's folder of
+    // the mods directory is never taken for a NexusMods one.
+    private static DeclaredSource? SourceFromInstall(ChangesetRecord record, string? modsDirectory)
+    {
+        if (record.ModId == null || InstalledNexusId.Match(record.ModId) is not { Success: true } match)
+            return null;
+
+        if (ModLibraryLayout.Locate(modsDirectory, record.ArchivePath) is { } location &&
+            !string.Equals(location.BackendId, BackendIds.NexusMods, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var id = match.Groups["id"].Value.TrimStart('0');
+        return id.Length > 0 ? new DeclaredSource(BackendIds.NexusMods, id) : null;
     }
 
     // Lists a game's downloaded archives by the hub mod each came from, newest first. The

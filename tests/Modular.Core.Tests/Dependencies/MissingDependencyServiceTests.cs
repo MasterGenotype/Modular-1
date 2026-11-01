@@ -34,6 +34,8 @@ public sealed class MissingDependencyServiceTests
     [InlineData("Special - Savage Resilience-556-11-2-1733684094.zip", "556")]
     [InlineData("/dl/NSFW Loading Screens 2.0-13743-2-0-0-1731574831.rar", "13743")]
     [InlineData("Durge's mangled head - Dark Urge Dragonborn CC-9702-1-0-0-16-1774555674.zip", "9702")]
+    [InlineData("KAVT - Kazstra's Virtual Tav 16325 2.0 2026-10-31T23-05Z rxn6oH0JD.zip", "16325")]
+    [InlineData("Baldur's Gate 3 Script Extender 2172 v33-20261012 2026-10-12T21-52Z Sl3HiX1Qr.zip", "2172")]
     [InlineData("just-a-mod.zip", null)]
     [InlineData("mod-v1-2.zip", null)]
     [InlineData(null, null)]
@@ -83,6 +85,55 @@ public sealed class MissingDependencyServiceTests
 
         report.Items.Should().BeEmpty();
         backend.RequestedIds.Should().Equal("9702");
+    }
+
+    /// <summary>
+    /// The bug this guards: KAVT and SBBF installed from the archive store, one under
+    /// NexusMods' newer download name and one as a bare .pak, were reported missing
+    /// although both were installed with their mod ids.
+    /// </summary>
+    [Theory]
+    [InlineData("4864", "/mods/.archives/1086940/SBBFStylizedBeautifulBodyFemale.pak")]
+    [InlineData("4864-kavt", "/mods/.archives/1086940/SBBFForKAVT.pak")]
+    [InlineData("SBBF", "/mods/.archives/1086940/SBBF 4864 1.4 2026-10-31T23-05Z rxn6oH0JD.zip")]
+    public async Task ARequirementInstalledWithItsModId_IsNotMissing_WhateverTheArchiveIsCalled(
+        string modId, string archive)
+    {
+        var backend = new FakeBackend();
+        backend.Requirements["9702"] = [new ModRequirement { ModId = "4864", Name = "SBBF" }];
+        var sbbf = Installed("SBBF", archive);
+        sbbf.ModId = modId;
+
+        var report = await Service(backend).FindAsync([Durge], [Durge, sbbf]);
+
+        report.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AnotherHubsNumberedMod_IsNotTakenForANexusModsOne()
+    {
+        var mods = Directory.CreateTempSubdirectory("modular-deps").FullName;
+        try
+        {
+            var backend = new FakeBackend();
+            backend.Requirements["9702"] = [new ModRequirement { ModId = "4864", Name = "SBBF" }];
+            var other = Installed("Other", Path.Combine(mods, "gamebanana", Domain, "Other", "other.zip"));
+            other.ModId = "4864";
+
+            var installation = new GameInstallation { GameId = Domain, SteamAppId = 1086940, InstallPath = GameDir };
+            var service = new MissingDependencyService(
+                [backend],
+                (_, _) => Task.FromResult<(GameInstallation, IGameModule)?>((installation, new FakeModule())),
+                mods);
+
+            var report = await service.FindAsync([Durge], [Durge, other]);
+
+            report.Items.Should().ContainSingle().Which.ModId.Should().Be("4864");
+        }
+        finally
+        {
+            Directory.Delete(mods, recursive: true);
+        }
     }
 
     [Fact]
