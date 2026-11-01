@@ -79,9 +79,6 @@ public sealed class LibraryModUpdate
 /// </remarks>
 public static class LibraryUpdates
 {
-    private static readonly string[] SidecarSuffixes =
-        [DependencyConventions.DownloadRecordSuffix, DependencyConventions.ModOrganizerSuffix, ".part", ".part.json"];
-
     /// <summary>
     /// Identifies the mods in <paramref name="modFolders"/>.
     /// </summary>
@@ -102,7 +99,7 @@ public static class LibraryUpdates
 
             var location = ModLibraryLayout.Locate(modsRoot, folder);
             var found = Directory.EnumerateFiles(folder)
-                .Where(f => !SidecarSuffixes.Any(s => f.EndsWith(s, StringComparison.OrdinalIgnoreCase)))
+                .Where(f => !ModLibraryFiles.IsSidecar(f))
                 .Select(f => (Path: f, Source: SourceOf(f, location?.BackendId)))
                 .Where(f => f.Source != null)
                 .GroupBy(f => (f.Source!.BackendId.ToLowerInvariant(), f.Source.ModId))

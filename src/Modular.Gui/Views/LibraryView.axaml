@@ -36,10 +36,21 @@
             <!-- Library tree: backend / game / mod, as the folders are laid out -->
             <Border Classes="card" Grid.Column="0" Padding="10" Margin="0,0,10,0">
                 <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,10">
                         <TextBlock Grid.Column="0" Text="Mods directory" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <!-- Covers the selected mod, or every mod in the selected folder -->
+                        <!-- Sends the selected mods, or every mod in the selected folders; Ctrl/Shift select several -->
                         <Button Grid.Column="1"
+                                Command="{Binding SendToInstallerCommand}"
+                                ToolTip.Tip="{Binding SendToInstallerTip}"
+                                ToolTip.ShowOnDisabled="True"
+                                Padding="6,4" Margin="0,0,6,0">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <mi:MaterialIcon Kind="PackageDown" Width="14" Height="14"/>
+                                <TextBlock Text="Send to installer" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+                        <!-- Covers the selected mod, or every mod in the selected folder -->
+                        <Button Grid.Column="2"
                                 Command="{Binding CheckForUpdatesCommand}"
                                 ToolTip.Tip="{Binding UpdateCheckTip}"
                                 ToolTip.ShowOnDisabled="True"
@@ -49,7 +60,7 @@
                                 <TextBlock Text="Check updates" FontSize="12"/>
                             </StackPanel>
                         </Button>
-                        <Button Grid.Column="2"
+                        <Button Grid.Column="3"
                                 Command="{Binding ReorganizeModsCommand}"
                                 IsEnabled="{Binding !IsReorganizing}"
                                 ToolTip.Tip="Move downloads into &lt;backend&gt;/&lt;game&gt;/&lt;mod&gt; folders and rename NexusMods mod folders after the mod"
@@ -62,6 +73,8 @@
                     </Grid>
                     <TreeView ItemsSource="{Binding LibraryTree}"
                               SelectedItem="{Binding SelectedNode}"
+                              SelectionMode="Multiple"
+                              SelectionChanged="OnTreeSelectionChanged"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <TreeView.Styles>
                             <Style Selector="TreeViewItem" x:DataType="vm:LibraryNode">

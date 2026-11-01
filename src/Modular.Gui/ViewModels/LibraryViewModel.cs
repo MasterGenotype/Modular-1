@@ -46,7 +46,26 @@ public partial class LibraryViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
     [NotifyPropertyChangedFor(nameof(UpdateCheckTip))]
+    [NotifyCanExecuteChangedFor(nameof(SendToInstallerCommand))]
+    [NotifyPropertyChangedFor(nameof(SendToInstallerTip))]
     private LibraryNode? _selectedNode;
+
+    /// <summary>
+    /// Every node selected in the tree; the tree selects several with Ctrl and Shift.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SendToInstallerCommand))]
+    [NotifyPropertyChangedFor(nameof(SendToInstallerTip))]
+    private IReadOnlyList<LibraryNode> _selectedNodes = [];
+
+    /// <summary>What "Send to installer" would send, for its tooltip.</summary>
+    public string SendToInstallerTip => SendTargets() switch
+    {
+        [] => "Select mods or a folder to send their downloads to the installer",
+        [{ IsMod: true } node] => $"Send the downloads of {node.Name} to the installer",
+        [var node] => $"Send the downloads of every mod in {node.Name} to the installer",
+        var nodes => $"Send the downloads of the {nodes.Count} selected items to the installer"
+    };
 
     /// <summary>Whether an update check is running.</summary>
     [ObservableProperty]
@@ -78,6 +97,7 @@ public partial class LibraryViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SendToInstallerCommand))]
     private bool _isReorganizing;
 
     [ObservableProperty]
@@ -405,6 +425,61 @@ public partial class LibraryViewModel : ViewModelBase
         }
     }
 
+    // The selected nodes, or the one node when the tree reports no multiple selection.
+    private IReadOnlyList<LibraryNode> SendTargets() =>
+        SelectedNodes.Count > 0 ? SelectedNodes : SelectedNode != null ? [SelectedNode] : [];
+
+    private bool CanSendToInstaller() => SendTargets().Count > 0 && !IsReorganizing;
+
+    /// <summary>
+    /// Hands the downloads of the selected mods, and of every mod in the selected backend,
+    /// game or category folders, to the installer and shows it.
+    /// </summary>
+    /// <remarks>
+    /// The installer asks which files to install and, where a mod has several downloads,
+    /// which of them; nothing is installed from here. Mods of more than one game are sent
+    /// only once the user agrees, since the installer installs into one game at a time.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanSendToInstaller))]
+    private async Task SendToInstallerAsync()
+    {
+        var nodes = SendTargets();
+        if (nodes.Count == 0)
+            return;
+
+        // A mod selected along with its folder is sent once.
+        var mods = nodes.SelectMany(ModNodesUnder).DistinctBy(n => n.Mod!.Path, StringComparer.Ordinal).ToList();
+        var what = nodes.Count == 1 ? nodes[0].Name : $"the {nodes.Count} selected items";
+
+        var files = await Task.Run(() => mods.SelectMany(m => ModLibraryFiles.Downloads(m.Mod!.Path)).ToList());
+        if (files.Count == 0)
+        {
+            StatusMessage = mods.Count == 0
+                ? $"There are no mods in {what}"
+                : $"There are no downloads in {what}";
+            return;
+        }
+
+        // One game downloaded from two hubs has one folder name in both.
+        var games = mods
+            .Select(m => m.Game?.Name)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (games.Count > 1 && _dialogService != null &&
+            !await _dialogService.ShowConfirmationAsync(
+                "Send to installer",
+                $"The {mods.Count} mods are for {games.Count} games ({string.Join(", ", games)}). " +
+                "The installer installs into one game at a time, so pick the files for one game there. Send them anyway?"))
+        {
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new SendToInstallerMessage(files));
+        StatusMessage = $"Sent {files.Count} download(s) of {mods.Count} mod(s) in {what} to the installer";
+    }
+
     // "Mod: File 1.2 (main, 2026-10-20)".
     private static string Describe(LibraryMod mod, BackendModFile file)
     {
@@ -421,9 +496,12 @@ public partial class LibraryViewModel : ViewModelBase
 
     // The mods a node stands for: itself, or every mod folder beneath it.
     private static IEnumerable<ModFolderItem> ModsUnder(LibraryNode node) =>
+        ModNodesUnder(node).Select(n => n.Mod!);
+
+    private static IEnumerable<LibraryNode> ModNodesUnder(LibraryNode node) =>
         node.Mod != null
-            ? [node.Mod]
-            : node.Children.SelectMany(ModsUnder);
+            ? [node]
+            : node.Children.SelectMany(ModNodesUnder);
 
     // Backends in the order the mods directory lists them; anything else after.
     private static int BackendOrder(string backendId)
@@ -752,6 +830,7 @@ public partial class LibraryViewModel : ViewModelBase
         FileTree.Clear();
         ClearModMetadata();
         SelectedNode = null;
+        SelectedNodes = [];
         SelectedDomain = null;
         SelectedMod = null;
     }
