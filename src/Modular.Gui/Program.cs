@@ -319,6 +319,7 @@ sealed class Program
 
         // GUI services - use pre-loaded instance
         services.AddSingleton<IDialogService, DialogService>();
+        services.AddSingleton<TrackingCoordinator>();
         services.AddSingleton(_downloadHistory!);
         services.AddSingleton(sp =>
         {

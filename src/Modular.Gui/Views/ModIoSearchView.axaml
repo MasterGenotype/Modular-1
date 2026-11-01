@@ -151,19 +151,32 @@
                 <Run Text=" results found"/>
             </TextBlock>
 
-            <Button Grid.Column="1"
-                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
-                    IsEnabled="{Binding SelectedCount}"
-                    Classes="accent" Padding="14,7">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
-                    <TextBlock VerticalAlignment="Center">
-                        <Run Text="Download Selected ("/>
-                        <Run Text="{Binding SelectedCount}"/>
-                        <Run Text=")"/>
-                    </TextBlock>
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                <Button Command="{Binding SubscribeSelectedCommand}"
+                        IsEnabled="{Binding SelectedCount}"
+                        ToolTip.Tip="Subscribe on mod.io. For Baldur's Gate 3 the game downloads the mods itself on its next launch" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="BellPlusOutline" Width="18" Height="18"/>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="Subscribe Selected ("/>
+                            <Run Text="{Binding SelectedCount}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
+                        IsEnabled="{Binding SelectedCount}"
+                        Classes="accent" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="Download Selected ("/>
+                            <Run Text="{Binding SelectedCount}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

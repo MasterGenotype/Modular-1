@@ -89,6 +89,7 @@
                             <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="150" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Game" Binding="{Binding GameDomain}" Width="80" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="In game" Binding="{Binding InGameState}" Width="170" IsReadOnly="True"/>
                             <DataGridTextColumn Header="ID" Binding="{Binding ModId}" Width="90" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -104,6 +105,18 @@
             </TextBlock>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                <Button Command="{Binding UnsubscribeSelectedCommand}"
+                        IsEnabled="{Binding SelectedCount}"
+                        ToolTip.Tip="Unsubscribe on mod.io. For Baldur's Gate 3 the game's copy and its load-order entry are removed too" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="BellRemoveOutline" Width="18" Height="18"/>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="Unsubscribe Selected ("/>
+                            <Run Text="{Binding SelectedCount}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
                 <Button Classes="accent" IsEnabled="{Binding IsConfigured}"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="5">

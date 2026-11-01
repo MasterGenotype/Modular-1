@@ -311,19 +311,32 @@
             </StackPanel>
 
             <!-- Download Selected button -->
-            <Button Grid.Column="2"
-                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
-                    IsEnabled="{Binding SelectedCount}"
-                    Classes="accent" Padding="14,7">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
-                    <TextBlock VerticalAlignment="Center">
-                        <Run Text="Download Selected ("/>
-                        <Run Text="{Binding SelectedCount}"/>
-                        <Run Text=")"/>
-                    </TextBlock>
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                <Button Command="{Binding TrackSelectedCommand}"
+                        IsEnabled="{Binding SelectedCount}"
+                        ToolTip.Tip="Add the selected mods to your NexusMods tracked list" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="EyePlusOutline" Width="18" Height="18"/>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="Track Selected ("/>
+                            <Run Text="{Binding SelectedCount}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}"
+                        IsEnabled="{Binding SelectedCount}"
+                        Classes="accent" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="Download" Width="18" Height="18"/>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="Download Selected ("/>
+                            <Run Text="{Binding SelectedCount}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

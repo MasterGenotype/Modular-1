@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Modular.Core.Backends.ModIo;
+using Modular.Core.InGame;
 using Modular.Core.Utilities;
 using Modular.Gui.Models;
 using Modular.Gui.Services;
@@ -16,6 +17,7 @@ public partial class ModIoViewModel : ViewModelBase
 {
     private readonly ModIoBackend? _backend;
     private readonly IDialogService? _dialogService;
+    private readonly TrackingCoordinator? _tracking;
 
     [ObservableProperty]
     private ObservableCollection<ModDisplayModel> _mods = new();
@@ -67,10 +69,11 @@ public partial class ModIoViewModel : ViewModelBase
     }
 
     // DI constructor
-    public ModIoViewModel(ModIoBackend backend, IDialogService dialogService)
+    public ModIoViewModel(ModIoBackend backend, IDialogService dialogService, TrackingCoordinator tracking)
     {
         _backend = backend;
         _dialogService = dialogService;
+        _tracking = tracking;
 
         CheckConfiguration();
     }
@@ -135,6 +138,8 @@ public partial class ModIoViewModel : ViewModelBase
                 ? "No subscribed mods found"
                 : $"Found {TotalMods} subscribed mod(s)";
             OnPropertyChanged(nameof(FilteredMods));
+
+            await ShowInGameStatesAsync();
         }
         catch (Exception ex)
         {
@@ -146,6 +151,47 @@ public partial class ModIoViewModel : ViewModelBase
         {
             IsLoading = false;
         }
+    }
+
+    // Baldur's Gate 3 downloads its subscriptions itself; show what it has done with each.
+    private async Task ShowInGameStatesAsync()
+    {
+        var bg3 = Mods.Where(m => m.GameDomain == BG3InGameModManager.ModIoGameId).ToList();
+        if (_tracking == null || bg3.Count == 0)
+            return;
+
+        try
+        {
+            var states = await _tracking.SyncBaldursGate3Async(bg3.ToDictionary(m => m.ModId, m => m.Name));
+            foreach (var mod in bg3)
+                mod.InGameState = states.GetValueOrDefault(mod.ModId);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage += $" (could not check the game: {ex.Message})";
+        }
+    }
+
+    [RelayCommand]
+    private async Task UnsubscribeSelectedAsync()
+    {
+        if (_backend == null || _tracking == null)
+            return;
+
+        var selected = GetSelectedMods().Select(m => (m.ModId, (string?)m.GameDomain)).ToList();
+        IsLoading = true;
+        try
+        {
+            StatusMessage = await _tracking.ApplyAsync(_backend, selected, track: false);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+
+        var status = StatusMessage;
+        await RefreshModsAsync();
+        StatusMessage = status;
     }
 
     [RelayCommand]

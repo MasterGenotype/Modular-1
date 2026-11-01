@@ -19,6 +19,7 @@ public partial class ModIoSearchViewModel : ViewModelBase
     private const int PageSize = 50;
 
     private readonly ModIoBackend? _backend;
+    private readonly Services.TrackingCoordinator? _tracking;
     private System.Threading.Timer? _debounceTimer;
 
     [ObservableProperty]
@@ -57,9 +58,10 @@ public partial class ModIoSearchViewModel : ViewModelBase
     }
 
     // DI constructor
-    public ModIoSearchViewModel(ModIoBackend backend, AppSettings settings)
+    public ModIoSearchViewModel(ModIoBackend backend, AppSettings settings, Services.TrackingCoordinator tracking)
     {
         _backend = backend;
+        _tracking = tracking;
         Game = new GamePickerViewModel(
             (name, ct) => backend.SearchGamesAsync(name, ct: ct),
             settings.ModIoGameIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
@@ -157,6 +159,24 @@ public partial class ModIoSearchViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusMessage = $"Search failed: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SubscribeSelectedAsync()
+    {
+        if (_backend == null || _tracking == null)
+            return;
+
+        var selected = GetSelectedMods().Select(m => (m.ModId, (string?)m.GameDomain)).ToList();
+        IsLoading = true;
+        try
+        {
+            StatusMessage = await _tracking.ApplyAsync(_backend, selected, track: true);
         }
         finally
         {

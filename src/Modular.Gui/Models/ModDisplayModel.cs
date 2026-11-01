@@ -38,6 +38,13 @@ public partial class ModDisplayModel : ObservableObject
     private bool _isLoadingThumbnail;
 
     /// <summary>
+    /// Where a Baldur's Gate 3 mod.io subscription stands in the game: in game, waiting for
+    /// the game's download, updated by the game. Empty for other mods.
+    /// </summary>
+    [ObservableProperty]
+    private string? _inGameState;
+
+    /// <summary>
     /// The underlying mod data from the backend.
     /// </summary>
     public BackendMod Mod { get; }

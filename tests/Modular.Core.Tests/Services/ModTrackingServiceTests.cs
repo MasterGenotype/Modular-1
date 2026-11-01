@@ -47,6 +47,17 @@ public sealed class ModTrackingServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_TakesTheGameFromANexusLink()
+    {
+        var backend = new FakeTracking(_ => new TrackResult(TrackOutcome.Tracked));
+
+        await new ModTrackingService().ApplyAsync(
+            backend, ["https://www.nexusmods.com/baldursgate3/mods/141"], gameDomain: null, track: true);
+
+        backend.Games.Should().Equal("baldursgate3");
+    }
+
+    [Fact]
     public async Task ApplyAsync_SkipsWhatBeforeRefuses()
     {
         var backend = new FakeTracking(_ => new TrackResult(TrackOutcome.Tracked));
@@ -73,6 +84,7 @@ public sealed class ModTrackingServiceTests
     private sealed class FakeTracking(Func<string, TrackResult> answer) : IModBackend, ITrackingBackend
     {
         public List<string> Calls { get; } = [];
+        public List<string?> Games { get; } = [];
         public string Id => BackendIds.NexusMods;
         public string DisplayName => "Fake";
         public BackendCapabilities Capabilities => BackendCapabilities.Tracking;
@@ -81,6 +93,7 @@ public sealed class ModTrackingServiceTests
         public Task<TrackResult> TrackAsync(string modId, string? gameDomain = null, CancellationToken ct = default)
         {
             Calls.Add(modId);
+            Games.Add(gameDomain);
             return Task.FromResult(answer(modId));
         }
 

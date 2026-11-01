@@ -732,6 +732,15 @@ if (backend.Capabilities.HasFlag(BackendCapabilities.GameDomains))
 }
 ```
 
+### Tracking: changing the user's list
+
+A backend whose user list can be changed implements `ITrackingBackend`
+(`src/Modular.Sdk/Backends/ITrackingBackend.cs`) and declares `BackendCapabilities.Tracking`.
+`TrackAsync` / `UntrackAsync` return a `TrackOutcome`; repeats are outcomes
+(`AlreadyTracked`, `NotTracked`), not errors. Refusals throw `TrackingException` with a
+`TrackingFailure` the CLI and GUI act on without knowing the backend. `ModTrackingService`
+(`src/Modular.Core/Services/`) runs batches for both front ends and parses ids and page links.
+
 ### Download URL resolution differences
 
 NexusMods requires a separate API call to get download URLs. GameBanana provides them inline. The `IModBackend` interface handles this via two patterns:

@@ -116,7 +116,7 @@ public sealed partial class ModTrackingService
             string? modId = null;
             try
             {
-                modId = await ResolveAsync(backend, input, gameDomain, ct);
+                (modId, var game) = await ResolveAsync(backend, input, gameDomain, ct);
                 if (before != null && !await before(modId, ct))
                 {
                     item = new TrackingItemResult(input, modId, null, TrackingFailure.Other, "skipped");
@@ -124,8 +124,8 @@ public sealed partial class ModTrackingService
                 else
                 {
                     var result = track
-                        ? await tracking.TrackAsync(modId, gameDomain, ct)
-                        : await tracking.UntrackAsync(modId, gameDomain, ct);
+                        ? await tracking.TrackAsync(modId, game, ct)
+                        : await tracking.UntrackAsync(modId, game, ct);
                     item = new TrackingItemResult(input, modId, result);
                 }
             }
@@ -153,8 +153,9 @@ public sealed partial class ModTrackingService
         return results;
     }
 
-    // The mod id behind an input, looking up a mod.io page name.
-    private static async Task<string> ResolveAsync(
+    // The mod id behind an input, looking up a mod.io page name, and the game: the one
+    // given, else the one a NexusMods link names.
+    private static async Task<(string ModId, string? GameDomain)> ResolveAsync(
         IModBackend backend, string input, string? gameDomain, CancellationToken ct)
     {
         var reference = Parse(input);
@@ -172,13 +173,14 @@ public sealed partial class ModTrackingService
         }
 
         if (!reference.IsPageName)
-            return reference.ModId;
+            return (reference.ModId, gameDomain ?? reference.GameDomain);
 
         if (backend is not ModIoBackend modIo)
             throw new ArgumentException($"'{input}' cannot be looked up on {backend.DisplayName}.");
 
-        return await modIo.FindModIdAsync(reference.ModId, gameDomain, ct)
+        var modId = await modIo.FindModIdAsync(reference.ModId, gameDomain, ct)
             ?? throw new ArgumentException($"No mod.io mod '{reference.ModId}' in the configured games.");
+        return (modId, gameDomain);
     }
 
     [GeneratedRegex(@"^(?:https?://)?(?:www\.)?nexusmods\.com/(?<game>[a-z0-9]+)/mods/(?<id>\d+)", RegexOptions.IgnoreCase)]

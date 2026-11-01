@@ -22,6 +22,7 @@ public partial class NexusSearchViewModel : ViewModelBase
 
     // Persistent queue: selected mods survive page changes
     private readonly Dictionary<string, ModDisplayModel> _selectedQueue = new();
+    private readonly TrackingCoordinator? _tracking;
 
     [ObservableProperty]
     private string _searchText = string.Empty;
@@ -213,9 +214,10 @@ public partial class NexusSearchViewModel : ViewModelBase
     }
 
     // DI constructor
-    public NexusSearchViewModel(NexusModsBackend nexusBackend, ThumbnailService thumbnailService)
+    public NexusSearchViewModel(NexusModsBackend nexusBackend, ThumbnailService thumbnailService, TrackingCoordinator tracking)
     {
         _nexusBackend = nexusBackend;
+        _tracking = tracking;
         _thumbnailService = thumbnailService;
         _ = LoadAvailableGamesAsync();
     }
@@ -387,6 +389,16 @@ public partial class NexusSearchViewModel : ViewModelBase
         if (CurrentPage <= 1) return;
         CurrentPage--;
         await SearchNexusModsAsync();
+    }
+
+    [RelayCommand]
+    private async Task TrackSelectedAsync()
+    {
+        if (_nexusBackend == null || _tracking == null)
+            return;
+
+        var selected = _selectedQueue.Values.Select(m => (m.ModId, (string?)m.GameDomain)).ToList();
+        StatusMessage = await _tracking.ApplyAsync(_nexusBackend, selected, track: true);
     }
 
     [RelayCommand]

@@ -21,6 +21,7 @@ public partial class ModListViewModel : ViewModelBase
     private readonly DownloadDatabase? _database;
     private readonly AppSettings? _settings;
     private readonly IDialogService? _dialogService;
+    private readonly TrackingCoordinator? _tracking;
 
     [ObservableProperty]
     private ObservableCollection<ModDisplayModel> _mods = new();
@@ -81,9 +82,11 @@ public partial class ModListViewModel : ViewModelBase
         NexusModsBackend backend,
         DownloadDatabase database,
         AppSettings settings,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        TrackingCoordinator tracking)
     {
         _backend = backend;
+        _tracking = tracking;
         _database = database;
         _settings = settings;
         _dialogService = dialogService;
@@ -193,6 +196,24 @@ public partial class ModListViewModel : ViewModelBase
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand]
+    private async Task UntrackSelectedAsync()
+    {
+        if (_backend == null || _tracking == null)
+            return;
+
+        var selected = Mods.Where(m => m.IsSelected).Select(m => (m.ModId, (string?)m.GameDomain)).ToList();
+        if (selected.Count > 1 && _dialogService != null &&
+            !await _dialogService.ShowConfirmationAsync("Untrack", $"Untrack {selected.Count} mods on NexusMods?"))
+        {
+            return;
+        }
+
+        var status = await _tracking.ApplyAsync(_backend, selected, track: false);
+        await RefreshModsAsync();
+        StatusMessage = status;
     }
 
     [RelayCommand]

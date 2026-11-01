@@ -965,6 +965,14 @@ modular download --all
 modular search SKSE64 --game skyrimspecialedition
 modular search "armor retexture" --sort downloads --limit 10
 
+# Track and untrack mods (NexusMods tracked list, mod.io subscriptions)
+modular track 1933 --game baldursgate3
+modular track https://www.nexusmods.com/baldursgate3/mods/1933
+modular untrack 1933 --game baldursgate3
+modular tracked --game baldursgate3
+modular track --backend modio 4345659        # BG3: handed to the game's own mod manager
+modular sync                                 # BG3: record what the game downloaded
+
 # Browse discovery feeds
 modular browse trending --game skyrimspecialedition
 modular browse latest --game stardewvalley

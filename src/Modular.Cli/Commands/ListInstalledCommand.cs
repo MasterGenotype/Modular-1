@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Modular.Cli.Infrastructure;
 using Modular.Core.Database;
+using Modular.Core.InGame;
 using Modular.Core.Installers;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -67,6 +68,7 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
             {
                 AnsiConsole.MarkupLine("[grey]No installed mods found.[/]");
                 WriteInterrupted(interrupted);
+                await WriteGameOwnedAsync(db, installService, settings.Game, cts.Token);
                 await db.DisposeAsync();
                 services.Dispose();
                 return 0;
@@ -92,6 +94,7 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
             AnsiConsole.MarkupLine($"[bold]Installed mods ({installed.Count}):[/]");
             AnsiConsole.Write(table);
             WriteInterrupted(interrupted);
+            await WriteGameOwnedAsync(db, installService, settings.Game, cts.Token);
 
             await db.DisposeAsync();
             services.Dispose();
@@ -124,6 +127,40 @@ public class ListInstalledCommand : AsyncCommand<ListInstalledCommand.Settings>
     /// <summary>
     /// Names the installs that stopped before committing, which no other listing shows.
     /// </summary>
+    // Mods Baldur's Gate 3's own mod manager installs from mod.io subscriptions: Modular
+    // records them but never deploys them, so they have no changeset.
+    private static async Task WriteGameOwnedAsync(
+        ModularDatabase db, ModInstallationService installService, string? game, CancellationToken ct)
+    {
+        var gameKey = InGameModManagers.BaldursGate3SteamAppId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (game != null && !Directory.Exists(game))
+        {
+            var installation = await installService.Deployment.ResolveInstallationAsync(game, ct);
+            if (installation == null || InGameModManagers.For(installation) == null)
+                return;
+            gameKey = installation.GameKey;
+        }
+
+        var owned = await new GameOwnedModRepository(db).ListAsync(gameKey, ct);
+        if (owned.Count == 0)
+            return;
+
+        var table = new Table().AddColumns("mod.io id", "Mod", "File", "Version", "State");
+        foreach (var mod in owned)
+        {
+            table.AddRow(
+                Markup.Escape(mod.RemoteModId),
+                Markup.Escape(mod.DisplayName ?? "-"),
+                Markup.Escape(mod.FileName ?? "-"),
+                InGameModService.FormatVersion(mod.Version64),
+                mod.State == GameOwnedModState.Installed ? "[green]in game[/]" : "[yellow]downloads on next launch[/]");
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[bold]Installed by Baldur's Gate 3's mod manager ({owned.Count}):[/] [grey]as of the last 'modular sync'[/]");
+        AnsiConsole.Write(table);
+    }
+
     private static void WriteInterrupted(List<ChangesetRecord> interrupted)
     {
         if (interrupted.Count == 0)

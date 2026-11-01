@@ -167,6 +167,13 @@
                         <TextBlock Text="Select Updates"/>
                     </StackPanel>
                 </Button>
+                <Button Command="{Binding UntrackSelectedCommand}"
+                        ToolTip.Tip="Remove the selected mods from your NexusMods tracked list" Padding="14,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="EyeRemoveOutline" Width="18" Height="18"/>
+                        <TextBlock Text="Untrack Selected"/>
+                    </StackPanel>
+                </Button>
                 <Button Classes="accent" 
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DownloadSelectedCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="5">
