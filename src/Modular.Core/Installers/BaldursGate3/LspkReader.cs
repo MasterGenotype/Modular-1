@@ -36,6 +36,31 @@ public static class LspkReader
     private const int CompressionLz4 = 2;
 
     /// <summary>
+    /// Whether a file starts with the LSPK signature. The later parts of a split pak
+    /// (<c>Name_1.pak</c>, …) hold only file data and do not.
+    /// </summary>
+    /// <param name="pakPath">Absolute path to the file.</param>
+    /// <returns><c>true</c> for a pak with its own header; <c>false</c> otherwise or when unreadable.</returns>
+    public static bool HasHeader(string pakPath)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                pakPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            Span<byte> head = stackalloc byte[4];
+            return stream.Read(head) == 4 && BinaryPrimitives.ReadUInt32LittleEndian(head) == Signature;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Lists the virtual paths packed into a pak.
     /// </summary>
     /// <param name="pakPath">Absolute path to the <c>.pak</c>.</param>

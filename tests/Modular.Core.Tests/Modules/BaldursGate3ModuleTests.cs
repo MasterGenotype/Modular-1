@@ -147,6 +147,49 @@ public sealed class BaldursGate3ModuleTests : IDisposable
     }
 
     [Fact]
+    public void MapDeployPath_TheLaterPartsOfASplitPak_GetTheFirstPartsPrefix()
+    {
+        var module = new BaldursGate3GameModule();
+        var staging = NewTempDir();
+
+        // The first part has the header and file list; the later parts are bare data.
+        var first = Path.Combine(staging, "Armour.pak");
+        Bg3TestPak.WriteModWith(
+            first, "b1f36451-c34a-4bd7-9776-3ba387576025", "Armour Textures",
+            ["Generated/Public/Armour/Textures/a.dds"]);
+        File.WriteAllBytes(Path.Combine(staging, "Armour_1.pak"), new byte[64]);
+        File.WriteAllBytes(Path.Combine(staging, "Armour_2.pak"), new byte[64]);
+
+        var main = MapPak(module, "Armour.pak", order: 4, count: 9, first).RelativePath;
+        var part1 = MapPak(module, "Armour_1.pak", order: 4, count: 9, Path.Combine(staging, "Armour_1.pak")).RelativePath;
+        var part2 = MapPak(module, "Armour_2.pak", order: 4, count: 9, Path.Combine(staging, "Armour_2.pak")).RelativePath;
+
+        var prefix = main[..main.IndexOf('_')];
+        part1.Should().Be($"{prefix}_Armour_1.pak");
+        part2.Should().Be($"{prefix}_Armour_2.pak");
+    }
+
+    [Fact]
+    public void MapDeployPath_APakNamedLikeAPart_ThatHasItsOwnHeader_IsReadOnItsOwn()
+    {
+        var module = new BaldursGate3GameModule();
+        var staging = NewTempDir();
+
+        // "Mod_2.pak" here is a second mod, not a part of "Mod.pak".
+        Bg3TestPak.WriteModWith(
+            Path.Combine(staging, "Mod.pak"), "3060ca1e-6a6a-079e-e999-7398f55bee4b", "Heads",
+            ["Public/Heads/Content/head.lsf", "Generated/Public/Heads/head.GR2"]);
+        Bg3TestPak.WriteModWith(
+            Path.Combine(staging, "Mod_2.pak"), "b1f36451-c34a-4bd7-9776-3ba387576025", "A race",
+            ["Public/A race/Progressions/Progressions.lsx"]);
+
+        var heads = MapPak(module, "Mod.pak", order: 0, count: 2, Path.Combine(staging, "Mod.pak")).RelativePath;
+        var race = MapPak(module, "Mod_2.pak", order: 1, count: 2, Path.Combine(staging, "Mod_2.pak")).RelativePath;
+
+        race[..2].Should().NotBe(heads[..2]);
+    }
+
+    [Fact]
     public void MapDeployPath_NothingInAFileNameDecidesTheBand()
     {
         var module = new BaldursGate3GameModule();

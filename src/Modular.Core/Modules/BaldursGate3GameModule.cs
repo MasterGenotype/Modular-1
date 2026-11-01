@@ -199,7 +199,7 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
         var fileName = ExistingOrderPrefix().Replace(Path.GetFileName(context.RelativePath), string.Empty);
 
         var profile = context.StagedFilePath != null
-            ? BG3PakProfile.Read(context.StagedFilePath)
+            ? BG3PakProfile.Read(ProfileSourceOf(context.StagedFilePath))
             : null;
         var tier = BG3LoadOrderClassifier.Classify(profile, CategoryOf(context.ModId));
 
@@ -777,6 +777,31 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
             ? $"{paths.Count} file(s) ({examples})"
             : $"{paths.Count} files ({examples}, …)";
     }
+
+    /// <summary>
+    /// The pak whose contents decide a staged pak's band: itself, or for a later part of a
+    /// split pak (<c>Name_1.pak</c>, <c>Name_2.pak</c>, … beside <c>Name.pak</c>), the first part.
+    /// </summary>
+    /// <param name="stagedPath">The staged pak.</param>
+    /// <returns>The path to read the profile from.</returns>
+    /// <remarks>
+    /// The game finds the later parts by the first part's file name plus <c>_1</c>, <c>_2</c>, …
+    /// The later parts carry no header or file list of their own, so read on their own they
+    /// would land in a different band and get a different prefix, and the game would not
+    /// find them.
+    /// </remarks>
+    private static string ProfileSourceOf(string stagedPath)
+    {
+        var match = ArchivePartName().Match(Path.GetFileName(stagedPath));
+        if (!match.Success)
+            return stagedPath;
+
+        var first = Path.Combine(Path.GetDirectoryName(stagedPath) ?? string.Empty, match.Groups["base"].Value + ".pak");
+        return File.Exists(first) && !LspkReader.HasHeader(stagedPath) ? first : stagedPath;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<base>.+)_\d+\.pak$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ArchivePartName();
 
     /// <summary>The <c>&lt;band&gt;-&lt;order&gt;_</c> prefix Modular gives the paks it deploys.</summary>
     [System.Text.RegularExpressions.GeneratedRegex(@"^\d{2}-\d{3,}_")]
