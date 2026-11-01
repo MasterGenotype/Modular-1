@@ -27,7 +27,7 @@ namespace Modular.Core.Backends.ModIo;
 /// usual main-and-optional filter picks exactly what the game would.
 /// </para>
 /// </remarks>
-public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirementsBackend, IDisposable
+public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirementsBackend, ITrackingBackend, IDisposable
 {
     /// <summary>Category given to a mod's live file.</summary>
     public const string LiveFileCategory = "main";
@@ -95,7 +95,8 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         BackendCapabilities.Md5Verification |
         BackendCapabilities.Authentication |
         BackendCapabilities.Search |
-        BackendCapabilities.Requirements;
+        BackendCapabilities.Requirements |
+        BackendCapabilities.Tracking;
 
     /// <inheritdoc />
     public IReadOnlyList<string> ValidateConfiguration()
@@ -517,9 +518,139 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
     }
 
     /// <inheritdoc />
+    public TrackingTerms Terms => TrackingTerms.Subscribe;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A game with an in-game mod manager downloads every subscribed mod on its next
+    /// launch; Baldur's Gate 3 does. Callers that also install the mod themselves have to
+    /// account for that, or the game ends up with two copies.
+    /// </remarks>
+    public async Task<TrackResult> TrackAsync(string modId, string? gameDomain = null, CancellationToken ct = default)
+    {
+        var (gameId, id) = await PrepareSubscriptionChangeAsync(modId, gameDomain, ct);
+
+        var (status, mod) = await WriteSubscriptionAsync(HttpMethod.Post, gameId, id, ct);
+        return new TrackResult(
+            status == HttpStatusCode.Created ? TrackOutcome.Tracked : TrackOutcome.AlreadyTracked,
+            mod == null ? null : Map(mod));
+    }
+
+    /// <inheritdoc />
+    public async Task<TrackResult> UntrackAsync(string modId, string? gameDomain = null, CancellationToken ct = default)
+    {
+        var (gameId, id) = await PrepareSubscriptionChangeAsync(modId, gameDomain, ct);
+
+        try
+        {
+            await WriteSubscriptionAsync(HttpMethod.Delete, gameId, id, ct);
+            return new TrackResult(TrackOutcome.Untracked);
+        }
+        catch (TrackingException ex) when (ex.InnerException is ModIoException { ErrorRef: NotSubscribedErrorRef })
+        {
+            return new TrackResult(TrackOutcome.NotTracked);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlySet<string>> GetTrackedIdsAsync(string? gameDomain = null, CancellationToken ct = default)
+    {
+        var subscribed = await GetSubscribedAsync(gameDomain, ct);
+        return subscribed
+            .Select(m => Remember(m).Id.ToString(CultureInfo.InvariantCulture))
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Finds a mod's id from the name in its page link (<c>mod.io/g/&lt;game&gt;/m/&lt;name&gt;</c>).
+    /// </summary>
+    /// <param name="nameId">The mod's name as its link spells it.</param>
+    /// <param name="gameDomain">The mod.io game id, or null for the configured games.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The mod id, or null when no configured game has the mod.</returns>
+    public async Task<string?> FindModIdAsync(string nameId, string? gameDomain = null, CancellationToken ct = default)
+    {
+        foreach (var gameId in ResolveGameIds(gameDomain))
+        {
+            var page = await _client.GetAsync<ModIoPage<ModIoMod>>(
+                gameId,
+                $"games/{gameId}/mods",
+                new Dictionary<string, string> { ["name_id"] = nameId.Trim(), ["_limit"] = "1" },
+                ct);
+
+            if (page.Data.FirstOrDefault() is { } mod)
+                return Remember(mod).Id.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc />
     public void Dispose() => _client.Dispose();
 
     // ── internals ──────────────────────────────────────────────────────────
+
+    // mod.io's error references for subscription changes.
+    private const int MissingScopeErrorRef = 11003;
+    private const int InactiveAccountErrorRef = 11006;
+    private const int TakenDownErrorRef = 15000;
+    private const int HiddenModErrorRef = 15001;
+    private const int NotSubscribedErrorRef = 15005;
+
+    private async Task<(long GameId, string ModId)> PrepareSubscriptionChangeAsync(
+        string modId, string? gameDomain, CancellationToken ct)
+    {
+        modId = modId.Trim();
+        if (!long.TryParse(modId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0)
+            throw new ArgumentException($"'{modId}' is not a mod.io mod id.", nameof(modId));
+
+        if (!_client.HasAccessToken)
+        {
+            throw new TrackingException(
+                TrackingFailure.NotAuthenticated,
+                "Subscribing on mod.io needs an OAuth access token with write scope; an API key only reads. " +
+                "Create a read+write token at https://mod.io/me/access and set 'modio_access_token' or MODIO_ACCESS_TOKEN.");
+        }
+
+        var gameId = await ResolveGameForModAsync(modId, gameDomain, ct)
+            ?? throw new TrackingException(
+                TrackingFailure.ModNotFound,
+                $"mod.io mod {modId} is not in any configured game. Pass its game id.");
+        return (gameId, modId);
+    }
+
+    private async Task<(HttpStatusCode Status, ModIoMod? Mod)> WriteSubscriptionAsync(
+        HttpMethod method, long gameId, string modId, CancellationToken ct)
+    {
+        try
+        {
+            var (status, mod) = await _client.WriteAsync<ModIoMod>(
+                method, gameId, $"games/{gameId}/mods/{modId}/subscribe", ct: ct);
+            if (mod != null)
+                Remember(mod);
+            else
+                _gameOfMod[modId] = gameId;
+
+            _logger?.LogInformation("mod.io {Method} subscription to {ModId}: {Status}", method, modId, (int)status);
+            return (status, mod);
+        }
+        catch (ModIoException ex)
+        {
+            var reason = ex switch
+            {
+                { ErrorRef: MissingScopeErrorRef } => TrackingFailure.MissingWriteScope,
+                { ErrorRef: InactiveAccountErrorRef or TakenDownErrorRef or HiddenModErrorRef } => TrackingFailure.Unavailable,
+                { StatusCode: HttpStatusCode.Unauthorized } => TrackingFailure.NotAuthenticated,
+                { StatusCode: HttpStatusCode.NotFound } => TrackingFailure.ModNotFound,
+                { StatusCode: HttpStatusCode.TooManyRequests } => TrackingFailure.RateLimited,
+                _ => TrackingFailure.Other
+            };
+            var hint = reason == TrackingFailure.MissingWriteScope
+                ? " The access token is read-only; create a read+write token at https://mod.io/me/access."
+                : "";
+            throw new TrackingException(reason, ex.Message + hint, ex);
+        }
+    }
 
     private async Task<List<ModIoMod>> GetSubscribedAsync(string? gameDomain, CancellationToken ct)
     {

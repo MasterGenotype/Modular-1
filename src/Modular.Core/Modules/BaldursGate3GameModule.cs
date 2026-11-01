@@ -737,7 +737,8 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
         return files;
     }
 
-    private static bool DetectRunningGame()
+    /// <summary>Whether a Baldur's Gate 3 process is running, native or under Proton.</summary>
+    internal static bool DetectRunningGame()
     {
         try
         {
@@ -777,6 +778,7 @@ public sealed partial class BaldursGate3GameModule : GameModuleBase
             : $"{paths.Count} files ({examples}, …)";
     }
 
+    /// <summary>The <c>&lt;band&gt;-&lt;order&gt;_</c> prefix Modular gives the paks it deploys.</summary>
     [System.Text.RegularExpressions.GeneratedRegex(@"^\d{2}-\d{3,}_")]
-    private static partial System.Text.RegularExpressions.Regex ExistingOrderPrefix();
+    internal static partial System.Text.RegularExpressions.Regex ExistingOrderPrefix();
 }

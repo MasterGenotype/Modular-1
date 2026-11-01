@@ -354,6 +354,104 @@ public class ModIoBackendTests
         ModIoVersionProvider.ParseCanonicalId(canonical).Should().Be((game, mod));
     }
 
+    // ── subscriptions ───────────────────────────────────────────────────────
+
+    private const string SubscribePath = "/v1/games/6715/mods/42/subscribe";
+
+    [Theory]
+    [InlineData(HttpStatusCode.Created, TrackOutcome.Tracked)]
+    [InlineData(HttpStatusCode.OK, TrackOutcome.AlreadyTracked)]
+    public async Task TrackAsync_Subscribes(HttpStatusCode status, TrackOutcome expected)
+    {
+        var (backend, server) = Create();
+        server.OnWrite(HttpMethod.Post, SubscribePath, status, Mod(42, "Alfira"));
+
+        var result = await backend.TrackAsync("42");
+
+        result.Outcome.Should().Be(expected);
+        result.Mod!.Name.Should().Be("Alfira");
+        var request = server.Requests.Should().ContainSingle().Subject;
+        request.Method.Should().Be(HttpMethod.Post);
+        request.Authorization.Should().Be("Bearer token");
+        request.ContentType.Should().Be("application/x-www-form-urlencoded");
+        request.Uri.Query.Should().NotContain("api_key");
+    }
+
+    [Fact]
+    public async Task UntrackAsync_AcceptsEmpty204()
+    {
+        var (backend, server) = Create();
+        server.OnWrite(HttpMethod.Delete, SubscribePath, HttpStatusCode.NoContent);
+
+        var result = await backend.UntrackAsync("42");
+
+        result.Outcome.Should().Be(TrackOutcome.Untracked);
+        server.Requests.Should().ContainSingle()
+            .Which.ContentType.Should().Be("application/x-www-form-urlencoded");
+    }
+
+    [Fact]
+    public async Task UntrackAsync_NotSubscribed_IsNotAnError()
+    {
+        var (backend, server) = Create();
+        server.OnWrite(HttpMethod.Delete, SubscribePath, HttpStatusCode.BadRequest,
+            """{"error":{"code":400,"error_ref":15005,"message":"You are not subscribed to this mod."}}""");
+
+        var result = await backend.UntrackAsync("42");
+
+        result.Outcome.Should().Be(TrackOutcome.NotTracked);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, 11003, TrackingFailure.MissingWriteScope)]
+    [InlineData(HttpStatusCode.Unauthorized, 11005, TrackingFailure.NotAuthenticated)]
+    [InlineData(HttpStatusCode.Forbidden, 15001, TrackingFailure.Unavailable)]
+    [InlineData(HttpStatusCode.Forbidden, 15000, TrackingFailure.Unavailable)]
+    [InlineData(HttpStatusCode.Forbidden, 11006, TrackingFailure.Unavailable)]
+    public async Task TrackAsync_MapsRefusals(HttpStatusCode status, int errorRef, TrackingFailure expected)
+    {
+        var (backend, server) = Create();
+        server.OnWrite(HttpMethod.Post, SubscribePath, status,
+            $$$"""{"error":{"code":{{{(int)status}}},"error_ref":{{{errorRef}}},"message":"refused"}}""");
+
+        var act = () => backend.TrackAsync("42");
+
+        (await act.Should().ThrowAsync<TrackingException>()).Which.Reason.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task TrackAsync_WithOnlyApiKey_SendsNothing()
+    {
+        var (backend, server) = Create(new AppSettings { ModIoApiKey = "key", ModIoGameIds = [(int)Bg3] });
+
+        var act = () => backend.TrackAsync("42");
+
+        (await act.Should().ThrowAsync<TrackingException>()).Which.Reason.Should().Be(TrackingFailure.NotAuthenticated);
+        server.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TrackAsync_RejectsNonNumericId()
+    {
+        var (backend, _) = Create();
+
+        var act = () => backend.TrackAsync("alfira");
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task GetTrackedIdsAsync_ListsSubscriptions()
+    {
+        var (backend, server) = Create();
+        server.On("/v1/me/subscribed", Page(2, Mod(42, "Alfira"), Mod(7, "Other")));
+
+        var ids = await backend.GetTrackedIdsAsync();
+
+        ids.Should().BeEquivalentTo(["42", "7"]);
+        backend.Capabilities.Should().HaveFlag(BackendCapabilities.Tracking);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static (ModIoBackend Backend, FakeModIo Server) Create(AppSettings? settings = null)
@@ -394,7 +492,8 @@ public class ModIoBackendTests
     private static string Page(int total, params string[] items) =>
         $$"""{"data":[{{string.Join(",", items)}}],"result_count":{{items.Length}},"result_offset":0,"result_limit":100,"result_total":{{total}}}""";
 
-    private sealed record SeenRequest(Uri Uri, string? Authorization, string? Platform);
+    private sealed record SeenRequest(
+        Uri Uri, string? Authorization, string? Platform, HttpMethod? Method = null, string? ContentType = null, string? Body = null);
 
     /// <summary>Serves canned responses by path; anything else is a mod.io 404.</summary>
     private sealed class FakeModIo : HttpMessageHandler
@@ -412,21 +511,37 @@ public class ModIoBackendTests
             string? error = null) =>
             _routes[path] = (body, status, error);
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        private readonly Dictionary<(HttpMethod, string), (HttpStatusCode Status, string Body)> _writes = new();
+
+        public void OnWrite(HttpMethod method, string path, HttpStatusCode status, string body = "") =>
+            _writes[(method, path)] = (status, body);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(new SeenRequest(
                 request.RequestUri!,
                 request.Headers.Authorization?.ToString(),
-                request.Headers.TryGetValues("X-Modio-Platform", out var platform) ? platform.Single() : null));
+                request.Headers.TryGetValues("X-Modio-Platform", out var platform) ? platform.Single() : null,
+                request.Method,
+                request.Content?.Headers.ContentType?.MediaType,
+                request.Content == null ? null : await request.Content.ReadAsStringAsync(ct)));
+
+            if (_writes.TryGetValue((request.Method, request.RequestUri!.AbsolutePath), out var write))
+            {
+                return new HttpResponseMessage(write.Status)
+                {
+                    Content = new StringContent(write.Body, Encoding.UTF8, "application/json")
+                };
+            }
 
             var (status, content) = _routes.TryGetValue(request.RequestUri!.AbsolutePath, out var route)
                 ? (route.Status, route.Error ?? route.Body(Uri.UnescapeDataString(request.RequestUri.Query)))
                 : (HttpStatusCode.NotFound, """{"error":{"code":404,"error_ref":15022,"message":"The requested mod could not be found."}}""");
 
-            return Task.FromResult(new HttpResponseMessage(status)
+            return new HttpResponseMessage(status)
             {
                 Content = new StringContent(content ?? "{}", Encoding.UTF8, "application/json")
-            });
+            };
         }
     }
 }

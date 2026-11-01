@@ -175,6 +175,28 @@ class Program
             });
 
             // Mod installation commands
+            config.AddCommand<TrackCommand>("track")
+                .WithDescription("Track mods on NexusMods, or subscribe on mod.io (Baldur's Gate 3 subscriptions are handed to the game's own mod manager)")
+                .WithExample("track", "1933", "--game", "baldursgate3")
+                .WithExample("track", "https://www.nexusmods.com/baldursgate3/mods/1933")
+                .WithExample("track", "--backend", "modio", "4345659")
+                .WithExample("track", "https://mod.io/g/baldursgate3/m/alfira-joins-the-party", "--prefer", "modio");
+
+            config.AddCommand<UntrackCommand>("untrack")
+                .WithDescription("Untrack mods on NexusMods, or unsubscribe on mod.io (removing the game's copy for Baldur's Gate 3)")
+                .WithExample("untrack", "1933", "--game", "baldursgate3")
+                .WithExample("untrack", "--backend", "modio", "4345659");
+
+            config.AddCommand<TrackedCommand>("tracked")
+                .WithDescription("List your NexusMods tracked mods or mod.io subscriptions")
+                .WithExample("tracked", "--game", "baldursgate3")
+                .WithExample("tracked", "--backend", "modio");
+
+            config.AddCommand<SyncCommand>("sync")
+                .WithDescription("Record what Baldur's Gate 3's own mod manager has downloaded, and report updates, leftovers and duplicates")
+                .WithExample("sync")
+                .WithExample("sync", "--game", "1086940");
+
             config.AddCommand<InstallCommand>("install")
                 .WithDescription("Install a mod archive to a game directory")
                 .WithExample("install", "mod.zip", "--game", "730")

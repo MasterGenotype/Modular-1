@@ -99,6 +99,17 @@ internal static class Bg3TestPak
                 .ToArray());
 
     /// <summary>
+    /// Writes a pak the way mod.io publishes one: its <c>meta.lsx</c> names the mod.io mod
+    /// (<c>PublishHandle</c>), the version and the upload hash.
+    /// </summary>
+    public static void WriteModIoMod(
+        string path, string uuid, string name, long publishHandle, long version64, string md5 = "") =>
+        Write(path, ($"Mods/{name}/meta.lsx", Encoding.UTF8.GetBytes(Meta(uuid, name)
+            .Replace("value=\"4321\"", $"value=\"{publishHandle}\"")
+            .Replace("""<attribute id="Version64" type="int64" value="36028797018963968"/>""",
+                $"""<attribute id="MD5" type="LSString" value="{md5}"/><attribute id="Version64" type="int64" value="{version64}"/>""")), Lz4));
+
+    /// <summary>
     /// Renders a <c>meta.lsx</c> in the shape current game versions write.
     /// </summary>
     public static string Meta(string uuid, string name, params (string Uuid, string Name)[] dependencies)

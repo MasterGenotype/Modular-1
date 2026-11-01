@@ -370,6 +370,58 @@ public static class BG3ModSettings
     }
 
     /// <summary>
+    /// Takes modules out of the load order, whoever added them.
+    /// </summary>
+    /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>
+    /// <param name="uuids">Modules to remove. The base campaign is never removed.</param>
+    /// <param name="mayWrite">
+    /// Asked only when an entry is actually there to remove; returning false refuses the write.
+    /// </param>
+    /// <returns>Names of the entries removed.</returns>
+    /// <exception cref="InvalidOperationException"><paramref name="mayWrite"/> refused.</exception>
+    /// <exception cref="InvalidDataException">
+    /// The existing file is not a <c>modsettings.lsx</c> this code understands.
+    /// </exception>
+    /// <remarks>
+    /// For mods whose file the game's own mod manager put there: <see cref="Update"/> leaves
+    /// such entries alone, so removing the mod on the game's behalf has to say so.
+    /// </remarks>
+    public static IReadOnlyList<string> RemoveEntries(
+        string modSettingsPath,
+        IReadOnlyCollection<string> uuids,
+        Func<bool>? mayWrite = null)
+    {
+        ArgumentNullException.ThrowIfNull(modSettingsPath);
+        ArgumentNullException.ThrowIfNull(uuids);
+
+        if (!File.Exists(modSettingsPath))
+            return [];
+
+        var originalText = File.ReadAllText(modSettingsPath);
+        var document = Parse(originalText);
+        var modsChildren = FindModsChildren(document);
+        var targets = uuids
+            .Select(u => u.ToLowerInvariant())
+            .Where(u => u != GustavXUuid)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var entries = modsChildren.Elements("node")
+            .Where(n => HasId(n, "ModuleShortDesc"))
+            .Select(n => new Entry(ReadAttribute(n, "UUID").ToLowerInvariant(), ReadAttribute(n, "Name"), n))
+            .ToList();
+        var removed = entries.Where(e => targets.Contains(e.Uuid)).ToList();
+        if (removed.Count == 0)
+            return [];
+
+        if (mayWrite != null && !mayWrite())
+            throw new InvalidOperationException($"{FileName} may not be written right now");
+
+        entries.RemoveAll(removed.Contains);
+        Write(modSettingsPath, document, modsChildren, entries, originalText);
+        return removed.Select(e => e.Name).ToList();
+    }
+
+    /// <summary>
     /// Reads the load order as it stands, with each entry's UUID.
     /// </summary>
     /// <param name="modSettingsPath">Absolute path of <c>modsettings.lsx</c>.</param>

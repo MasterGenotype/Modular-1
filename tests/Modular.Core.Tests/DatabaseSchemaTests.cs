@@ -19,9 +19,39 @@ public sealed class DatabaseSchemaTests : IDisposable
         await using var database = new ModularDatabase(Path.Combine(_dir, "fresh.db"));
         await database.InitializeAsync();
 
-        (await UserVersionAsync(database)).Should().Be(7);
+        (await UserVersionAsync(database)).Should().Be(8);
         (await ColumnsAsync(database, "game_mod")).Should().Contain("load_index");
         (await ColumnsAsync(database, "snapshot_game_mod")).Should().Contain("load_index");
+        (await ColumnsAsync(database, "game_owned_mod")).Should().Contain(["state", "file_name", "module_uuid"]);
+    }
+
+    [Fact]
+    public async Task AVersion7Database_GainsGameOwnedMods_WithItsModsUntouched()
+    {
+        var path = Path.Combine(_dir, "v7.db");
+
+        await using (var database = new ModularDatabase(path))
+        {
+            await database.InitializeAsync();
+            await ExecAsync(database, """
+                INSERT INTO game_mod (game_key, mod_id, staging_path, order_index, installed_at, load_index)
+                VALUES ('g', 'first', '/s/first', 0, 'now', 3);
+                DROP TABLE game_owned_mod;
+                PRAGMA user_version = 7;
+                """);
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        await using (var database = new ModularDatabase(path))
+        {
+            await database.InitializeAsync();
+
+            (await UserVersionAsync(database)).Should().Be(8);
+            (await ColumnsAsync(database, "game_owned_mod")).Should().Contain("remote_mod_id");
+            var mods = await new GameModRepository(database).ListAsync("g");
+            mods.Select(m => (m.ModId, m.LoadIndex)).Should().Equal(("first", 3));
+        }
     }
 
     [Fact]
@@ -48,7 +78,7 @@ public sealed class DatabaseSchemaTests : IDisposable
         {
             await database.InitializeAsync();
 
-            (await UserVersionAsync(database)).Should().Be(7);
+            (await UserVersionAsync(database)).Should().Be(8);
 
             var mods = await new GameModRepository(database).ListAsync("g");
             mods.Select(m => (m.ModId, m.OrderIndex, m.LoadIndex))

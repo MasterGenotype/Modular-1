@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -190,6 +190,7 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             await CreateV5SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
+            await CreateV8SchemaAsync(connection, (SqliteTransaction)transaction);
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
@@ -237,6 +238,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             if (fromVersion < 7)
             {
                 await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 8)
+            {
+                await CreateV8SchemaAsync(connection, (SqliteTransaction)transaction);
             }
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
@@ -577,6 +583,54 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             cmd.CommandText = $"UPDATE {table} SET load_index = order_index WHERE load_index IS NULL;";
             await cmd.ExecuteNonQueryAsync();
         }
+    }
+
+    /// <summary>
+    /// Creates the v8 schema: mods whose files a game's own mod manager owns.
+    /// </summary>
+    /// <param name="connection">Open connection.</param>
+    /// <param name="transaction">Enclosing transaction.</param>
+    /// <returns>A task that completes when the schema is current.</returns>
+    /// <remarks>
+    /// <para>
+    /// A game with an in-game mod manager (Baldur's Gate 3's, fed by mod.io) downloads,
+    /// updates and deletes the files of the mods the user subscribes to. Modular tracks those
+    /// mods here rather than in <c>game_mod</c>, which is the deployer's table: nothing the
+    /// deployer does can then rename, hardlink or remove a file the game owns.
+    /// </para>
+    /// <para>
+    /// <c>state</c> is <c>pending_download</c> from the subscription until the game has
+    /// downloaded the file, then <c>installed</c>. The file's identity is what the game
+    /// wrote: its name, and the module, version and upload hash its <c>meta.lsx</c> records.
+    /// </para>
+    /// </remarks>
+    private static async Task CreateV8SchemaAsync(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS game_owned_mod (
+                game_key        TEXT NOT NULL,
+                backend_id      TEXT NOT NULL,
+                remote_mod_id   TEXT NOT NULL,
+                remote_game_id  TEXT NOT NULL,
+                state           TEXT NOT NULL,
+                display_name    TEXT,
+                remote_file_id  TEXT,
+                file_name       TEXT,
+                module_uuid     TEXT,
+                version64       INTEGER,
+                upload_md5      TEXT,
+                file_md5        TEXT,
+                tracked_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL,
+                PRIMARY KEY (game_key, backend_id, remote_mod_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_game_owned_mod_module
+                ON game_owned_mod(game_key, module_uuid);
+            """;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>

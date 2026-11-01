@@ -57,4 +57,9 @@ public enum BackendCapabilities
     /// Backend lists which other mods a mod requires via <see cref="IRequirementsBackend"/>.
     /// </summary>
     Requirements = 1 << 7,
+
+    /// <summary>
+    /// Backend lets the user's list of mods be changed via <see cref="ITrackingBackend"/>.
+    /// </summary>
+    Tracking = 1 << 8,
 }

@@ -87,9 +87,55 @@ public sealed class ModIoClient : IDisposable
         IReadOnlyDictionary<string, string>? query = null,
         CancellationToken ct = default)
     {
-        using var document = await SendAsync(gameId, path, query, ct);
-        return document.Deserialize<T>()
-            ?? throw new ModIoException($"mod.io returned an empty response for {path}.", HttpStatusCode.OK);
+        var (_, document) = await SendAsync(HttpMethod.Get, gameId, path, query, form: null, ct);
+        using (document)
+        {
+            return (document == null ? default : document.Deserialize<T>())
+                ?? throw new ModIoException($"mod.io returned an empty response for {path}.", HttpStatusCode.OK);
+        }
+    }
+
+    /// <summary>
+    /// Sends a request that changes something for the user, such as a subscription.
+    /// </summary>
+    /// <remarks>
+    /// Writes need the OAuth access token, with write scope; the API key is never sent
+    /// with one. The body is always form-encoded, even when empty, because mod.io answers
+    /// 415 to a write without that content type.
+    /// </remarks>
+    /// <typeparam name="T">Type of the response object, when there is one.</typeparam>
+    /// <param name="method">POST, PUT or DELETE.</param>
+    /// <param name="gameId">Game whose host serves the request.</param>
+    /// <param name="path">Path below the API root, without a leading slash.</param>
+    /// <param name="form">Form fields to send.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The status, and the response object unless the response was empty (204).</returns>
+    /// <exception cref="ModIoException">mod.io refused the request, or there is no access token.</exception>
+    public async Task<(HttpStatusCode Status, T? Body)> WriteAsync<T>(
+        HttpMethod method,
+        long gameId,
+        string path,
+        IReadOnlyDictionary<string, string>? form = null,
+        CancellationToken ct = default)
+        where T : class
+    {
+        if (method == HttpMethod.Get)
+            throw new ArgumentException("Use GetAsync for reads.", nameof(method));
+
+        if (!HasAccessToken)
+        {
+            throw new ModIoException(
+                "Changing anything on mod.io needs an OAuth access token with write scope; an API key " +
+                "only reads. Create a read+write token at https://mod.io/me/access and set " +
+                "'modio_access_token' or MODIO_ACCESS_TOKEN.",
+                HttpStatusCode.Unauthorized);
+        }
+
+        var (status, document) = await SendAsync(method, gameId, path, query: null, form ?? new Dictionary<string, string>(), ct);
+        using (document)
+        {
+            return (status, document?.Deserialize<T>());
+        }
     }
 
     /// <summary>
@@ -131,10 +177,13 @@ public sealed class ModIoClient : IDisposable
         return items;
     }
 
-    private async Task<JsonDocument> SendAsync(
+    // A null form sends no body; writes always pass one.
+    private async Task<(HttpStatusCode Status, JsonDocument? Body)> SendAsync(
+        HttpMethod method,
         long gameId,
         string path,
         IReadOnlyDictionary<string, string>? query,
+        IReadOnlyDictionary<string, string>? form,
         CancellationToken ct)
     {
         var token = _accessToken();
@@ -149,7 +198,7 @@ public sealed class ModIoClient : IDisposable
         }
 
         var parameters = new Dictionary<string, string>(query ?? new Dictionary<string, string>());
-        if (string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(token) && form == null)
             parameters["api_key"] = key;
 
         var url = $"{_baseUrl(gameId).TrimEnd('/')}/{path}";
@@ -163,7 +212,9 @@ public sealed class ModIoClient : IDisposable
         {
             await ThrottleAsync(ct);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(method, url);
+            if (form != null)
+                request.Content = new FormUrlEncodedContent(form);
             if (!string.IsNullOrWhiteSpace(token))
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -187,7 +238,7 @@ public sealed class ModIoClient : IDisposable
             if (!response.IsSuccessStatusCode)
                 throw ModIoException.FromResponse(response.StatusCode, body, path);
 
-            return JsonDocument.Parse(body);
+            return (response.StatusCode, string.IsNullOrWhiteSpace(body) ? null : JsonDocument.Parse(body));
         }
     }
 

@@ -19,7 +19,7 @@ namespace Modular.Core.Backends.NexusMods;
 /// Provides access to NexusMods API for downloading tracked mods,
 /// full-text search via the v2 GraphQL API, and discovery feeds.
 /// </summary>
-public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBackend
+public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBackend, ITrackingBackend
 {
     private const string BaseUrl = "https://api.nexusmods.com";
 
@@ -45,7 +45,8 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         BackendCapabilities.Authentication |
         BackendCapabilities.ModCategories |
         BackendCapabilities.Search |
-        BackendCapabilities.Requirements;
+        BackendCapabilities.Requirements |
+        BackendCapabilities.Tracking;
 
     public NexusModsBackend(
         AppSettings settings,
@@ -633,6 +634,98 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         if (_trackedModsCache == null)
             await GetUserModsAsync(null, ct);
         return _trackedModsCache?.Contains((gameDomain, modId)) ?? false;
+    }
+
+    /// <inheritdoc />
+    public TrackingTerms Terms => TrackingTerms.Track;
+
+    /// <inheritdoc />
+    /// <remarks>NexusMods answers 201 for a new entry and 200 for one already there.</remarks>
+    public Task<TrackResult> TrackAsync(string modId, string? gameDomain = null, CancellationToken ct = default) =>
+        ChangeTrackedAsync(HttpMethod.Post, modId, gameDomain, ct);
+
+    /// <inheritdoc />
+    /// <remarks>NexusMods answers 200 for a removed entry and 404 for one that was not there.</remarks>
+    public Task<TrackResult> UntrackAsync(string modId, string? gameDomain = null, CancellationToken ct = default) =>
+        ChangeTrackedAsync(HttpMethod.Delete, modId, gameDomain, ct);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlySet<string>> GetTrackedIdsAsync(string? gameDomain = null, CancellationToken ct = default)
+    {
+        await RefreshTrackedCacheAsync(ct);
+        return _trackedModsCache!
+            .Where(t => string.IsNullOrEmpty(gameDomain) || t.domain == gameDomain)
+            .Select(t => t.modId.ToString(CultureInfo.InvariantCulture))
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private async Task RefreshTrackedCacheAsync(CancellationToken ct)
+    {
+        var response = await _client.GetAsync("v1/user/tracked_mods.json")
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .WithCancellation(ct)
+            .AsArrayAsync<TrackedMod>();
+        _trackedModsCache = response.Select(m => (m.DomainName, m.ModId)).ToHashSet();
+    }
+
+    private async Task<TrackResult> ChangeTrackedAsync(
+        HttpMethod method, string modId, string? gameDomain, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(gameDomain))
+            throw new ArgumentException("Game domain is required for NexusMods", nameof(gameDomain));
+        if (!int.TryParse(modId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0)
+            throw new ArgumentException($"'{modId}' is not a NexusMods mod id.", nameof(modId));
+        if (string.IsNullOrEmpty(_settings.NexusApiKey))
+        {
+            throw new TrackingException(TrackingFailure.NotAuthenticated,
+                "Not logged in to NexusMods. Run 'modular login' (or Login via Browser in Settings).");
+        }
+
+        // A form body cannot be sent twice, so a failed attempt is reported rather than retried;
+        // both requests are safe to repeat by hand.
+        var response = await _client.SendAsync(method, "v1/user/tracked_mods.json")
+            .WithArgument("domain_name", gameDomain)
+            .WithHeader("apikey", _settings.NexusApiKey)
+            .WithHeader("accept", "application/json")
+            .WithFormBody([new KeyValuePair<string, string>("mod_id", id.ToString(CultureInfo.InvariantCulture))])
+            .WithIgnoreHttpErrors()
+            .WithNoRetry()
+            .WithCancellation(ct)
+            .AsResponseAsync();
+
+        var adding = method == HttpMethod.Post;
+        TrackOutcome? outcome = (response.StatusCode, adding) switch
+        {
+            (201, true) => TrackOutcome.Tracked,
+            (200, true) => TrackOutcome.AlreadyTracked,
+            (200, false) => TrackOutcome.Untracked,
+            (404, false) => TrackOutcome.NotTracked,
+            _ => null
+        };
+
+        if (outcome == null)
+        {
+            var body = response.AsString();
+            throw new TrackingException(
+                response.StatusCode switch
+                {
+                    401 or 403 => TrackingFailure.NotAuthenticated,
+                    404 => TrackingFailure.ModNotFound,
+                    429 => TrackingFailure.RateLimited,
+                    _ => TrackingFailure.Other
+                },
+                $"NexusMods refused to {(adding ? "track" : "untrack")} {gameDomain} mod {id}: " +
+                $"HTTP {response.StatusCode}{(string.IsNullOrWhiteSpace(body) ? "" : " " + body.Trim())}");
+        }
+
+        if (adding)
+            _trackedModsCache?.Add((gameDomain, id));
+        else
+            _trackedModsCache?.Remove((gameDomain, id));
+
+        _logger?.LogInformation("NexusMods {Outcome}: {Domain} mod {ModId}", outcome, gameDomain, id);
+        return new TrackResult(outcome.Value);
     }
 
     /// <summary>
