@@ -122,6 +122,13 @@ class Program
                 .WithExample("search", "SKSE64", "--game", "skyrimspecialedition")
                 .WithExample("search", "armor retexture", "--sort", "downloads", "--limit", "10");
 
+            // Info command
+            config.AddCommand<InfoCommand>("info")
+                .WithDescription("Show one mod's details, listed requirements and files, without downloading it")
+                .WithExample("info", "https://www.nexusmods.com/baldursgate3/mods/23675")
+                .WithExample("info", "23671", "--game", "baldursgate3", "--description")
+                .WithExample("info", "--backend", "modio", "4345659", "--all-files");
+
             // Browse command
             config.AddCommand<BrowseCommand>("browse")
                 .WithDescription("Browse trending, latest, or recently updated mods")

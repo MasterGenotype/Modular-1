@@ -965,6 +965,11 @@ modular download --all
 modular search SKSE64 --game skyrimspecialedition
 modular search "armor retexture" --sort downloads --limit 10
 
+# Look one mod up before installing it: details, listed requirements and files
+modular info https://www.nexusmods.com/baldursgate3/mods/23675
+modular info 23671 --game baldursgate3 --description   # also print the page text
+modular info --backend modio 4345659 --all-files      # include old versions
+
 # Track and untrack mods (NexusMods tracked list, mod.io subscriptions)
 modular track 1933 --game baldursgate3
 modular track https://www.nexusmods.com/baldursgate3/mods/1933

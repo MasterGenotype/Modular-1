@@ -51,9 +51,20 @@ public class BackendMod
     public string? Summary { get; set; }
 
     /// <summary>
+    /// The mod page's full description, as the backend sends it (BBCode, HTML or plain text).
+    /// Null when the backend does not provide it.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
     /// Mod author/uploader name.
     /// </summary>
     public string? Author { get; set; }
+
+    /// <summary>
+    /// When the mod was first published.
+    /// </summary>
+    public DateTime? CreatedAt { get; set; }
 
     /// <summary>
     /// When the mod was last updated.

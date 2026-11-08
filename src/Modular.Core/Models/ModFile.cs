@@ -34,6 +34,9 @@ public class ModFile
     [JsonPropertyName("uploaded_timestamp")]
     public long UploadedTimestamp { get; set; }
 
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
     [JsonPropertyName("external_virus_scan_url")]
     public string? ExternalVirusScanUrl { get; set; }
 }

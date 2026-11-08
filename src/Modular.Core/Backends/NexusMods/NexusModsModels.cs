@@ -321,7 +321,8 @@ public record NexusCollectionInfo
 }
 
 /// <summary>
-/// v1 API models for discovery endpoints (trending, latest, updated).
+/// v1 API model of a mod, from the discovery endpoints (trending, latest, updated) and the
+/// single-mod endpoint.
 /// </summary>
 internal record NexusV1ModInfo
 {
@@ -333,6 +334,9 @@ internal record NexusV1ModInfo
 
     [JsonPropertyName("summary")]
     public string? Summary { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
 
     [JsonPropertyName("author")]
     public string? Author { get; init; }
@@ -348,6 +352,9 @@ internal record NexusV1ModInfo
 
     [JsonPropertyName("mod_downloads")]
     public long DownloadCount { get; init; }
+
+    [JsonPropertyName("created_timestamp")]
+    public long CreatedTimestamp { get; init; }
 
     [JsonPropertyName("updated_timestamp")]
     public long UpdatedTimestamp { get; init; }

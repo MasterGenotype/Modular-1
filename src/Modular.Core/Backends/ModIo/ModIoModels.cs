@@ -44,8 +44,15 @@ public class ModIoMod
     [JsonPropertyName("summary")]
     public string? Summary { get; set; }
 
+    /// <summary>The mod page's description, as HTML.</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
     [JsonPropertyName("profile_url")]
     public string? ProfileUrl { get; set; }
+
+    [JsonPropertyName("date_added")]
+    public long? DateAdded { get; set; }
 
     [JsonPropertyName("date_updated")]
     public long? DateUpdated { get; set; }

@@ -202,6 +202,20 @@ public class ModIoBackendTests
     }
 
     [Fact]
+    public async Task GetModInfoAsync_MapsTheDescriptionAndWhenTheModWasAdded()
+    {
+        var (backend, server) = Create();
+        server.On("/v1/games/6715/mods/42", Mod(42, "Party Limit")
+            .Replace("\"summary\": \"s\",", "\"summary\": \"s\", \"description\": \"<p>Needs SE.</p>\", \"date_added\": 1690000000,"));
+
+        var mod = await backend.GetModInfoAsync("42");
+
+        mod!.Description.Should().Be("<p>Needs SE.</p>");
+        mod.CreatedAt.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1690000000).UtcDateTime);
+        mod.UpdatedAt.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1700000000).UtcDateTime);
+    }
+
+    [Fact]
     public async Task GetModInfoAsync_WithSeveralGames_FindsTheModInTheGameThatHasIt()
     {
         var (backend, server) = Create(new AppSettings { ModIoAccessToken = "token", ModIoGameIds = [1, 6715] });

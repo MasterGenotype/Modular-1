@@ -190,6 +190,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             Version = f.Version,
             Category = GetCategoryName(f.CategoryId),
             UploadedAt = DateTimeOffset.FromUnixTimeSeconds(f.UploadedTimestamp).DateTime,
+            Description = string.IsNullOrWhiteSpace(f.Description) ? null : f.Description,
             ModId = modId
         }).ToList();
 
@@ -599,25 +600,28 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             var response = await _client.GetAsync($"v1/games/{gameDomain}/mods/{modId}.json")
                 .WithHeader("apikey", _settings.NexusApiKey)
                 .WithHeader("accept", "application/json")
-                .AsJsonAsync();
+                .WithCancellation(ct)
+                .AsResponseAsync();
 
-            var root = response.RootElement;
-
-            return new BackendMod
+            // The client does not throw on errors; a 404 body would read as a nameless mod.
+            if (!response.IsSuccessStatusCode)
             {
-                ModId = modId,
-                Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? $"Mod {modId}" : $"Mod {modId}",
-                GameDomain = gameDomain,
-                BackendId = Id,
-                CategoryId = root.TryGetProperty("category_id", out var catProp) ? catProp.GetInt32() : null,
-                Summary = root.TryGetProperty("summary", out var sumProp) ? sumProp.GetString() : null,
-                Author = root.TryGetProperty("author", out var authProp) ? authProp.GetString() : null,
-                Url = $"https://www.nexusmods.com/{gameDomain}/mods/{modId}",
-                UpdatedAt = root.TryGetProperty("updated_timestamp", out var updProp)
-                    ? DateTimeOffset.FromUnixTimeSeconds(updProp.GetInt64()).DateTime
-                    : null,
-                ThumbnailUrl = root.TryGetProperty("picture_url", out var picProp) ? picProp.GetString() : null
-            };
+                _logger?.LogWarning("NexusMods answered {Status} for mod {ModId} in {Game}",
+                    response.StatusCode, modId, gameDomain);
+                return null;
+            }
+
+            var mod = MapV1ModToBackendMod(response.As<NexusV1ModInfo>(), gameDomain);
+
+            // A hidden or removed mod comes back without a name, id or category.
+            mod.ModId = modId;
+            mod.Url = $"https://www.nexusmods.com/{gameDomain}/mods/{modId}";
+            if (string.IsNullOrEmpty(mod.Name))
+                mod.Name = $"Mod {modId}";
+            if (mod.CategoryId is not > 0)
+                mod.CategoryId = null;
+
+            return mod;
         }
         catch (Exception ex)
         {
@@ -1060,6 +1064,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             BackendId = BackendIds.NexusMods,
             CategoryId = mod.CategoryId,
             Summary = mod.Summary,
+            Description = string.IsNullOrWhiteSpace(mod.Description) ? null : mod.Description,
             Author = mod.Author,
             Version = mod.Version,
             EndorsementCount = mod.EndorsementCount,
@@ -1067,6 +1072,9 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
             IsAdult = mod.ContainsAdultContent,
             Url = $"https://www.nexusmods.com/{gameDomain}/mods/{mod.ModId}",
             ThumbnailUrl = mod.PictureUrl,
+            CreatedAt = mod.CreatedTimestamp > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(mod.CreatedTimestamp).DateTime
+                : null,
             UpdatedAt = mod.UpdatedTimestamp > 0
                 ? DateTimeOffset.FromUnixTimeSeconds(mod.UpdatedTimestamp).DateTime
                 : null
@@ -1081,6 +1089,7 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         4 => "old_version",
         5 => "miscellaneous",
         6 => "deleted",
+        7 => "archived",
         _ => $"category_{categoryId}"
     };
 
