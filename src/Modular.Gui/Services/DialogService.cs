@@ -41,19 +41,17 @@ public class DialogService : IDialogService
             Content = new SelectableTextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
         });
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 450,
-            SizeToContent = SizeToContent.Height,
             MaxHeight = 500,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = body
         };
 
         ok.Click += (_, _) => dialog.Close();
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
     }
 
     public async Task ShowWarningAsync(string title, string message)
@@ -68,12 +66,11 @@ public class DialogService : IDialogService
 
         var result = false;
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 400,
             Height = 200,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new StackPanel
             {
                 Margin = new Thickness(20),
@@ -108,7 +105,7 @@ public class DialogService : IDialogService
             }
         }
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
         return result;
     }
 
@@ -125,12 +122,12 @@ public class DialogService : IDialogService
             Watermark = "Enter value..."
         };
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 400,
             Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            InitialFocus = inputBox,
             Content = new StackPanel
             {
                 Margin = new Thickness(20),
@@ -170,9 +167,6 @@ public class DialogService : IDialogService
             }
         }
 
-        // Focus the input box when the dialog opens
-        dialog.Opened += (_, _) => inputBox.Focus();
-        
         // Allow Enter key to submit
         inputBox.KeyDown += (_, e) =>
         {
@@ -188,7 +182,7 @@ public class DialogService : IDialogService
             }
         };
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
         return result;
     }
 
@@ -246,14 +240,13 @@ public class DialogService : IDialogService
         var selectBtn = new Button { Content = "Select", MinWidth = 80 };
         var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 550,
             Height = 480,
             MinWidth = 400,
             MinHeight = 300,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = BuildPickerLayout(message, null, listBox, selectBtn, cancelBtn)
         };
 
@@ -269,7 +262,7 @@ public class DialogService : IDialogService
             }
         };
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
         return result;
     }
 
@@ -302,14 +295,13 @@ public class DialogService : IDialogService
         var okBtn = new Button { Content = "OK", MinWidth = 80 };
         var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 600,
             Height = 600,
             MinWidth = 400,
             MinHeight = 350,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = BuildPickerLayout(
                 message,
                 new StackPanel
@@ -332,7 +324,7 @@ public class DialogService : IDialogService
         okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
         cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
 
         if (cancelled) return [];
 
@@ -458,14 +450,13 @@ public class DialogService : IDialogService
             };
         }
 
-        var dialog = new Window
+        var dialog = new ModalDialog
         {
             Title = title,
             Width = 600,
             Height = 600,
             MinWidth = 400,
             MinHeight = 350,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = BuildPickerLayout(
                 message,
                 toolbar,
@@ -483,7 +474,7 @@ public class DialogService : IDialogService
         okBtn.Click += (_, _) => { cancelled = false; dialog.Close(); };
         cancelBtn.Click += (_, _) => { cancelled = true; dialog.Close(); };
 
-        await dialog.ShowDialog(window);
+        await dialog.ShowAsync(window);
 
         if (cancelled) return null;
 

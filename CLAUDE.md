@@ -58,7 +58,7 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 - **Core** (`src/Modular.Core/`) — Business logic: backend implementations, plugin loading, authentication, dependency resolution, rate limiting, downloads, installers, configuration.
 - **FluentHttp** (`src/Modular.FluentHttp/`) — Custom fluent HTTP client with middleware filter pipeline, retry policies, and rate limiter integration.
 - **CLI** (`src/Modular.Cli/`) — Command-line interface using Spectre.Console.Cli with 18+ commands in `Commands/`.
-- **GUI** (`src/Modular.Gui/`) — Avalonia 11.3 desktop app with MVVM (CommunityToolkit.Mvvm).
+- **GUI** (`src/Modular.Gui/`) — Avalonia 11.3 desktop app with MVVM (CommunityToolkit.Mvvm). Under gamescope (Steam Game Mode) every window must cover the display: `Services/Gamescope.cs` sizes windows and sets the UI scale, and dialogs go through `Services/ModalDialog.cs` (a window on the desktop, an in-window panel under gamescope) — never `new Window` for a dialog.
 
 ### Key Subsystems in Core
 

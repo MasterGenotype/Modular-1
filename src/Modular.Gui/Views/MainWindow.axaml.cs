@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Modular.Gui.Services;
 using Modular.Gui.ViewModels;
 
 namespace Modular.Gui.Views;
@@ -9,6 +10,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Gamescope.FillDisplay(this);
         KeyDown += OnKeyDown;
     }
 

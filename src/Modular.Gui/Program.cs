@@ -106,6 +106,9 @@ sealed class Program
 
     public static AppBuilder BuildAvaloniaApp()
     {
+        // Before Avalonia starts: the X11 backend reads its scale from the environment.
+        Gamescope.Initialize();
+
         var builder = AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
@@ -115,14 +118,11 @@ sealed class Program
         // so StorageProvider.OpenFilePickerAsync silently returns nothing under it.
         // UseManagedSystemDialogs switches to Avalonia's in-process file picker which
         // has no DBus or portal dependency.
-        if (OperatingSystem.IsLinux())
+        if (Gamescope.IsActive)
         {
-            if (Environment.GetEnvironmentVariable("GAMESCOPE_WAYLAND_DISPLAY") != null)
-            {
-#pragma warning disable CA1416 // Validate platform compatibility — guarded by OperatingSystem.IsLinux above
-                builder = builder.UseManagedSystemDialogs();
+#pragma warning disable CA1416 // Validate platform compatibility — IsActive is Linux-only
+            builder = builder.UseManagedSystemDialogs();
 #pragma warning restore CA1416
-            }
         }
 
         return builder;
