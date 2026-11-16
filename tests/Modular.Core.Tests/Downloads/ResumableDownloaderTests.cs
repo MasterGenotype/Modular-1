@@ -397,6 +397,58 @@ public sealed class ResumableDownloaderTests : IDisposable
         result.Attempts.Should().Be(3);
     }
 
+    [Fact]
+    public async Task PartialThatVanishesBeforeResumeWrites_RestartsInsteadOfZeroFilling()
+    {
+        // 2026-11-14: Hexcraft (Nexus 10196) was published with its first 2.5 MiB zeroed and recorded as Success.
+        // A second download of the same file measured the .part length, then the first finished and moved the
+        // .part away before the second opened it. OpenOrCreate made a new empty file, and SetLength(offset)
+        // filled the gap with zeros before the tail was written.
+        await CreatePartialAsync(40_000);
+        var deleted = false;
+        _server.Hook = request =>
+        {
+            if (!deleted && request.Headers.Range?.Ranges.FirstOrDefault()?.From == 40_000)
+            {
+                deleted = true;
+                File.Delete(PartPath);
+            }
+            return null;
+        };
+        using var downloader = CreateDownloader();
+
+        var result = await downloader.DownloadAsync(Request());
+
+        File.ReadAllBytes(_dest).Should().Equal(_data);
+        result.Resumed.Should().BeFalse();
+        _server.Requests.Select(r => r.RangeFrom).Should().Equal(40_000, null);
+    }
+
+    [Fact]
+    public async Task SecondDownloadOfTheSameDestination_IsRefusedWhileTheFirstRuns()
+    {
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        _server.Hook = _ =>
+        {
+            firstStarted.Set();
+            releaseFirst.Wait(TimeSpan.FromSeconds(10));
+            return null;
+        };
+        using var downloader = CreateDownloader();
+
+        var first = Task.Run(() => downloader.DownloadAsync(Request()));
+        firstStarted.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        var second = () => downloader.DownloadAsync(Request());
+
+        await second.Should().ThrowAsync<DownloadInProgressException>();
+        releaseFirst.Set();
+        await first;
+        File.ReadAllBytes(_dest).Should().Equal(_data);
+        _server.Requests.Should().ContainSingle();
+        File.Exists(ResumableDownloader.GetLockPath(_dest)).Should().BeFalse();
+    }
+
     private static byte[] RandomBytes(int length, int seed)
     {
         var bytes = new byte[length];

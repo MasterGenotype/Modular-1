@@ -14,7 +14,8 @@ public static class ModLibraryFiles
         DependencyConventions.DownloadRecordSuffix,
         DependencyConventions.ModOrganizerSuffix,
         ResumableDownloader.PartSuffix,
-        ResumableDownloader.PartSuffix + ".json"
+        ResumableDownloader.PartSuffix + ".json",
+        ResumableDownloader.LockSuffix
     ];
 
     // Files that are never a mod's download: readmes and pictures saved beside one.

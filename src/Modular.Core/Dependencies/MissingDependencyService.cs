@@ -746,7 +746,8 @@ public sealed class MissingDependencyService
         file.EndsWith(DependencyConventions.DownloadRecordSuffix, StringComparison.OrdinalIgnoreCase) ||
         file.EndsWith(DependencyConventions.ModOrganizerSuffix, StringComparison.OrdinalIgnoreCase) ||
         file.EndsWith(ResumableDownloader.PartSuffix, StringComparison.OrdinalIgnoreCase) ||
-        file.EndsWith(ResumableDownloader.StateSuffix, StringComparison.OrdinalIgnoreCase);
+        file.EndsWith(ResumableDownloader.StateSuffix, StringComparison.OrdinalIgnoreCase) ||
+        file.EndsWith(ResumableDownloader.LockSuffix, StringComparison.OrdinalIgnoreCase);
 
     private static (string Backend, string Domain, string ModId) Key(DeclaredSource source) =>
         (source.BackendId.ToLowerInvariant(), (source.GameDomain ?? string.Empty).ToLowerInvariant(), source.ModId);

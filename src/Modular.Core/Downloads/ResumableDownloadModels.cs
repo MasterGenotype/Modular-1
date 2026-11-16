@@ -105,6 +105,15 @@ public sealed class DownloadIntegrityException : Exception
 }
 
 /// <summary>
+/// Thrown when another download (in this process or another) is already writing the same destination.
+/// Not an <see cref="IOException"/>, so it is never retried as a transient failure.
+/// </summary>
+public sealed class DownloadInProgressException : Exception
+{
+    public DownloadInProgressException(string message, Exception? inner = null) : base(message, inner) { }
+}
+
+/// <summary>
 /// Sidecar metadata persisted next to a <c>.part</c> file.
 /// </summary>
 internal sealed class PartialDownloadState

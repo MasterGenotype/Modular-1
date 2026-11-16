@@ -184,6 +184,11 @@ public sealed class NxmCommand : AsyncCommand<NxmCommand.Settings>
             {
                 throw;
             }
+            catch (DownloadInProgressException ex)
+            {
+                // The same link clicked twice: the first click's download is still running and will finish it.
+                LiveProgressDisplay.ShowInfo($"{ex.Message}; skipping the duplicate link.");
+            }
             catch (Exception ex)
             {
                 Interlocked.Increment(ref failed);

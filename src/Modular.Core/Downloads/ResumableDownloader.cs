@@ -24,6 +24,7 @@ public sealed class ResumableDownloader : IDisposable
 
     /// <summary>Suffix of the sidecar metadata file.</summary>
     public const string StateSuffix = ".part.json";
+    public const string LockSuffix = ".part.lock";
 
     private const int BufferSize = 81920;
     private const int MaxUrlRefreshes = 2;
@@ -65,6 +66,9 @@ public sealed class ResumableDownloader : IDisposable
     /// <summary>Gets the path of the sidecar metadata file for a destination.</summary>
     public static string GetStatePath(string destinationPath) => destinationPath + StateSuffix;
 
+    /// <summary>Gets the lock file held while a download of <paramref name="destinationPath"/> runs.</summary>
+    public static string GetLockPath(string destinationPath) => destinationPath + LockSuffix;
+
     /// <summary>Returns true if partial data exists for the destination.</summary>
     public static bool HasPartialDownload(string destinationPath) => File.Exists(GetPartPath(destinationPath));
 
@@ -98,6 +102,8 @@ public sealed class ResumableDownloader : IDisposable
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
+        // One download per destination, across processes: two at once would share the .part file.
+        using var destinationLock = AcquireDestinationLock(request.DestinationPath);
         var state = LoadOrResetState(request, partPath, statePath);
         var counters = new TransferCounters();
         var url = request.Url;
@@ -327,6 +333,18 @@ public sealed class ResumableDownloader : IDisposable
 
             await using var fileStream = new FileStream(
                 partPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
+            if (fileStream.Length < writeFrom)
+            {
+                // The partial file shrank or vanished after its length was measured (another download of
+                // the same file finished or reset it). Extending it would zero-fill the missing prefix and
+                // publish a corrupt file that still has the right size.
+                _logger?.LogWarning("Partial data for {File} is {Actual} bytes, not the {Expected} the resume expected; restarting from zero",
+                    Path.GetFileName(request.DestinationPath), fileStream.Length, writeFrom);
+                await fileStream.DisposeAsync();
+                ResetPart(partPath, statePath, state, counters);
+                return TransferResult.Of(TransferOutcome.Restart, status);
+            }
+
             fileStream.SetLength(writeFrom);
             fileStream.Seek(writeFrom, SeekOrigin.Begin);
 
@@ -498,6 +516,36 @@ public sealed class ResumableDownloader : IDisposable
         // Nothing of the previous transfer survives, so the next attempt is not a resume.
         counters.Resumed = false;
         SaveState(statePath, state);
+    }
+
+    /// <summary>
+    /// Takes the destination's lock file, held until disposed. <see cref="FileShare.None"/> is an exclusive
+    /// lock other processes honour too (flock on Unix); the file is deleted when the lock is released.
+    /// </summary>
+    /// <exception cref="DownloadInProgressException">Another download of this destination holds the lock.</exception>
+    private static FileStream AcquireDestinationLock(string destinationPath)
+    {
+        var lockPath = GetLockPath(destinationPath);
+        for (var attempt = 0; ; attempt++)
+        {
+            FileStream stream;
+            try
+            {
+                stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None,
+                    bufferSize: 1, FileOptions.DeleteOnClose);
+            }
+            catch (IOException ex) when (File.Exists(lockPath))
+            {
+                throw new DownloadInProgressException(
+                    $"{Path.GetFileName(destinationPath)} is already being downloaded", ex);
+            }
+
+            // The holder deletes the file as it releases the lock, so a lock taken on that file just before
+            // the delete guards nothing. Take a fresh one.
+            if (File.Exists(lockPath) || attempt >= 3)
+                return stream;
+            stream.Dispose();
+        }
     }
 
     private static bool IsTransient(Exception ex) => ex switch
