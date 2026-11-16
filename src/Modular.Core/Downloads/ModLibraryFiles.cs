@@ -53,4 +53,23 @@ public static class ModLibraryFiles
             .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    /// <summary>
+    /// The downloads in a mod folder that were released once their mod was installed: the
+    /// paths they had, each now only a <c>.modular.json</c> record (see
+    /// <see cref="Installers.ArchiveRelease"/>).
+    /// </summary>
+    /// <param name="modFolder">The mod folder.</param>
+    /// <returns>The paths, by name; empty when the folder is gone.</returns>
+    public static IReadOnlyList<string> Released(string modFolder)
+    {
+        if (!Directory.Exists(modFolder))
+            return [];
+
+        return Directory.EnumerateFiles(modFolder, "*" + DependencyConventions.DownloadRecordSuffix)
+            .Select(f => f[..^DependencyConventions.DownloadRecordSuffix.Length])
+            .Where(f => !File.Exists(f) && DependencyConventions.ReadReleased(f) != null)
+            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 }

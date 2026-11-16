@@ -297,6 +297,9 @@
                                   ToolTip.Tip="&lt;backend&gt;/&lt;game&gt;/&lt;category&gt;/&lt;mod&gt;. Re-organize in the Library applies a change to mods already downloaded."/>
                         <CheckBox IsChecked="{Binding VerifyDownloads}"
                                   Content="Verify downloads (MD5 checksum)"/>
+                        <CheckBox IsChecked="{Binding KeepInstalledArchives}"
+                                  Content="Keep mod archives after installing"
+                                  ToolTip.Tip="Off: each mod is stored once. Its staged files are its copy, and the archive is replaced by a small .modular.json record of where it came from. On: archives are kept, so a snapshot can reinstall a version that is no longer staged without downloading it."/>
                         <CheckBox IsChecked="{Binding ValidateTracking}"
                                   Content="Validate API tracking against web tracking center"/>
                     </StackPanel>

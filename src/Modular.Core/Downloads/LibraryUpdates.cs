@@ -98,8 +98,11 @@ public static class LibraryUpdates
                 continue;
 
             var location = ModLibraryLayout.Locate(modsRoot, folder);
+            // A released download (see ModLibraryFiles.Released) still says which mod and
+            // file the folder holds, so an installed mod keeps getting update checks.
             var found = Directory.EnumerateFiles(folder)
                 .Where(f => !ModLibraryFiles.IsSidecar(f))
+                .Concat(ModLibraryFiles.Released(folder))
                 .Select(f => (Path: f, Source: SourceOf(f, location?.BackendId)))
                 .Where(f => f.Source != null)
                 .GroupBy(f => (f.Source!.BackendId.ToLowerInvariant(), f.Source.ModId))
@@ -128,7 +131,7 @@ public static class LibraryUpdates
                         .Where(id => !string.IsNullOrEmpty(id))
                         .ToHashSet(StringComparer.Ordinal)!,
                     NewestDownload = group.Max(f => NexusFileName.ParseUploadTime(f.Path)
-                                                    ?? new DateTimeOffset(File.GetLastWriteTimeUtc(f.Path)))
+                                                    ?? DownloadTime(f.Path))
                 });
             }
         }
@@ -209,6 +212,10 @@ public static class LibraryUpdates
 
         return (newer, suggested);
     }
+
+    // When a download was written; for a released one, when its record was.
+    private static DateTimeOffset DownloadTime(string path) =>
+        new(File.GetLastWriteTimeUtc(File.Exists(path) ? path : path + DependencyConventions.DownloadRecordSuffix));
 
     // Where a file came from: Modular's record, Mod Organizer's, or a NexusMods file name.
     private static DeclaredSource? SourceOf(string path, string? folderBackend) =>

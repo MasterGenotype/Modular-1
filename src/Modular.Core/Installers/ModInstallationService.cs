@@ -641,8 +641,19 @@ public class ModInstallationService
                     supersededChangesetId, ChangesetState.Superseded, ct: ct);
             }
 
-            // Step 8b: Keep the archive where a reinstall or snapshot restore can find it.
-            if (options.AdoptArchive)
+            // Step 8b: Store the mod once. A staged mod's staged files are its copy, so the
+            // archive gives way to a record of it, unless the user keeps archives. A legacy
+            // install has no staged copy and keeps its archive where a reinstall or snapshot
+            // restore can find it.
+            if (staged && !(_settings?.KeepInstalledArchives ?? false))
+            {
+                if (options.AdoptArchive && options.ReleaseArchive &&
+                    ReleaseArchive(archivePath, targetDirectory, modPaths) is { } warning)
+                {
+                    result.Warnings.Add(warning);
+                }
+            }
+            else if (options.AdoptArchive)
             {
                 var adopted = await AdoptArchiveAsync(
                     archivePath, gameKey, targetDirectory, modPaths, ct);
@@ -1706,6 +1717,43 @@ public class ModInstallationService
         return new ArchiveStore(storePath, [modsDirectory]);
     }
 
+    /// <summary>
+    /// Replaces a staged mod's archive with a record of it (<see cref="ArchiveRelease"/>).
+    /// </summary>
+    /// <param name="archivePath">The archive installed.</param>
+    /// <param name="targetDirectory">Game directory.</param>
+    /// <param name="modPaths">The game's mod roots, when known.</param>
+    /// <returns>A warning when the archive could not be released.</returns>
+    /// <remarks>
+    /// Only an archive in Modular's own folders is released. One from anywhere else, such
+    /// as Downloads, is the user's file and is left where it is, as is one inside the game
+    /// folder, which the game may still read. The changeset keeps the archive's path, which
+    /// then leads to the record. Failing to release never fails the install.
+    /// </remarks>
+    private string? ReleaseArchive(string archivePath, string targetDirectory, GameModPaths? modPaths)
+    {
+        var fullPath = Path.GetFullPath(archivePath);
+        if (!File.Exists(fullPath) || !CreateArchiveStore().IsManaged(fullPath))
+            return null;
+
+        var gameRoots = (modPaths?.Roots.Values ?? []).Append(targetDirectory);
+        if (gameRoots.Any(root => ArchiveStore.IsUnder(fullPath, root)))
+            return null;
+
+        try
+        {
+            var freed = ArchiveRelease.Release(fullPath, new ArchiveReaderFactory());
+            _logger?.LogInformation(
+                "Released {Archive} ({Bytes} bytes); the staged files are the mod's copy", archivePath, freed);
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogWarning(ex, "Could not release {Archive}", archivePath);
+            return $"{Path.GetFileName(archivePath)} was kept ({ex.Message}).";
+        }
+    }
+
     private async Task<(string? Path, string? Warning)> AdoptArchiveAsync(
         string archivePath,
         string gameKey,
@@ -1927,6 +1975,15 @@ public class ModInstallationOptions
     /// gives its new location.
     /// </remarks>
     public bool AdoptArchive { get; set; } = true;
+
+    /// <summary>
+    /// Whether a staged install replaces an archive in Modular's folders with a record, so
+    /// the mod is stored once (see <see cref="ArchiveRelease"/>). Applies while
+    /// <see cref="Configuration.AppSettings.KeepInstalledArchives"/> is off; then an archive
+    /// from elsewhere is never adopted, and <see cref="AdoptArchive"/> off leaves every
+    /// archive alone.
+    /// </summary>
+    public bool ReleaseArchive { get; set; } = true;
 }
 
 /// <summary>

@@ -137,6 +137,19 @@ public class AppSettings
     public bool VerifyDownloads { get; set; } = true;
 
     /// <summary>
+    /// Whether a mod's archive is kept after the mod is installed and staged.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, so each mod is stored once: the staged files are the mod's copy, and
+    /// the archive is replaced by a <c>.modular.json</c> record of where it came from and
+    /// what it declared (<see cref="Installers.ArchiveRelease"/>). Turn on to keep archives
+    /// for reinstalling without a download, such as restoring a snapshot of a version that
+    /// is no longer staged.
+    /// </remarks>
+    [JsonPropertyName("keep_installed_archives")]
+    public bool KeepInstalledArchives { get; set; }
+
+    /// <summary>
     /// Whether to validate API tracking against web tracking center.
     /// </summary>
     [JsonPropertyName("validate_tracking")]

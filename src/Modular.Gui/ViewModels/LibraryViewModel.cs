@@ -454,9 +454,12 @@ public partial class LibraryViewModel : ViewModelBase
         var files = await Task.Run(() => mods.SelectMany(m => ModLibraryFiles.Downloads(m.Mod!.Path)).ToList());
         if (files.Count == 0)
         {
+            var released = await Task.Run(() => mods.Any(m => ModLibraryFiles.Released(m.Mod!.Path).Count > 0));
             StatusMessage = mods.Count == 0
                 ? $"There are no mods in {what}"
-                : $"There are no downloads in {what}";
+                : released
+                    ? $"The downloads in {what} were released once installed; the staged mod is its copy. Download again to reinstall"
+                    : $"There are no downloads in {what}";
             return;
         }
 

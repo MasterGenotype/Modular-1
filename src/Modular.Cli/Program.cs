@@ -221,6 +221,15 @@ class Program
                 .WithExample("installed")
                 .WithExample("installed", "--game", "730");
 
+            config.AddBranch("archives", archives =>
+            {
+                archives.SetDescription("Manage the archives mods were installed from");
+                archives.AddCommand<ArchivesPruneCommand>("prune")
+                    .WithDescription("Store each installed mod once: replace its archive with a record, and optionally delete the game's other archives")
+                    .WithExample("archives", "prune", "--game", "1086940")
+                    .WithExample("archives", "prune", "--game", "1086940", "--remove-unused", "--apply");
+            });
+
             config.AddCommand<CoreModsCommand>("core-mods")
                 .WithDescription("List the mods others rely on, and whether each has a release for a game update")
                 .WithExample("core-mods", "--game", "1091500")

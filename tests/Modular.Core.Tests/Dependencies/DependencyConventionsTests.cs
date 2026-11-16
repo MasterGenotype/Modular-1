@@ -201,6 +201,64 @@ public sealed class DependencyConventionsTests : IDisposable
             .Should().Be(new DeclaredSource("nexusmods", "1234"));
     }
 
+    [Fact]
+    public void ReleasedArchive_KeepsWhatItDeclared_AfterItIsDeleted()
+    {
+        var archive = Zip("mod.zip", ("manifest.json", """
+            {
+              "name": "BetterThing",
+              "version_number": "1.2.0",
+              "dependencies": ["BepInEx-BepInExPack-5.4.2100"]
+            }
+            """));
+        DependencyConventions.WriteDownloadRecord(archive, new DeclaredSource("thunderstore", "77", "game", "88"));
+        var before = DependencyConventions.Read(archive, _factory);
+        var size = new FileInfo(archive).Length;
+
+        var freed = Modular.Core.Installers.ArchiveRelease.Release(archive, _factory);
+
+        freed.Should().Be(size);
+        File.Exists(archive).Should().BeFalse();
+        Modular.Core.Installers.ArchiveRelease.IsReleased(archive).Should().BeTrue();
+
+        var after = DependencyConventions.Read(archive, _factory);
+        after.Source.Should().Be(before.Source);
+        after.Provides.Should().Equal(before.Provides);
+        after.Requirements.Should().BeEquivalentTo(before.Requirements);
+        after.Requirements.Should().NotBeEmpty();
+
+        var released = DependencyConventions.ReadReleased(archive)!;
+        released.FileName.Should().Be("mod.zip");
+        released.Size.Should().Be(size);
+        released.Sha256.Should().MatchRegex("^[0-9a-f]{64}$");
+        released.Md5.Should().MatchRegex("^[0-9a-f]{32}$");
+    }
+
+    [Fact]
+    public void ReleasedArchive_WithoutASource_StillKeepsItsDeclarations()
+    {
+        var archive = Zip("plain.zip", ("manifest.json", """
+            { "name": "Plain", "version_number": "1.0.0", "dependencies": ["A-B-1.0.0"] }
+            """));
+
+        Modular.Core.Installers.ArchiveRelease.Release(archive, _factory);
+
+        var after = DependencyConventions.Read(archive, _factory);
+        after.Source.Should().BeNull();
+        after.Requirements.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void DownloadRecord_FromAnOlderVersion_IsNotReleased()
+    {
+        var archive = Zip("old.zip", ("a.txt", "a"));
+        DependencyConventions.WriteDownloadRecord(archive, new DeclaredSource("nexusmods", "1"));
+        File.Delete(archive);
+
+        DependencyConventions.ReadReleased(archive).Should().BeNull();
+        Modular.Core.Installers.ArchiveRelease.IsReleased(archive).Should().BeFalse();
+    }
+
     private string Zip(string name, params (string Path, string Content)[] entries)
     {
         var path = Path.Combine(NewDir(), name);

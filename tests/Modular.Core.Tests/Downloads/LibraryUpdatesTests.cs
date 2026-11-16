@@ -142,6 +142,29 @@ public sealed class LibraryUpdatesTests : IDisposable
         UploadedAt = uploaded
     };
 
+    [Fact]
+    public void Identify_AReleasedDownload_StillIdentifiesTheMod()
+    {
+        // Once installed, a download gives way to its record; the mod keeps its update checks.
+        var root = NewDir();
+        var folder = ModFolder(root, "nexusmods/cyberpunk2077/Some Mod");
+        var archive = Path.Combine(folder, "Some Mod-874-1-5-1617050815.zip");
+        using (var zip = new System.IO.Compression.ZipArchive(File.Create(archive), System.IO.Compression.ZipArchiveMode.Create))
+            zip.CreateEntry("a.txt");
+        DependencyConventions.WriteDownloadRecord(
+            archive, new DeclaredSource(BackendIds.NexusMods, "874", "cyberpunk2077", "5000"));
+        Modular.Core.Installers.ArchiveRelease.Release(archive, new Modular.Core.Archives.ArchiveReaderFactory());
+
+        ModLibraryFiles.Downloads(folder).Should().BeEmpty();
+        ModLibraryFiles.Released(folder).Should().Equal(archive);
+
+        var mod = LibraryUpdates.Identify(root, [folder], out var unknown).Should().ContainSingle().Subject;
+        unknown.Should().BeEmpty();
+        mod.ModId.Should().Be("874");
+        mod.FileIds.Should().BeEquivalentTo("5000");
+        mod.NewestDownload.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1617050815));
+    }
+
     private static string ModFolder(string root, string relative)
     {
         var folder = Path.Combine(root, relative);

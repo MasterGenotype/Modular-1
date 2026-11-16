@@ -17,6 +17,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
     private ModularDatabase _database = null!;
     private ModInstallationService _service = null!;
     private ChangesetManager _changesets = null!;
+    private ModInstallationService _keeping = null!;
     private string _backupBase = null!;
     private string _archiveBase = null!;
     private string _stagingBase = null!;
@@ -37,6 +38,13 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
 
         _service = new ModInstallationService(
             _database, stagingBasePath: _stagingBase);
+
+        // Archives are released once installed unless the user keeps them; the archive
+        // store tests are about keeping them. No mods directory, so the store is _archiveBase.
+        _keeping = new ModInstallationService(
+            _database,
+            stagingBasePath: _stagingBase,
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = "", KeepInstalledArchives = true });
         _changesets = new ChangesetManager(_database);
     }
 
@@ -290,7 +298,113 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         File.ReadAllText(changeset.ArchivePath!).Should().Be("LSPK-bytes");
     }
 
-    // ── archive store ───────────────────────────────────────────────────────
+    // ── store once (the default) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task InstallAsync_ArchiveInTheModsDirectory_IsReleasedForARecord()
+    {
+        var modsDir = NewDir("mods");
+        var service = new ModInstallationService(
+            _database,
+            stagingBasePath: _stagingBase,
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+
+        var archive = Path.Combine(modsDir, "nexusmods", "game-domain", "Mod", "mod.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        File.Move(CreateZip(("data/thing.dat", "payload")), archive);
+        var size = new FileInfo(archive).Length;
+        Modular.Core.Dependencies.Conventions.DependencyConventions.WriteDownloadRecord(
+            archive, new Modular.Core.Dependencies.Conventions.DeclaredSource("nexusmods", "123", "game-domain", "456"));
+
+        var game = NewDir("game");
+        var result = await service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(archive).Should().BeFalse("the staged files are the mod's one copy");
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("payload");
+        Directory.EnumerateFiles(result.StagingPath!, "*", SearchOption.AllDirectories).Should().NotBeEmpty();
+
+        // The changeset still leads to the archive's record, which still names its source.
+        var changeset = await _changesets.GetChangesetAsync(result.ChangesetId!);
+        changeset!.ArchivePath.Should().Be(archive);
+        ArchiveRelease.IsReleased(archive).Should().BeTrue();
+        var released = Modular.Core.Dependencies.Conventions.DependencyConventions.ReadReleased(archive)!;
+        released.Size.Should().Be(size);
+        released.Sha256.Should().HaveLength(64);
+        Modular.Core.Dependencies.Conventions.DependencyConventions.ReadDownloadRecord(archive).Source
+            .Should().Be(new Modular.Core.Dependencies.Conventions.DeclaredSource("nexusmods", "123", "game-domain", "456"));
+    }
+
+    [Fact]
+    public async Task InstallAsync_ArchiveFromElsewhere_IsLeftWhereItIs()
+    {
+        // Downloads belong to the user: neither moved into the store nor deleted.
+        var archive = CreateZip(("data/thing.dat", "payload"));
+
+        var result = await _service.InstallAsync(archive, NewDir("game"), new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        result.ArchivePath.Should().Be(archive);
+        File.Exists(archive).Should().BeTrue();
+        File.Exists(archive + Modular.Core.Dependencies.Conventions.DependencyConventions.DownloadRecordSuffix)
+            .Should().BeFalse();
+        Directory.Exists(_archiveBase).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InstallAsync_ArchiveInsideTheGameFolder_IsLeftAlone()
+    {
+        var modsDir = NewDir("mods");
+        var game = Path.Combine(modsDir, "game");
+        Directory.CreateDirectory(game);
+        var archive = Path.Combine(game, "old-mod.zip");
+        File.Move(CreateZip(("data/thing.dat", "payload")), archive);
+        var service = new ModInstallationService(
+            _database,
+            stagingBasePath: _stagingBase,
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+
+        var result = await service.InstallAsync(archive, game, new ModInstallationOptions
+        {
+            ModId = "mod-a", AutoSnapshot = false
+        });
+
+        result.Success.Should().BeTrue(result.Error);
+        File.Exists(archive).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InstallAsync_ReleasedMod_RedeploysFromStagingWithoutTheArchive()
+    {
+        var modsDir = NewDir("mods");
+        var service = new ModInstallationService(
+            _database,
+            stagingBasePath: _stagingBase,
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+        var archive = Path.Combine(modsDir, "nexusmods", "game-domain", "Mod", "mod.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        File.Move(CreateZip(("data/thing.dat", "payload")), archive);
+        var game = NewDir("game");
+
+        var first = await service.InstallAsync(archive, game, new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
+        first.Success.Should().BeTrue(first.Error);
+        File.Exists(archive).Should().BeFalse();
+
+        // A second mod's install redeploys the game: the released mod's files come from staging.
+        var second = await service.InstallAsync(CreateZip(("data/other.dat", "b")), game,
+            new ModInstallationOptions { ModId = "mod-b", AutoSnapshot = false });
+        second.Success.Should().BeTrue(second.Error);
+        File.ReadAllText(Path.Combine(game, "data", "thing.dat")).Should().Be("payload");
+        File.ReadAllText(Path.Combine(game, "data", "other.dat")).Should().Be("b");
+    }
+
+    // ── archive store (keep_installed_archives on) ───────────────────────────────────────────────────────
 
     [Fact]
     public async Task InstallAsync_ArchiveFromElsewhere_IsMovedIntoTheStore()
@@ -299,7 +413,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var game = NewDir("game");
         var archive = CreateZip(("data/thing.dat", "payload"));
 
-        var result = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        var result = await _keeping.InstallAsync(archive, game, new ModInstallationOptions
         {
             ModId = "mod-a", AutoSnapshot = false
         });
@@ -320,7 +434,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var service = new ModInstallationService(
             _database,
             stagingBasePath: Path.Combine(Path.GetDirectoryName(_archiveBase)!, "staging"),
-            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir, KeepInstalledArchives = true });
 
         var archive = Path.Combine(modsDir, "game-domain", "mod.zip");
         Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
@@ -343,7 +457,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var service = new ModInstallationService(
             _database,
             stagingBasePath: Path.Combine(Path.GetDirectoryName(_archiveBase)!, "staging"),
-            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir });
+            settings: new Modular.Core.Configuration.AppSettings { ModsDirectory = modsDir, KeepInstalledArchives = true });
 
         var archive = CreateZip(("data/thing.dat", "payload"));
 
@@ -370,7 +484,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var archive = Path.Combine(game, "old-mod.zip");
         File.Move(CreateZip(("data/thing.dat", "payload")), archive);
 
-        var result = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        var result = await _keeping.InstallAsync(archive, game, new ModInstallationOptions
         {
             ModId = "mod-a", AutoSnapshot = false
         });
@@ -386,9 +500,9 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
     {
         var game = NewDir("game");
 
-        var first = await _service.InstallAsync(CreateZip(("a.dat", "one")), game,
+        var first = await _keeping.InstallAsync(CreateZip(("a.dat", "one")), game,
             new ModInstallationOptions { ModId = "mod-a", AutoSnapshot = false });
-        var second = await _service.InstallAsync(CreateZip(("b.dat", "two")), game,
+        var second = await _keeping.InstallAsync(CreateZip(("b.dat", "two")), game,
             new ModInstallationOptions { ModId = "mod-b", AutoSnapshot = false });
 
         first.Success.Should().BeTrue(first.Error);
@@ -405,7 +519,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
         var game = NewDir("game");
         var archive = CreateZip(("data/thing.dat", "payload"));
 
-        var first = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        var first = await _keeping.InstallAsync(archive, game, new ModInstallationOptions
         {
             ModId = "mod-a", AutoSnapshot = false, AdoptArchive = false
         });
@@ -416,7 +530,7 @@ public sealed class StagedInstallLifecycleTests : IAsyncLifetime
             424242, "Test Game", game, Modular.Core.Snapshots.SnapshotTrigger.Manual,
             gameKey: first.GameKey);
 
-        var second = await _service.InstallAsync(archive, game, new ModInstallationOptions
+        var second = await _keeping.InstallAsync(archive, game, new ModInstallationOptions
         {
             ModId = "mod-a", AutoSnapshot = false
         });

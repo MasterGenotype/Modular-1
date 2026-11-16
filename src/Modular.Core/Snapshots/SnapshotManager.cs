@@ -590,7 +590,9 @@ public class SnapshotManager
 
             if (string.IsNullOrEmpty(entry.ArchivePath) || !File.Exists(entry.ArchivePath))
             {
-                result.Errors.Add($"Cannot reinstall {modName}: archive not found ({entry.ArchivePath ?? "no path"})");
+                result.Errors.Add(Installers.ArchiveRelease.IsReleased(entry.ArchivePath)
+                    ? $"Cannot reinstall {modName}: its archive was released once installed; download {Path.GetFileName(entry.ArchivePath)} again"
+                    : $"Cannot reinstall {modName}: archive not found ({entry.ArchivePath ?? "no path"})");
                 continue;
             }
 

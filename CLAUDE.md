@@ -101,3 +101,4 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 - Plugins directory: `~/.config/Modular/plugins/`
 - Default download path: `~/Mods`
 - Downloads are laid out `<mods>/<backend>/<game>/<mod>` (`ModLibraryLayout`); `ModLibraryMigrator` moves older layouts, driven by Library → Re-organize and `modular rename`
+- Mods are stored once: the staged tree is a mod's copy, so a staged install deletes an archive in Modular's folders and leaves `<archive>.modular.json` (`ArchiveRelease`: source, declared dependencies, size, SHA-256, MD5). Archives from elsewhere (Downloads) are left alone. `keep_installed_archives` turns this off; `modular archives prune --game <key> [--remove-unused] [--apply]` (`ArchivePruner`) applies it to existing archives

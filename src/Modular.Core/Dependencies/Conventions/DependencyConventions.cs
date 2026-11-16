@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Xml;
 using System.Xml.Linq;
 using Modular.Core.Metadata;
@@ -146,27 +147,99 @@ public static class DependencyConventions
 
     /// <summary>Reads Modular's own download record.</summary>
     /// <param name="archivePath">Path of the archive the record sits beside.</param>
+    /// <remarks>
+    /// A record written when the archive was released (see <see cref="WriteReleasedRecord"/>)
+    /// also carries what the archive's own metadata declared, so the declarations outlive
+    /// the archive.
+    /// </remarks>
     public static ArchiveDeclarations ReadDownloadRecord(string archivePath)
+    {
+        var record = ReadRecordFile(archivePath);
+        if (record == null)
+            return ArchiveDeclarations.None;
+
+        return new ArchiveDeclarations
+        {
+            Source = string.IsNullOrWhiteSpace(record.Backend) || string.IsNullOrWhiteSpace(record.ModId)
+                ? null
+                : new DeclaredSource(
+                    record.Backend, record.ModId, NullIfEmpty(record.GameDomain), NullIfEmpty(record.FileId)),
+            Name = NullIfEmpty(record.Name),
+            Provides = record.Provides ?? [],
+            Requirements = record.Requirements?
+                .Where(r => !string.IsNullOrWhiteSpace(r.Identifier))
+                .Select(r => new DeclaredRequirement(
+                    r.Name ?? r.Identifier!, r.Identifier!, r.Convention ?? "unknown", r.Type, NullIfEmpty(r.Url)))
+                .ToList() ?? []
+        };
+    }
+
+    /// <summary>
+    /// Records an archive that is about to be deleted because its mod is installed and
+    /// staged, so it is stored once: what it declared, where it came from, and what it was.
+    /// </summary>
+    /// <param name="archivePath">Path of the archive; the record is written beside it.</param>
+    /// <param name="declarations">Everything the archive and its records declare.</param>
+    /// <param name="released">What the archive was, so the same file can be downloaded again.</param>
+    /// <exception cref="IOException">The record could not be written.</exception>
+    /// <remarks>
+    /// Unlike <see cref="WriteDownloadRecord"/> this throws: the caller must not delete the
+    /// archive when the record did not reach the disk.
+    /// </remarks>
+    public static void WriteReleasedRecord(string archivePath, ArchiveDeclarations declarations, ReleasedArchive released)
+    {
+        ArgumentNullException.ThrowIfNull(archivePath);
+        ArgumentNullException.ThrowIfNull(declarations);
+        ArgumentNullException.ThrowIfNull(released);
+
+        var record = new DownloadRecordFile
+        {
+            Backend = declarations.Source?.BackendId,
+            ModId = declarations.Source?.ModId,
+            GameDomain = declarations.Source?.GameDomain,
+            FileId = declarations.Source?.FileId,
+            Name = declarations.Name,
+            Provides = declarations.Provides.Count > 0 ? declarations.Provides.ToList() : null,
+            Requirements = declarations.Requirements.Count > 0
+                ? declarations.Requirements.Select(r => new RequirementRecord
+                {
+                    Name = r.Name,
+                    Identifier = r.Identifier,
+                    Convention = r.Convention,
+                    Type = r.Type,
+                    Url = r.Url
+                }).ToList()
+                : null,
+            Released = released
+        };
+
+        var path = archivePath + DownloadRecordSuffix;
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(record, JsonOptions));
+        File.Move(temp, path, overwrite: true);
+    }
+
+    /// <summary>
+    /// What a released archive was, when <paramref name="archivePath"/> names one.
+    /// </summary>
+    /// <param name="archivePath">Path the archive had.</param>
+    /// <returns>The release details, or <c>null</c> when the archive was never released.</returns>
+    public static ReleasedArchive? ReadReleased(string archivePath) =>
+        ReadRecordFile(archivePath)?.Released;
+
+    private static DownloadRecordFile? ReadRecordFile(string archivePath)
     {
         var text = ReadSidecar(archivePath + DownloadRecordSuffix);
         if (text == null)
-            return ArchiveDeclarations.None;
+            return null;
 
         try
         {
-            var record = JsonSerializer.Deserialize<DownloadRecordFile>(text, JsonOptions);
-
-            return string.IsNullOrWhiteSpace(record?.Backend) || string.IsNullOrWhiteSpace(record.ModId)
-                ? ArchiveDeclarations.None
-                : new ArchiveDeclarations
-                {
-                    Source = new DeclaredSource(
-                        record.Backend, record.ModId, NullIfEmpty(record.GameDomain), NullIfEmpty(record.FileId))
-                };
+            return JsonSerializer.Deserialize<DownloadRecordFile>(text, JsonOptions);
         }
         catch (JsonException)
         {
-            return ArchiveDeclarations.None;
+            return null;
         }
     }
 
@@ -501,5 +574,55 @@ public static class DependencyConventions
         public string? ModId { get; set; }
         public string? GameDomain { get; set; }
         public string? FileId { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Name { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? Provides { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<RequirementRecord>? Requirements { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ReleasedArchive? Released { get; set; }
     }
+
+    private sealed class RequirementRecord
+    {
+        public string? Name { get; set; }
+        public string? Identifier { get; set; }
+        public string? Convention { get; set; }
+
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public DependencyType Type { get; set; } = DependencyType.Required;
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Url { get; set; }
+    }
+}
+
+/// <summary>
+/// An archive Modular deleted once its mod was installed and staged, because the staged
+/// files are the mod's copy and keeping the archive too would store the mod twice.
+/// </summary>
+public sealed class ReleasedArchive
+{
+    /// <summary>The archive's file name.</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Its size in bytes.</summary>
+    public long Size { get; set; }
+
+    /// <summary>SHA-256 of its contents, lower-case hex, to recognise the same file downloaded again.</summary>
+    public string? Sha256 { get; set; }
+
+    /// <summary>
+    /// MD5 of its contents, lower-case hex: what NexusMods' md5 search and mod.io's file
+    /// hash identify a file by, for an archive whose record names no source.
+    /// </summary>
+    public string? Md5 { get; set; }
+
+    /// <summary>When it was deleted.</summary>
+    public DateTimeOffset ReleasedAtUtc { get; set; }
 }

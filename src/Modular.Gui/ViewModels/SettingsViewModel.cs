@@ -91,6 +91,9 @@ public partial class SettingsViewModel : ViewModelBase
     private bool _verifyDownloads = true;
 
     [ObservableProperty]
+    private bool _keepInstalledArchives;
+
+    [ObservableProperty]
     private bool _validateTracking;
 
     [ObservableProperty]
@@ -238,6 +241,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoRename = _settings.AutoRename;
         OrganizeByCategory = _settings.OrganizeByCategory;
         VerifyDownloads = _settings.VerifyDownloads;
+        KeepInstalledArchives = _settings.KeepInstalledArchives;
         ValidateTracking = _settings.ValidateTracking;
         MaxConcurrentDownloads = _settings.MaxConcurrentDownloads;
 
@@ -269,6 +273,7 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnAutoRenameChanged(bool value) => HasUnsavedChanges = true;
     partial void OnOrganizeByCategoryChanged(bool value) => HasUnsavedChanges = true;
     partial void OnVerifyDownloadsChanged(bool value) => HasUnsavedChanges = true;
+    partial void OnKeepInstalledArchivesChanged(bool value) => HasUnsavedChanges = true;
     partial void OnValidateTrackingChanged(bool value) => HasUnsavedChanges = true;
     partial void OnMaxConcurrentDownloadsChanged(int value) => HasUnsavedChanges = true;
     partial void OnVerboseChanged(bool value) => HasUnsavedChanges = true;
@@ -380,6 +385,7 @@ public partial class SettingsViewModel : ViewModelBase
             _settings.AutoRename = AutoRename;
             _settings.OrganizeByCategory = OrganizeByCategory;
             _settings.VerifyDownloads = VerifyDownloads;
+            _settings.KeepInstalledArchives = KeepInstalledArchives;
             _settings.ValidateTracking = ValidateTracking;
             _settings.MaxConcurrentDownloads = MaxConcurrentDownloads;
 
