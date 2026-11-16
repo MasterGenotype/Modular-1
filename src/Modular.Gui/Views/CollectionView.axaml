@@ -241,7 +241,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Endorsements" Width="100">
+                        <DataGridTemplateColumn Header="Endorsements" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="vm:NexusCollectionDisplayModel">
                                     <TextBlock Text="{Binding Endorsements, StringFormat='{}{0:N0}'}"

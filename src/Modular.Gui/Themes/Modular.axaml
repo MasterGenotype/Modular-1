@@ -214,6 +214,14 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
         <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <!-- A narrowed column trims its text instead of drawing it over the next one -->
+    <Style Selector="DataGridCell">
+        <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="DataGridCell TextBlock, DataGridColumnHeader TextBlock">
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
     </Style>
 
     <!-- Progress: gradient fill -->

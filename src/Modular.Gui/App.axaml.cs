@@ -24,6 +24,8 @@ public partial class App : Application
             // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
             DisableAvaloniaDataAnnotationValidation();
 
+            DataGridColumnGuard.Register();
+
             // Get ViewModel from DI container
             var viewModel = Program.Services?.GetService<MainWindowViewModel>() ?? new MainWindowViewModel();
 
