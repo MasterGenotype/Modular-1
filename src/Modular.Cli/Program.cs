@@ -6,6 +6,7 @@ using Modular.Cli.Commands.GameDetection;
 using Modular.Cli.Commands.Modules;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
+using Modular.Cli.Commands.Steam;
 using Modular.Cli.Commands.Switch;
 using Modular.Cli.Commands.Switch.Totk;
 using Modular.Cli.Commands.Telemetry;
@@ -343,6 +344,38 @@ class Program
 
                 telemetry.AddCommand<TelemetryClearCommand>("clear")
                     .WithDescription("Clear all telemetry data");
+            });
+
+            // Steam account (Modular's own SteamKit2 session) and depot manifests
+            config.AddBranch("steam", steam =>
+            {
+                steam.SetDescription("Modular's own Steam login (separate from the Steam client)");
+                steam.AddCommand<SteamLoginCommand>("login")
+                    .WithDescription("Log in with account name + password; Steam Guard by app approval or code")
+                    .WithExample("steam", "login")
+                    .WithExample("steam", "login", "--user", "myaccount");
+                steam.AddCommand<SteamStatusCommand>("status")
+                    .WithDescription("Show the stored login; --check logs on to verify it");
+                steam.AddCommand<SteamLogoutCommand>("logout")
+                    .WithDescription("Remove the stored Steam login");
+            });
+
+            config.AddBranch("depot", depot =>
+            {
+                depot.SetDescription("Steam depot manifests: list, fetch, archive");
+                depot.AddCommand<DepotListCommand>("list")
+                    .WithDescription("List an app's depots and current manifests (needs steam login)")
+                    .WithExample("depot", "list", "1091500");
+                depot.AddCommand<DepotFetchCommand>("fetch")
+                    .WithDescription("Download a depot manifest into Modular's archive (needs steam login)")
+                    .WithExample("depot", "fetch", "1091500", "1091501")
+                    .WithExample("depot", "fetch", "1091500", "1091501", "3524634124112875626");
+                depot.AddCommand<DepotArchiveCommand>("archive")
+                    .WithDescription("Copy manifests from Steam's depotcache into Modular's archive")
+                    .WithExample("depot", "archive");
+                depot.AddCommand<DepotShowCommand>("show")
+                    .WithDescription("Summarize an archived manifest (offline)")
+                    .WithExample("depot", "show", "1091501", "3524634124112875626");
             });
 
             // Switch mod pipeline commands
