@@ -49,7 +49,9 @@ public sealed class DepotListCommand : AsyncCommand<DepotListCommand.Settings>
                     d.DepotId.ToString(),
                     Markup.Escape(d.Name ?? ""),
                     d.ManifestId?.ToString() ?? "[grey]–[/]",
-                    Gb(d.Size), Gb(d.DownloadSize),
+                    Gb(d.Size),
+                    // PICS reports nonsense "download" values for some old manifests (Bastion legacy: ~1.3 TB for a 0.9 GB depot).
+                    d.DownloadSize is { } dl && d.Size is { } sz && dl > sz * 2 ? "[grey]?[/]" : Gb(d.DownloadSize),
                     Markup.Escape(string.Join(" ", new[] { d.OsList, d.Language }.Where(s => !string.IsNullOrEmpty(s)))),
                     Markup.Escape(notes),
                     d.ManifestId is { } m && store.Contains(d.DepotId, m) ? "[green]yes[/]" : "");
