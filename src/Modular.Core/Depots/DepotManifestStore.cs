@@ -43,7 +43,29 @@ public sealed class DepotManifestStore
         return path;
     }
 
-    /// <summary>All archived manifests for one depot, newest creation time first.</summary>
+    public ManifestView? LoadView(uint depotId, ulong manifestId) =>
+        Load(depotId, manifestId) is { } m ? ManifestView.From(m) : null;
+
+    /// <summary>Every readable archived manifest of one depot, as views (candidates for identification).</summary>
+    public IReadOnlyList<ManifestView> LoadViews(uint depotId)
+    {
+        var views = new List<ManifestView>();
+        foreach (var archived in List(depotId))
+        {
+            try
+            {
+                if (DepotManifest.LoadFromFile(archived.Path) is { FilenamesEncrypted: false } m)
+                    views.Add(ManifestView.From(m));
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException)
+            {
+                // unreadable archive entry: not a candidate
+            }
+        }
+        return views;
+    }
+
+    /// <summary>All archived manifests for one depot, newest file first.</summary>
     public IReadOnlyList<ArchivedManifest> List(uint? depotId = null)
     {
         if (!Directory.Exists(Root))

@@ -373,6 +373,13 @@ class Program
                 depot.AddCommand<DepotArchiveCommand>("archive")
                     .WithDescription("Copy manifests from Steam's depotcache into Modular's archive")
                     .WithExample("depot", "archive");
+                depot.AddCommand<DepotStatusCommand>("status")
+                    .WithDescription("Which build is really installed (checked against archived manifests, not the acf)")
+                    .WithExample("depot", "status", "1091500")
+                    .WithExample("depot", "status", "1091500", "--online", "--verify");
+                depot.AddCommand<DepotDiffCommand>("diff")
+                    .WithDescription("Files and download size between two archived manifests (offline)")
+                    .WithExample("depot", "diff", "1091501", "3389237510439361019", "3524634124112875626");
                 depot.AddCommand<DepotShowCommand>("show")
                     .WithDescription("Summarize an archived manifest (offline)")
                     .WithExample("depot", "show", "1091501", "3524634124112875626");
