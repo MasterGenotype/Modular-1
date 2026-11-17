@@ -159,7 +159,7 @@ public static class BuildPinner
         // The files are complete and match the recorded manifests: nothing for Steam to resume.
         acf.Set(FullyInstalled.ToString(), "StateFlags");
         if (acf.Get("TargetBuildID") is not null)
-            acf.Set("0", "TargetBuildID");
+            SetTracked("0", "TargetBuildID"); // tracked, so unpin puts Steam's value back
         acf.Save();
 
         return new BuildPin(appId, DateTimeOffset.UtcNow, depots.ToDictionary(d => d.Key, d => d.Value.Manifest), branch, buildId, replaced);
@@ -183,6 +183,8 @@ public static class BuildPinner
             drift.Add($"Steam has an update pending or running (StateFlags {acf.StateFlags}).");
         if (raw.Get("TargetBuildID") is { } target && target != "0" && target != acf.BuildId?.ToString())
             drift.Add($"Steam is targeting build {target}.");
+        if (long.TryParse(raw.Get("ScheduledAutoUpdate"), out var scheduled) && scheduled > 0)
+            drift.Add($"Steam has scheduled an automatic update for {DateTimeOffset.FromUnixTimeSeconds(scheduled):u}.");
         if (raw.Get("AutoUpdateBehavior") != BuildPin.AutoUpdateOnLaunchOnly)
             drift.Add($"AutoUpdateBehavior is {raw.Get("AutoUpdateBehavior") ?? "unset"}, not 1 (update only on launch).");
         if (pin.Branch is not null && pin.Branch != "public" && raw.Get("UserConfig", "BetaKey") != pin.Branch)

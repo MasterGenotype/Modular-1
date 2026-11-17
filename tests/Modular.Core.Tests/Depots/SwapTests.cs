@@ -230,6 +230,7 @@ public sealed class BuildPinTests : IDisposable
 
         raw = SteamAcfEditor.Load(Acf);
         raw.Get("AutoUpdateBehavior").Should().Be("0");
+        raw.Get("TargetBuildID").Should().Be("0", "it was 0 before the pin");
         raw.Get("UserConfig", "BetaKey").Should().BeNull();
         raw.Get("MountedConfig", "BetaKey").Should().BeNull();
         SteamAppManifest.Load(Acf).InstalledDepots.Single().ManifestId.Should().Be(1228477902981854726UL, "manifest ids stay true after unpin");
@@ -253,12 +254,14 @@ public sealed class BuildPinTests : IDisposable
         raw.Set("6", "StateFlags");
         raw.Set("26300000", "TargetBuildID");
         raw.Set("0", "AutoUpdateBehavior");
+        raw.Set("1795259262", "ScheduledAutoUpdate"); // what Steam wrote in the Norland test
         raw.Set("6071069523908843722", "InstalledDepots", "1857091", "manifest");
         raw.Save();
 
         var drift = BuildPinner.CheckDrift(SteamAppManifest.Load(Acf), SteamAcfEditor.Load(Acf), pin);
 
-        drift.Should().HaveCount(4);
+        drift.Should().HaveCount(5);
+        drift.Should().Contain(d => d.Contains("2026-11-21"));
     }
 
     [Fact]
