@@ -205,6 +205,13 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
                 drift.Add($"Depot {depot} on disk is {onDisk.ManifestId?.ToString() ?? "unknown"}, pinned {manifest}.");
         }
         var what = $"{string.Join(", ", pin.Depots.Select(d => $"{d.Key}={d.Value}"))}{(pin.Branch is { } b ? $", branch {b}" : "")}";
+        if (PinLock.Paths(pin, new DepotManifestStore()) is { } lockPaths)
+        {
+            var state = BuildLock.GetState(acf.InstallPath, lockPaths);
+            if (pin.Locked && !state.FullyLocked)
+                drift.Add($"Hard lock incomplete: {state.Unlocked} of {state.Locked + state.Unlocked} build file(s) are not locked.");
+            what += pin.Locked ? $", hard-locked ({state.Locked}/{state.Locked + state.Unlocked} files)" : "";
+        }
         if (drift.Count == 0)
             AnsiConsole.MarkupLine($"Pin: [green]holding[/] since {pin.PinnedAt:u} ({Markup.Escape(what)})");
         else

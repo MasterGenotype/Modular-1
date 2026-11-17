@@ -88,7 +88,8 @@ public sealed record BuildPin(
     Dictionary<uint, ulong> Depots,
     string? Branch,
     uint? BuildId,
-    Dictionary<string, string?> Replaced)
+    Dictionary<string, string?> Replaced,
+    bool Locked = false)
 {
     public const string AutoUpdateOnLaunchOnly = "1";
 }

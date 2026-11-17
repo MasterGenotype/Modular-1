@@ -294,6 +294,12 @@ public sealed class DepotSwapCommand : AsyncCommand<DepotSwapCommand.Settings>
         if (!settings.Yes && !AnsiConsole.Confirm("Apply to the game folder now?", defaultValue: false))
             return 1;
 
+        // A hard-locked build has to be unlocked for the swap and is locked again afterwards.
+        var previousPin = new BuildPinStore().Load(acf.AppId);
+        var wasLocked = previousPin is { Locked: true };
+        if (wasLocked && !await PinLock.SetAsync(acf, previousPin!, store, locked: false, cts.Token))
+            return 1;
+
         try
         {
             foreach (var w in work)
@@ -329,6 +335,13 @@ public sealed class DepotSwapCommand : AsyncCommand<DepotSwapCommand.Settings>
             }
             var pin = BuildPinner.Apply(SteamAcfEditor.Load(acf.AcfPath), acf.AppId, depots, staged.Branch, staged.BuildId, pins.Load(acf.AppId));
             pins.Save(pin);
+            if (wasLocked)
+            {
+                if (await PinLock.SetAsync(acf, pin, store, locked: true, cts.Token))
+                    pins.Save(pin with { Locked = true });
+                else
+                    LiveProgressDisplay.ShowWarning("The new build is pinned but not locked. Run 'depot lock' to lock it.");
+            }
 
             Directory.Delete(StagingPaths.AppRoot(acf), recursive: true);
             var stagingRoot = Path.GetDirectoryName(StagingPaths.AppRoot(acf))!;
@@ -420,7 +433,7 @@ public sealed class DepotPinCommand : AsyncCommand<DepotPinCommand.Settings>
     }
 }
 
-public sealed class DepotUnpinCommand : Command<DepotUnpinCommand.Settings>
+public sealed class DepotUnpinCommand : AsyncCommand<DepotUnpinCommand.Settings>
 {
     public sealed class Settings : CommandSettings
     {
@@ -428,8 +441,9 @@ public sealed class DepotUnpinCommand : Command<DepotUnpinCommand.Settings>
         public uint AppId { get; init; }
     }
 
-    public override int Execute(CommandContext context, Settings settings)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
+        using var cts = ConsoleCancellation.Create();
         var acf = SteamAppManifest.Find(settings.AppId);
         var pins = new BuildPinStore();
         var pin = pins.Load(settings.AppId);
@@ -443,6 +457,8 @@ public sealed class DepotUnpinCommand : Command<DepotUnpinCommand.Settings>
             LiveProgressDisplay.ShowError("Steam is running. Close Steam completely, then run this again.");
             return 1;
         }
+        if (pin.Locked && !await PinLock.SetAsync(acf, pin, new DepotManifestStore(), locked: false, cts.Token))
+            return 1;
         BuildPinner.Remove(SteamAcfEditor.Load(acf.AcfPath), pin);
         pins.Delete(settings.AppId);
         LiveProgressDisplay.ShowSuccess($"Unpinned {acf.Name}. Steam's own update settings are restored; it will update the game to the latest build.");

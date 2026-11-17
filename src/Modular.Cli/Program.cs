@@ -392,6 +392,11 @@ class Program
                     .WithExample("depot", "pin", "1091500", "--branch", "2_31_old");
                 depot.AddCommand<DepotUnpinCommand>("unpin")
                     .WithDescription("Restore Steam's update settings from before the pin (Steam closed)");
+                depot.AddCommand<DepotLockCommand>("lock")
+                    .WithDescription("Opt-in hard lock: make the pinned build's files unchangeable (asks for admin rights)")
+                    .WithExample("depot", "lock", "107100");
+                depot.AddCommand<DepotUnlockCommand>("unlock")
+                    .WithDescription("Remove the hard lock (asks for admin rights); the pin stays");
                 depot.AddCommand<DepotShowCommand>("show")
                     .WithDescription("Summarize an archived manifest (offline)")
                     .WithExample("depot", "show", "1091501", "3524634124112875626");

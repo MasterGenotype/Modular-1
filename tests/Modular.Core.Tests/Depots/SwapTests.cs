@@ -273,3 +273,33 @@ public sealed class BuildPinTests : IDisposable
         second.Replaced["AutoUpdateBehavior"].Should().Be("0", "the pre-Modular value, not the pin's own 1");
     }
 }
+
+public sealed class BuildLockTests : IDisposable
+{
+    private readonly string _dir = Directory.CreateTempSubdirectory("modular-lock-").FullName;
+
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public void GetState_ReadsTheAttributeWithoutPrivileges()
+    {
+        File.WriteAllText(Path.Combine(_dir, "a.bin"), "x");
+
+        var state = BuildLock.GetState(_dir, new[] { "a.bin", "missing.bin" });
+
+        state.Locked.Should().Be(0);
+        state.Unlocked.Should().Be(1);
+        state.Missing.Should().Be(1);
+        state.AnyLocked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsImmutable_DoesNotFollowSymlinks()
+    {
+        File.WriteAllText(Path.Combine(_dir, "real"), "x");
+        File.CreateSymbolicLink(Path.Combine(_dir, "link"), Path.Combine(_dir, "real"));
+
+        BuildLock.IsImmutable(Path.Combine(_dir, "link")).Should().BeNull();
+        BuildLock.IsImmutable(Path.Combine(_dir, "real")).Should().BeFalse();
+    }
+}
