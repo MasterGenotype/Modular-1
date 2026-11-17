@@ -8,10 +8,13 @@ url="https://github.com/MasterGenotype/Modular-1"
 license=('unknown')
 depends=('gcc-libs' 'glibc' 'openssl' 'icu' 'zlib'
          'libx11' 'libxcb' 'libxkbcommon' 'libxrandr' 'libxcursor' 'libxi'
-         'fontconfig' 'freetype2' 'mesa')
+         'fontconfig' 'freetype2' 'mesa'
+         'python' 'polkit')  # build-lock helper (usr/lib/modular) + its polkit action
 makedepends=('dotnet-sdk-9.0' 'git')
 provides=('modular')
-conflicts=('modular')
+conflicts=('modular' 'modular-lock-helper')
+# The build-lock helper used to be its own package; this one now ships it.
+replaces=('modular-lock-helper')
 # strip corrupts .NET single-file bundles
 options=('!strip')
 
@@ -98,6 +101,11 @@ package() {
 
     install -dm755 "$pkgdir/usr/bin"
     ln -s /usr/share/modular-gui/Modular.Gui "$pkgdir/usr/bin/modular-gui"
+
+    # Build-lock helper (root, run only through pkexec) and its polkit action
+    install -Dm755 packaging/lock-helper/modular-lock-helper "$pkgdir/usr/lib/modular/modular-lock-helper"
+    install -Dm644 packaging/lock-helper/io.modular.build-lock.policy \
+        "$pkgdir/usr/share/polkit-1/actions/io.modular.build-lock.policy"
 
     # Documentation
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

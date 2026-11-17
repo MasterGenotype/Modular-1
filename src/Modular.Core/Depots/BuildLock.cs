@@ -61,7 +61,7 @@ public static class BuildLock
     {
         if (!HelperInstalled)
             throw new BuildLockUnavailableException(
-                "The build-lock helper is not installed. An administrator installs the modular-lock-helper package once (packaging/lock-helper; on immutable /usr systems through the system's own installer).");
+                "The build-lock helper is missing. It ships with the Modular package (/usr/lib/modular); reinstall Modular, or on a source install run: sudo make install-lock-helper");
 
         var psi = new ProcessStartInfo("pkexec")
         {
