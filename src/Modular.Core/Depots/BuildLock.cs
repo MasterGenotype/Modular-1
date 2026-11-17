@@ -12,7 +12,7 @@ namespace Modular.Core.Depots;
 /// </summary>
 public static class BuildLock
 {
-    public const string HelperPath = "/usr/local/libexec/modular/modular-lock-helper";
+    public const string HelperPath = "/usr/lib/modular/modular-lock-helper";
     public const string PolicyPath = "/usr/share/polkit-1/actions/io.modular.build-lock.policy";
 
     public static bool HelperInstalled => File.Exists(HelperPath) && File.Exists(PolicyPath);
@@ -61,7 +61,7 @@ public static class BuildLock
     {
         if (!HelperInstalled)
             throw new BuildLockUnavailableException(
-                "The build-lock helper is not installed. An administrator installs it once with: sudo make install-lock-helper");
+                "The build-lock helper is not installed. An administrator installs the modular-lock-helper package once (packaging/lock-helper; on immutable /usr systems through the system's own installer).");
 
         var psi = new ProcessStartInfo("pkexec")
         {

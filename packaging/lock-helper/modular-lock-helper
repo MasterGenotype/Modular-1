@@ -2,7 +2,7 @@
 """Set or clear the immutable attribute on a game's files for Modular's build lock.
 
 Runs as root through pkexec (polkit action io.modular.build-lock). Must be installed
-root-owned, e.g. /usr/local/libexec/modular/modular-lock-helper, mode 0755.
+root-owned, e.g. /usr/lib/modular/modular-lock-helper, mode 0755.
 
     modular-lock-helper lock|unlock <game-root>    (relative paths on stdin, NUL-separated)
 

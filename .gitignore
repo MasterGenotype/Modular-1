@@ -33,3 +33,8 @@ pkg/src/
 
 # OS
 .DS_Store
+
+# makepkg output for the lock-helper package
+packaging/lock-helper/src/
+packaging/lock-helper/pkg/
+packaging/lock-helper/*.pkg.tar.zst

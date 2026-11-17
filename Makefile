@@ -119,7 +119,7 @@ uninstall-gui: ## Uninstall GUI from ~/.local/bin
 uninstall-all: uninstall-cli uninstall-gui ## Uninstall everything
 	@echo "All Modular components uninstalled"
 
-LOCK_HELPER_DIR = /usr/local/libexec/modular
+LOCK_HELPER_DIR = /usr/lib/modular
 POLKIT_ACTIONS_DIR = /usr/share/polkit-1/actions
 
 install-lock-helper: ## Install the build-lock helper + polkit policy (needs root once: sudo make install-lock-helper)
