@@ -331,6 +331,9 @@ public sealed class DepotSwapCommand : AsyncCommand<DepotSwapCommand.Settings>
             pins.Save(pin);
 
             Directory.Delete(StagingPaths.AppRoot(acf), recursive: true);
+            var stagingRoot = Path.GetDirectoryName(StagingPaths.AppRoot(acf))!;
+            if (Directory.Exists(stagingRoot) && !Directory.EnumerateFileSystemEntries(stagingRoot).Any())
+                Directory.Delete(stagingRoot);
             LiveProgressDisplay.ShowSuccess($"Swapped and pinned. {(staged.Branch is { } br ? $"Branch {br}. " : "")}Check any time with: modular depot status {acf.AppId}");
             return 0;
         }
