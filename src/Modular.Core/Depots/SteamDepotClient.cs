@@ -10,6 +10,17 @@ namespace Modular.Core.Depots;
 /// </summary>
 public sealed class SteamDepotClient(SteamSession session)
 {
+    /// <summary>Content servers usable for <paramref name="appId"/>, least loaded first.</summary>
+    internal static async Task<IReadOnlyList<Server>> GetServersAsync(SteamSession session, uint appId, CancellationToken ct)
+    {
+        var servers = (await session.Content.GetServersForSteamPipe(session.CellId, null).WaitAsync(ct))
+            .Where(s => s.Type is "SteamCache" or "CDN")
+            .Where(s => s.AllowedAppIds is null || s.AllowedAppIds.Length == 0 || s.AllowedAppIds.Contains(appId))
+            .OrderBy(s => s.WeightedLoad)
+            .ToList();
+        return servers.Count > 0 ? servers : throw new DepotAccessException("Steam returned no content servers.");
+    }
+
     /// <summary>Depots and the manifest each one has on <paramref name="branch"/>, from PICS.</summary>
     public async Task<AppDepotInfo> GetAppDepotsAsync(uint appId, string branch = "public", CancellationToken ct = default)
     {
@@ -83,13 +94,7 @@ public sealed class SteamDepotClient(SteamSession session)
             throw new DepotAccessException(
                 $"Steam refused a manifest request code for {depotId}_{manifestId} on branch '{branch}'.");
 
-        var servers = (await session.Content.GetServersForSteamPipe(session.CellId, null).WaitAsync(ct))
-            .Where(s => s.Type is "SteamCache" or "CDN")
-            .Where(s => s.AllowedAppIds is null || s.AllowedAppIds.Length == 0 || s.AllowedAppIds.Contains(appId))
-            .OrderBy(s => s.WeightedLoad)
-            .ToList();
-        if (servers.Count == 0)
-            throw new DepotAccessException("Steam returned no content servers.");
+        var servers = await GetServersAsync(session, appId, ct);
 
         using var cdn = new SteamKit2.CDN.Client(session.Client);
         var errors = new List<string>();
@@ -113,6 +118,60 @@ public sealed class SteamDepotClient(SteamSession session)
         throw new DepotAccessException(
             $"All content servers failed for {depotId}_{manifestId}:\n  " + string.Join("\n  ", errors));
     }
+}
+
+/// <summary>Downloads chunks for one depot from the Steam CDN, rotating servers on failure.</summary>
+public sealed class SteamCdnChunkSource : IChunkSource, IDisposable
+{
+    private const int Attempts = 6;
+    private readonly SteamKit2.CDN.Client _cdn;
+    private readonly IReadOnlyList<Server> _servers;
+    private readonly byte[] _depotKey;
+    private int _serverIndex;
+
+    private SteamCdnChunkSource(SteamKit2.CDN.Client cdn, IReadOnlyList<Server> servers, byte[] depotKey)
+    {
+        _cdn = cdn;
+        _servers = servers;
+        _depotKey = depotKey;
+    }
+
+    public static async Task<SteamCdnChunkSource> CreateAsync(SteamSession session, uint appId, uint depotId, CancellationToken ct)
+    {
+        var key = await session.Apps.GetDepotDecryptionKey(depotId, appId).ToTask().WaitAsync(ct);
+        if (key.Result != EResult.OK)
+            throw new DepotAccessException($"No depot key for {depotId} ({key.Result}).");
+        var servers = await SteamDepotClient.GetServersAsync(session, appId, ct);
+        return new SteamCdnChunkSource(new SteamKit2.CDN.Client(session.Client), servers, key.DepotKey);
+    }
+
+    public async Task<byte[]> GetChunkAsync(uint depotId, ManifestChunk chunk, CancellationToken ct)
+    {
+        var data = new DepotManifest.ChunkData(Convert.FromHexString(chunk.ChunkId), chunk.Checksum, chunk.Offset,
+            chunk.CompressedLength, chunk.UncompressedLength);
+        var errors = new List<string>();
+        for (var attempt = 0; attempt < Attempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var server = _servers[(Volatile.Read(ref _serverIndex) + attempt) % _servers.Count];
+            try
+            {
+                var buffer = new byte[chunk.UncompressedLength];
+                var written = await _cdn.DownloadDepotChunkAsync(depotId, data, server, buffer, _depotKey).WaitAsync(ct);
+                return written == buffer.Length ? buffer : buffer[..written];
+            }
+            catch (Exception ex) when (ex is SteamKitWebRequestException or HttpRequestException or IOException
+                                       or InvalidDataException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                errors.Add($"{server.Host}: {ex.Message}");
+                Interlocked.Increment(ref _serverIndex); // move everyone off a failing server
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (attempt + 1)), ct);
+            }
+        }
+        throw new StagingException($"chunk {chunk.ChunkId} failed on every server: {string.Join("; ", errors.TakeLast(3))}");
+    }
+
+    public void Dispose() => _cdn.Dispose();
 }
 
 public sealed record AppDepotInfo(

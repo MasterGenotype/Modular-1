@@ -13,9 +13,14 @@ public sealed class ManifestView
         DepotId = depotId;
         ManifestId = manifestId;
         CreationTime = creationTime;
-        Files = files.Where(f => !f.IsDirectory).ToList();
+        var all = files.ToList();
+        Files = all.Where(f => !f.IsDirectory).ToList();
+        Directories = all.Where(f => f.IsDirectory).Select(f => f.Path).ToList();
         ByPath = Files.ToDictionary(f => f.Path, StringComparer.Ordinal);
     }
+
+    /// <summary>Directory entries (including empty ones a swap must create).</summary>
+    public IReadOnlyList<string> Directories { get; }
 
     public uint DepotId { get; }
     public ulong ManifestId { get; }
@@ -37,7 +42,7 @@ public sealed class ManifestView
             f.TotalSize,
             Hex(f.FileHash),
             f.Flags.HasFlag(EDepotFileFlag.Directory),
-            f.Chunks.Select(c => new ManifestChunk(Hex(c.ChunkID), c.CompressedLength, c.UncompressedLength)).ToList())));
+            f.Chunks.Select(c => new ManifestChunk(Hex(c.ChunkID), c.CompressedLength, c.UncompressedLength, c.Offset, c.Checksum)).ToList())));
 
     /// <summary>Depot paths use '\' on Windows depots; Modular compares and joins with '/'.</summary>
     public static string NormalizePath(string path) => path.Replace('\\', '/');
@@ -48,4 +53,7 @@ public sealed class ManifestView
 /// <param name="Sha1">Upper-case hex SHA-1 of the whole file, as Steam records it.</param>
 public sealed record ManifestFile(string Path, ulong Size, string Sha1, bool IsDirectory, IReadOnlyList<ManifestChunk> Chunks);
 
-public sealed record ManifestChunk(string ChunkId, uint CompressedLength, uint UncompressedLength);
+/// <param name="ChunkId">Upper-case hex SHA-1 of the chunk's uncompressed bytes.</param>
+/// <param name="Offset">Where the chunk sits in its file.</param>
+/// <param name="Checksum">Steam's Adler-style checksum, passed back to the CDN client.</param>
+public sealed record ManifestChunk(string ChunkId, uint CompressedLength, uint UncompressedLength, ulong Offset = 0, uint Checksum = 0);

@@ -380,6 +380,18 @@ class Program
                 depot.AddCommand<DepotDiffCommand>("diff")
                     .WithDescription("Files and download size between two archived manifests (offline)")
                     .WithExample("depot", "diff", "1091501", "3389237510439361019", "3524634124112875626");
+                depot.AddCommand<DepotStageCommand>("stage")
+                    .WithDescription("Download a build into a staging folder (game untouched); resumable")
+                    .WithExample("depot", "stage", "1091500", "--to-branch", "2_31_old", "--dry-run")
+                    .WithExample("depot", "stage", "1857090", "--manifest", "1857091=1228477902981854726");
+                depot.AddCommand<DepotSwapCommand>("swap")
+                    .WithDescription("Apply the staged build and pin it against Steam updates (Steam must be closed)")
+                    .WithExample("depot", "swap", "1857090");
+                depot.AddCommand<DepotPinCommand>("pin")
+                    .WithDescription("Pin the installed build: update only on launch, optional official branch (Steam closed)")
+                    .WithExample("depot", "pin", "1091500", "--branch", "2_31_old");
+                depot.AddCommand<DepotUnpinCommand>("unpin")
+                    .WithDescription("Restore Steam's update settings from before the pin (Steam closed)");
                 depot.AddCommand<DepotShowCommand>("show")
                     .WithDescription("Summarize an archived manifest (offline)")
                     .WithExample("depot", "show", "1091501", "3524634124112875626");

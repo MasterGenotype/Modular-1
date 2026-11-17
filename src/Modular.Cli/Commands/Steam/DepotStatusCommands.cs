@@ -118,6 +118,8 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
         foreach (var (id, _, _) in rows)
             ReportDetails(id);
 
+        ReportPin(acf, rows.Select(r => r.Id).ToList());
+
         if (!settings.Verify)
             AnsiConsole.MarkupLine("[grey]Sizes checked for every file; hashes only where manifests differ. --verify hashes everything.[/]");
         return 0;
@@ -184,6 +186,33 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
             AnsiConsole.MarkupLine($"[grey]{id.DepotId} candidates:[/]");
             foreach (var c in id.Candidates.Take(5))
                 AnsiConsole.MarkupLine($"[grey]  {c.ManifestId} ({c.CreationTime:yyyy-MM-dd}): {c.SizeMatches}/{c.Files} sizes, {c.Missing} missing, {c.SizeMismatch} differ{(c.HashMatches is { } h ? $", {h} hash hits" : "")}[/]");
+        }
+    }
+
+    private static void ReportPin(SteamAppManifest acf, IReadOnlyList<DepotIdentification> ids)
+    {
+        var pin = new BuildPinStore().Load(acf.AppId);
+        if (pin is null)
+        {
+            AnsiConsole.MarkupLine($"Pin: [grey]not pinned[/] (Steam updates normally; AutoUpdateBehavior {acf.AutoUpdateBehavior?.ToString() ?? "?"})");
+            return;
+        }
+        var drift = BuildPinner.CheckDrift(acf, SteamAcfEditor.Load(acf.AcfPath), pin).ToList();
+        foreach (var (depot, manifest) in pin.Depots)
+        {
+            var onDisk = ids.FirstOrDefault(i => i.DepotId == depot);
+            if (onDisk is not null && onDisk.ManifestId != manifest && !onDisk.EquivalentManifests.Contains(manifest))
+                drift.Add($"Depot {depot} on disk is {onDisk.ManifestId?.ToString() ?? "unknown"}, pinned {manifest}.");
+        }
+        var what = $"{string.Join(", ", pin.Depots.Select(d => $"{d.Key}={d.Value}"))}{(pin.Branch is { } b ? $", branch {b}" : "")}";
+        if (drift.Count == 0)
+            AnsiConsole.MarkupLine($"Pin: [green]holding[/] since {pin.PinnedAt:u} ({Markup.Escape(what)})");
+        else
+        {
+            AnsiConsole.MarkupLine($"Pin: [red]drifted[/] (pinned {pin.PinnedAt:u}: {Markup.Escape(what)})");
+            foreach (var d in drift)
+                AnsiConsole.MarkupLine($"  [red]•[/] {Markup.Escape(d)}");
+            AnsiConsole.MarkupLine($"  [grey]Re-pin with 'modular depot pin {acf.AppId}' (Steam closed), or swap back.[/]");
         }
     }
 
