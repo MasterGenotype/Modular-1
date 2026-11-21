@@ -120,11 +120,12 @@ public partial class GameDetectionViewModel : ViewModelBase
                         InstallDirectory = s.StartDir,
                         IsFullyInstalled = true,
                         IsShortcut = true,
+                        ShortcutIcon = s.Icon,
                     });
                 }
             }
 
-            foreach (var game in results.OrderBy(g => g.DisplayName))
+            foreach (var game in results.Where(g => !SteamTools.IsTool(g.AppId, g.DisplayName)).OrderBy(g => g.DisplayName))
             {
                 Games.Add(new GameDisplayModel
                 {
@@ -209,6 +210,7 @@ public partial class GameDetectionViewModel
         var service = SteamShortcutService.ForCurrentUser();
         if (service is null)
             return;
+        var missing = new List<GameDisplayModel>();
         foreach (var game in games)
         {
             if (cts.IsCancellationRequested)
@@ -216,20 +218,83 @@ public partial class GameDetectionViewModel
             string? path = game.IsShortcut
                 ? service.CurrentArt(game.ShortcutAppId).GetValueOrDefault(Modular.Core.Steam.SteamArtKind.Grid)
                 : service.User.FindCachedArt((uint)game.AppId).GetValueOrDefault(Modular.Core.Steam.SteamArtKind.Grid);
-            if (path is null)
+            if (path is null || await DecodeAsync(path, 300, cts.Token) is not { } cover)
+            {
+                missing.Add(game);
+                // Until a cover turns up, a shortcut shows its own icon.
+                if (game.ShortcutIcon is { Length: > 0 } icon && File.Exists(icon))
+                    game.IconImage = await DecodeAsync(icon, 128, cts.Token);
                 continue;
+            }
+            game.Cover = cover;
+        }
+        await LoadGridDbCoversAsync(missing, cts.Token);
+    }
+
+    private static readonly string CoverCacheDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "Modular", "thumbnails", "covers");
+
+    /// <summary>
+    /// Covers from SteamGridDB for tiles Steam has no art for, shown in Modular only (cached under
+    /// thumbnails/covers); a shortcut's own artwork changes only from its shortcut page.
+    /// </summary>
+    private static async Task LoadGridDbCoversAsync(IReadOnlyList<GameDisplayModel> games, CancellationToken ct)
+    {
+        if (games.Count == 0)
+            return;
+        string? key;
+        try
+        {
+            key = await new Modular.Core.Security.DefaultSecretStore().GetAsync(SteamGridDbClient.SecretKey, ct);
+        }
+        catch
+        {
+            return;
+        }
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+        var client = string.IsNullOrWhiteSpace(key) ? null : new SteamGridDbClient(http, key);
+        Directory.CreateDirectory(CoverCacheDir);
+        foreach (var game in games)
+        {
+            if (ct.IsCancellationRequested)
+                return;
+            var cached = Path.Combine(CoverCacheDir, $"{(game.IsShortcut ? "s" : "a")}{game.IdText}.img");
             try
             {
-                game.Cover = await Task.Run(() =>
+                if (!File.Exists(cached))
                 {
-                    using var fs = File.OpenRead(path);
-                    return Bitmap.DecodeToWidth(fs, 300);
-                }, cts.Token);
+                    if (client is null)
+                        continue;
+                    var match = game.IsShortcut
+                        ? (await client.SearchAsync(game.DisplayName, ct)).FirstOrDefault()
+                        : await client.GetBySteamAppIdAsync((uint)game.AppId, ct);
+                    if (match is null || (await client.GetImagesAsync(match.Id, SteamArtKind.Grid, ct)).FirstOrDefault() is not { } image)
+                        continue;
+                    await File.WriteAllBytesAsync(cached, await client.DownloadAsync(image.Url, ct), ct);
+                }
+                game.Cover = await DecodeAsync(cached, 300, ct);
             }
-            catch when (!cts.IsCancellationRequested)
+            catch when (!ct.IsCancellationRequested)
             {
-                // No cover: the tile shows the name instead.
+                // Keep the icon or name tile.
             }
+        }
+    }
+
+    private static async Task<Bitmap?> DecodeAsync(string path, int width, CancellationToken ct)
+    {
+        try
+        {
+            return await Task.Run(() =>
+            {
+                using var fs = File.OpenRead(path);
+                return Bitmap.DecodeToWidth(fs, width);
+            }, ct);
+        }
+        catch when (!ct.IsCancellationRequested)
+        {
+            return null;
         }
     }
 
@@ -260,6 +325,17 @@ public partial class GameDisplayModel : ObservableObject
     private Bitmap? _cover;
 
     public bool HasCover => Cover is not null;
+
+    /// <summary>The shortcut's icon file (shortcuts.vdf "icon"), shown while there's no cover.</summary>
+    public string? ShortcutIcon { get; init; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasIconOnly))]
+    private Bitmap? _iconImage;
+
+    public bool HasIconOnly => IconImage is not null && Cover is null;
+
+    partial void OnCoverChanged(Bitmap? value) => OnPropertyChanged(nameof(HasIconOnly));
 
     public string StatusText => IsShortcut ? "Steam shortcut" : IsFullyInstalled ? "Installed" : "Partly installed";
 

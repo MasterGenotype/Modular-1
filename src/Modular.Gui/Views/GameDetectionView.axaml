@@ -83,7 +83,11 @@
                                     <Panel>
                                         <StackPanel VerticalAlignment="Center" Margin="10" Spacing="8"
                                                     IsVisible="{Binding !HasCover}">
-                                            <mi:MaterialIcon Kind="GamepadVariantOutline" Width="32" Height="32" Opacity="0.4"/>
+                                            <Panel Width="64" Height="64">
+                                                <mi:MaterialIcon Kind="GamepadVariantOutline" Width="32" Height="32" Opacity="0.4"
+                                                                 IsVisible="{Binding !HasIconOnly}"/>
+                                                <Image Source="{Binding IconImage}" Stretch="Uniform" IsVisible="{Binding HasIconOnly}"/>
+                                            </Panel>
                                             <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" TextAlignment="Center"
                                                        FontWeight="SemiBold"/>
                                         </StackPanel>

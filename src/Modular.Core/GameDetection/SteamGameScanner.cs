@@ -115,6 +115,26 @@ public class SteamGameScanner
     }
 }
 
+/// <summary>Steam "apps" that are tools, not games: Proton builds and runtimes.</summary>
+public static class SteamTools
+{
+    private static readonly string[] NamePrefixes =
+    [
+        "Proton ", "Proton-", "Steam Linux Runtime", "Steamworks Common Redistributables", "Steamworks SDK Redist",
+    ];
+
+    /// <summary>True for compatibility tools and runtimes (Proton, Steam Linux Runtime, redistributables).</summary>
+    public static bool IsTool(int appId, string? name)
+    {
+        if (appId is 228980 or 1070560 or 1391110 or 1628350 or 1493710 or 1826330)
+            return true;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        return name.Equals("Proton", StringComparison.OrdinalIgnoreCase)
+            || NamePrefixes.Any(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
 /// <summary>
 /// Represents a detected Steam game installation.
 /// </summary>
