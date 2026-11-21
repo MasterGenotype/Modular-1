@@ -21,10 +21,15 @@ public sealed class BuildIdentifier(IFileHasher? hasher = null)
         IReadOnlyList<ManifestView> candidates,
         bool fullVerify = false,
         IProgress<HashProgress>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlySet<string>? ignore = null)
     {
         if (candidates.Count == 0)
             return DepotIdentification.Empty(depotId, DepotMatch.NoCandidates);
+
+        // Paths a mod deployed over (e.g. a loader replacing a game DLL) say nothing about the build.
+        if (ignore is { Count: > 0 })
+            candidates = candidates.Select(c => c.Without(ignore)).ToList();
 
         // 1. Stat once per path across all candidates.
         var stats = new Dictionary<string, long?>(StringComparer.Ordinal);

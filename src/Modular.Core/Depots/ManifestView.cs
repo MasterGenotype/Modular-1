@@ -33,6 +33,10 @@ public sealed class ManifestView
 
     public ulong TotalSize => Files.Aggregate(0UL, (sum, f) => sum + f.Size);
 
+    /// <summary>The same build without some paths (files a mod deployed over), for identifying the rest.</summary>
+    public ManifestView Without(IReadOnlySet<string> paths) =>
+        paths.Count == 0 ? this : new ManifestView(DepotId, ManifestId, CreationTime, Files.Where(f => !paths.Contains(f.Path)));
+
     public static ManifestView From(DepotManifest manifest) => new(
         manifest.DepotID,
         manifest.ManifestGID,

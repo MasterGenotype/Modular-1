@@ -65,6 +65,9 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
         }
 
         var identifier = new BuildIdentifier();
+        var modOwned = new DepotVersionService().ModOwnedPaths(acf.AppId);
+        if (modOwned.Count > 0)
+            AnsiConsole.MarkupLine($"[grey]{modOwned.Count} file(s) in the game folder are mods' (left out of the build check).[/]");
         var rows = new List<(DepotIdentification Id, string Kind, ulong? Claimed)>();
 
         await AnsiConsole.Status().StartAsync("Identifying depots…", async ctx =>
@@ -76,7 +79,7 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
             {
                 ctx.Status($"Identifying depot {depot.DepotId}…");
                 var id = await identifier.IdentifyAsync(acf.InstallPath, depot.DepotId, store.LoadViews(depot.DepotId),
-                    settings.Verify, progress, cts.Token);
+                    settings.Verify, progress, cts.Token, ignore: modOwned);
                 rows.Add((id, depot.DlcAppId is { } dlc ? $"dlc {dlc}" : "acf", depot.ManifestId));
             }
 

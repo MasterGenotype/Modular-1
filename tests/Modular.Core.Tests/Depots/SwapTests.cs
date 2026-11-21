@@ -87,6 +87,32 @@ public sealed class DepotStagerAndSwapperTests : IDisposable
     }
 
     [Fact]
+    public async Task Swap_LeavesAModsFileInPlace_AndKeepsTheBuildsOwnCopyAside()
+    {
+        // A loader replaced bin/bink.dll; the target build changes that file and game.exe.
+        WriteInstall(("bin/bink.dll", "LOADERLD"), ("bin/game.exe", "AAAABBBB"));
+        var installed = ChunkedManifests.Make(1, New, ChunkedManifests.File("bin/bink.dll", "BINKBINK"), ChunkedManifests.File("bin/game.exe", "AAAABBBB"));
+        var target = ChunkedManifests.Make(2, Old, ChunkedManifests.File("bin/bink.dll", "BINKNEW2"), ChunkedManifests.File("bin/game.exe", "AAAACCCC"));
+        var modOwned = new HashSet<string> { "bin/bink.dll" };
+
+        // The build is still identified despite the mod's file.
+        var id = await new BuildIdentifier().IdentifyAsync(Install, 100, new[] { installed, target }, ignore: modOwned);
+        id.ManifestId.Should().Be(1UL);
+        id.Match.Should().NotBe(DepotMatch.Modified);
+
+        await new DepotStager(new ChunkedManifests.FakeCdn("BINKNEW2", "AAAACCCC")).StageAsync(Install, Staging, installed, target);
+        var plan = DepotStager.Plan(Install, Staging, installed, target);
+        var keep = Path.Combine(_root, "kept");
+        var result = DepotSwapper.Apply(Install, Staging, plan, installed, target, modOwned, keep);
+
+        result.ModFilesKept.Should().Be(1);
+        System.IO.File.ReadAllText(Path.Combine(Install, "bin/bink.dll")).Should().Be("LOADERLD", "the mod's file stays");
+        System.IO.File.ReadAllText(Path.Combine(keep, "bin/bink.dll")).Should().Be("BINKNEW2", "the build's own copy waits aside");
+        System.IO.File.ReadAllText(Path.Combine(Install, "bin/game.exe")).Should().Be("AAAACCCC");
+        (await new BuildIdentifier().IdentifyAsync(Install, 100, new[] { installed, target }, ignore: modOwned)).ManifestId.Should().Be(2UL);
+    }
+
+    [Fact]
     public async Task Stage_DoesNotTrustAModdedLocalChunk()
     {
         WriteInstall(("a", "XXXXBBBB")); // a mod changed the bytes the manifest says are AAAA

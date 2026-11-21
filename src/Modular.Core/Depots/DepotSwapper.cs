@@ -13,8 +13,12 @@ public static class DepotSwapper
 {
     public const string JournalFile = "swap-journal.log";
 
-    public static SwapResult Apply(string installPath, string stagingDir, StagePlan plan, ManifestView installed, ManifestView target)
+    /// <param name="modOwned">Game-folder paths a mod deployed over. They are left as the mod's; the target build's
+    /// own copy of each is moved to <paramref name="keepBuildFilesIn"/> instead, for when the mod is removed.</param>
+    public static SwapResult Apply(string installPath, string stagingDir, StagePlan plan, ManifestView installed, ManifestView target,
+        IReadOnlySet<string>? modOwned = null, string? keepBuildFilesIn = null)
     {
+        modOwned ??= new HashSet<string>();
         if (plan.FromManifest != installed.ManifestId || plan.ToManifest != target.ManifestId)
             throw new ArgumentException("The plan was made for different manifests.");
 
@@ -24,7 +28,7 @@ public static class DepotSwapper
             : new HashSet<string>(StringComparer.Ordinal);
         using var journal = new StreamWriter(journalPath, append: true) { AutoFlush = true };
 
-        int moved = 0, deleted = 0;
+        int moved = 0, deleted = 0, kept = 0;
         foreach (var file in plan.Files)
         {
             var entry = "move " + file.Path;
@@ -32,6 +36,12 @@ public static class DepotSwapper
                 continue;
             var source = Path.Combine(stagingDir, file.Path);
             var dest = Path.Combine(installPath, file.Path);
+            if (modOwned.Contains(file.Path))
+            {
+                // The mod's file stays; the build's own version waits aside.
+                dest = Path.Combine(keepBuildFilesIn ?? Path.Combine(stagingDir, "..", "_build-files"), file.Path);
+                kept++;
+            }
             if (!File.Exists(source))
                 throw new StagingException($"staged file missing: {file.Path}. Run 'depot stage' again.");
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
@@ -44,7 +54,7 @@ public static class DepotSwapper
         foreach (var path in plan.Diff.Removed)
         {
             var entry = "delete " + path;
-            if (done.Contains(entry))
+            if (done.Contains(entry) || modOwned.Contains(path))
                 continue;
             var full = Path.Combine(installPath, path);
             if (File.Exists(full))
@@ -62,7 +72,7 @@ public static class DepotSwapper
 
         var pruned = PruneEmptyDirectories(installPath, removedDirs, target);
         journal.WriteLine("complete");
-        return new SwapResult(moved, deleted, pruned);
+        return new SwapResult(moved - kept, deleted, pruned, kept);
     }
 
     /// <summary>True when a journal says a swap finished applying (only staging cleanup may be left).</summary>
@@ -95,7 +105,7 @@ public static class DepotSwapper
     }
 }
 
-public sealed record SwapResult(int FilesMoved, int FilesDeleted, int DirectoriesPruned);
+public sealed record SwapResult(int FilesMoved, int FilesDeleted, int DirectoriesPruned, int ModFilesKept = 0);
 
 /// <summary>Where staged builds live: on the same filesystem as the Steam library, so applying is a rename.</summary>
 public static class StagingPaths

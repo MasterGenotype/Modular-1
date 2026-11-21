@@ -79,12 +79,43 @@ public sealed class DepotVersionService
 {
     private readonly Func<bool> _steamRunning;
 
-    public DepotVersionService(DepotManifestStore? store = null, BuildPinStore? pins = null, Func<bool>? steamRunning = null)
+    private readonly string _stagingRoot;
+
+    public DepotVersionService(DepotManifestStore? store = null, BuildPinStore? pins = null, Func<bool>? steamRunning = null,
+        string? modStagingRoot = null)
     {
         Store = store ?? new DepotManifestStore();
         Pins = pins ?? new BuildPinStore();
         _steamRunning = steamRunning ?? SteamProcess.IsRunning;
+        _stagingRoot = modStagingRoot ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "Modular", "staging");
     }
+
+    /// <summary>
+    /// Game-folder paths Modular deployed for a mod (from the game's deployment record). They belong
+    /// to the mod: identifying, switching and locking a build leave them alone.
+    /// </summary>
+    public IReadOnlySet<string> ModOwnedPaths(uint appId)
+    {
+        var dir = Path.Combine(_stagingRoot, appId.ToString());
+        if (!File.Exists(Path.Combine(dir, "deployment.json")))
+            return new HashSet<string>();
+        try
+        {
+            return Modular.Core.Deployment.DeploymentManifest.Load(dir, appId.ToString()).Files
+                .Where(f => f.Root == "game")
+                .Select(f => f.Path)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidDataException)
+        {
+            return new HashSet<string>();
+        }
+    }
+
+    /// <summary>Where a switch keeps the build's own copies of files a mod deployed over.</summary>
+    public string BuildFilesDirectory(uint appId, ulong manifest) =>
+        Path.Combine(_stagingRoot, appId.ToString(), "_build-files", manifest.ToString());
 
     public DepotManifestStore Store { get; }
     public BuildPinStore Pins { get; }
@@ -114,10 +145,11 @@ public sealed class DepotVersionService
         var acf = FindAcf(appId);
         ArchiveDepotcache();
         var identifier = new BuildIdentifier();
+        var modOwned = ModOwnedPaths(appId);
         var depots = new List<DepotState>();
         foreach (var d in acf.InstalledDepots)
         {
-            var id = await identifier.IdentifyAsync(acf.InstallPath, d.DepotId, Store.LoadViews(d.DepotId), ct: ct);
+            var id = await identifier.IdentifyAsync(acf.InstallPath, d.DepotId, Store.LoadViews(d.DepotId), ct: ct, ignore: modOwned);
             var date = id.ManifestId is { } m ? Store.LoadView(d.DepotId, m)?.CreationTime : null;
             depots.Add(new DepotState(d.DepotId, id.ManifestId, id.Match, date, d.DlcAppId));
         }
@@ -279,7 +311,7 @@ public sealed class DepotVersionService
     public async Task<ManifestView> IdentifyInstalledAsync(SteamAppManifest acf, uint depot, bool allowModified, CancellationToken ct)
     {
         var candidates = Store.LoadViews(depot);
-        var id = await new BuildIdentifier().IdentifyAsync(acf.InstallPath, depot, candidates, ct: ct);
+        var id = await new BuildIdentifier().IdentifyAsync(acf.InstallPath, depot, candidates, ct: ct, ignore: ModOwnedPaths(acf.AppId));
         var ok = id.Match is DepotMatch.Exact or DepotMatch.SizesOnly || (allowModified && id.Match == DepotMatch.Modified);
         if (!ok || id.ManifestId is null)
         {
@@ -335,16 +367,19 @@ public sealed class DepotVersionService
         if (wasLocked)
             await SetFilesLockedAsync(acf, previous!, locked: false, ct);
 
+        var modOwned = ModOwnedPaths(acf.AppId);
         foreach (var w in plan.Items)
         {
-            var r = DepotSwapper.Apply(acf.InstallPath, w.Dir, w.Plan, w.From, w.To);
-            progress?.Report($"Depot {w.Depot.DepotId}: moved {r.FilesMoved}, deleted {r.FilesDeleted}, pruned {r.DirectoriesPruned} empty dir(s).");
+            var keep = BuildFilesDirectory(acf.AppId, w.Depot.To);
+            var r = DepotSwapper.Apply(acf.InstallPath, w.Dir, w.Plan, w.From, w.To, modOwned, keep);
+            progress?.Report($"Depot {w.Depot.DepotId}: moved {r.FilesMoved}, deleted {r.FilesDeleted}, pruned {r.DirectoriesPruned} empty dir(s)."
+                + (r.ModFilesKept > 0 ? $" Kept {r.ModFilesKept} file(s) a mod replaces; the build's own copies are in {keep}." : ""));
         }
 
         // Post-check: the files now on disk must identify as the target.
         foreach (var w in plan.Items)
         {
-            var id = await new BuildIdentifier().IdentifyAsync(acf.InstallPath, w.Depot.DepotId, new[] { w.From, w.To }, ct: ct);
+            var id = await new BuildIdentifier().IdentifyAsync(acf.InstallPath, w.Depot.DepotId, new[] { w.From, w.To }, ct: ct, ignore: modOwned);
             if (id.ManifestId != w.Depot.To || id.Match is not (DepotMatch.Exact or DepotMatch.SizesOnly))
                 throw new DepotOperationException($"Post-check failed for depot {w.Depot.DepotId}: {id.Match}, on disk {id.ManifestId}. Staging is kept; Steam's files were not changed.");
         }
@@ -462,15 +497,18 @@ public sealed class DepotVersionService
     // ---- lock -----------------------------------------------------------------------------
 
     /// <summary>Every file of the pinned build, relative to the install folder; null if a manifest is missing.</summary>
+    /// <remarks>Files a mod deployed over are left out: locking them would also lock the mod's stored copy
+    /// (a hardlink shares the file), and Modular could no longer update or remove that mod.</remarks>
     public IReadOnlyList<string>? LockPaths(BuildPin pin)
     {
+        var modOwned = ModOwnedPaths(pin.AppId);
         var paths = new List<string>();
         foreach (var (depot, manifest) in pin.Depots)
         {
             var view = Store.LoadView(depot, manifest);
             if (view is null)
                 return null;
-            paths.AddRange(view.Files.Select(f => f.Path));
+            paths.AddRange(view.Files.Select(f => f.Path).Where(p => !modOwned.Contains(p)));
         }
         return paths;
     }
