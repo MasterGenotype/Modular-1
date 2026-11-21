@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:steam="using:Modular.Core.Steam"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="Modular.Gui.Views.SteamShortcutView"
+             x:DataType="vm:SteamShortcutViewModel">
+
+    <Design.DataContext>
+        <vm:SteamShortcutViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" >
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
+            <Button Grid.Column="0" Command="{Binding BackCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                    <TextBlock Text="Back"/>
+                </StackPanel>
+            </Button>
+            <TextBlock Grid.Column="1" Text="{Binding Title}" Classes="title" Margin="14,0" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" Classes="accent" Command="{Binding ApplyCommand}" IsEnabled="{Binding !IsBusy}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <mi:MaterialIcon Kind="Steam" Width="16" Height="16"/>
+                    <TextBlock Text="{Binding ApplyText}"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- What the shortcut starts -->
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" >
+                <Grid.Styles>
+                    <Style Selector="TextBlock.label">
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="0,0,12,8"/>
+                    </Style>
+                    <Style Selector="TextBox, ComboBox">
+                        <Setter Property="Margin" Value="0,0,0,8"/>
+                    </Style>
+                </Grid.Styles>
+                <TextBlock Grid.Row="0" Text="Name" Classes="label"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding AppName}"/>
+
+                <TextBlock Grid.Row="1" Text="Program" Classes="label"/>
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Exe}"/>
+                <Button Grid.Row="1" Grid.Column="2" Content="Browse…" Command="{Binding BrowseExeCommand}" Margin="8,0,0,8"/>
+
+                <TextBlock Grid.Row="2" Text="Start in" Classes="label"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding StartDir}"/>
+
+                <TextBlock Grid.Row="3" Text="Launch options" Classes="label"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding LaunchOptions}"
+                         ToolTip.Tip="Same as Steam's Properties → Launch Options. For a Steam game, Modular keeps its Proton prefix and Steam identity here."/>
+
+                <TextBlock Grid.Row="4" Text="Proton" Classes="label"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding CompatTools}" SelectedItem="{Binding SelectedCompatTool}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="steam:SteamCompatTool">
+                            <TextBlock Text="{Binding DisplayName}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+        </Border>
+
+        <!-- Artwork -->
+        <Border Grid.Row="2" Classes="card">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <!-- SteamGridDB: key prompt or game search -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10" IsVisible="{Binding NeedsGridKey}">
+                    <TextBlock Text="SteamGridDB API key" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding GridKeyInput}" PasswordChar="•" Width="320"
+                             Watermark="steamgriddb.com → Preferences → API"/>
+                    <Button Content="Save key" Command="{Binding SaveGridKeyCommand}"/>
+                    <TextBlock Text="Free key; without it you can still use Steam's art and files." Classes="caption" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,10" IsVisible="{Binding HasGridKey}">
+                    <TextBlock Text="SteamGridDB" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Grid.Column="1" Text="{Binding GridSearchText}" Watermark="Search a game">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding SearchGridCommand}"/>
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Grid.Column="2" Command="{Binding SearchGridCommand}" Margin="8,0">
+                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                    </Button>
+                    <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding GridGames}" SelectedItem="{Binding SelectedGridGame}"
+                              PlaceholderText="Pick the matching game">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="steam:SteamGridDbGame">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="{Binding Name}"/>
+                                    <TextBlock Text="{Binding ReleaseYear}" Classes="caption"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </Grid>
+
+                <TextBlock Grid.Row="1" Text="Pick one image per tab. Tabs you leave alone keep their current image." Classes="caption" Margin="0,0,0,6"/>
+
+                <TabControl Grid.Row="2" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ArtTabViewModel">
+                            <TextBlock Text="{Binding Header}"/>
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                    <TabControl.ContentTemplate>
+                        <DataTemplate x:DataType="vm:ArtTabViewModel">
+                            <Grid RowDefinitions="Auto,*">
+                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,4,0,8">
+                                    <TextBlock Text="{Binding Hint}" Classes="caption" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="Keep current" Margin="0,0,8,0"
+                                            Command="{Binding $parent[UserControl].((vm:SteamShortcutViewModel)DataContext).ClearArtCommand}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Grid.Column="2"
+                                            Command="{Binding $parent[UserControl].((vm:SteamShortcutViewModel)DataContext).ChooseFileCommand}"
+                                            CommandParameter="{Binding}">
+                                        <StackPanel Orientation="Horizontal" Spacing="5">
+                                            <mi:MaterialIcon Kind="FolderImage" Width="16" Height="16"/>
+                                            <TextBlock Text="Choose file…"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <ListBox Grid.Row="1" ItemsSource="{Binding Options}" SelectedItem="{Binding Selected}"
+                                         Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ArtOptionViewModel">
+                                            <StackPanel Spacing="4" Margin="2">
+                                                <Border CornerRadius="6" ClipToBounds="True"
+                                                        Background="{DynamicResource CanvasBrush}"
+                                                        Width="{Binding $parent[ListBox].((vm:ArtTabViewModel)DataContext).ThumbWidth}"
+                                                        Height="{Binding $parent[ListBox].((vm:ArtTabViewModel)DataContext).ThumbHeight}">
+                                                    <Panel>
+                                                        <mi:MaterialIcon Kind="ImageOutline" Width="24" Height="24" Opacity="0.3"/>
+                                                        <Image Source="{Binding Thumb}" Stretch="Uniform"/>
+                                                    </Panel>
+                                                </Border>
+                                                <TextBlock Text="{Binding Source}" Classes="eyebrow"/>
+                                                <TextBlock Text="{Binding Label}" Classes="caption" TextTrimming="CharacterEllipsis"
+                                                           MaxWidth="{Binding $parent[ListBox].((vm:ArtTabViewModel)DataContext).ThumbWidth}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </DataTemplate>
+                    </TabControl.ContentTemplate>
+                </TabControl>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="3" Text="{Binding Status}" Classes="caption" TextWrapping="Wrap" Margin="0,10,0,0"/>
+    </Grid>
+</UserControl>

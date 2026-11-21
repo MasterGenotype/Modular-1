@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.GamePageView"
+             x:DataType="vm:GamePageViewModel">
+
+    <Design.DataContext>
+        <vm:GamePageViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer>
+        <StackPanel Spacing="14">
+            <Button Command="{Binding BackCommand}" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                    <TextBlock Text="Games"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Hero banner with the logo over it, as Steam shows it -->
+            <Border CornerRadius="10" ClipToBounds="True" Height="200"
+                    Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                <Panel>
+                    <Image Source="{Binding Hero}" Stretch="UniformToFill" VerticalAlignment="Center"/>
+                    <Image Source="{Binding Logo}" MaxHeight="120" MaxWidth="360" Margin="24"
+                           HorizontalAlignment="Left" VerticalAlignment="Bottom"/>
+                    <TextBlock Text="{Binding Game.DisplayName}" Classes="title" Margin="24"
+                               VerticalAlignment="Bottom"
+                               IsVisible="{Binding Logo, Converter={x:Static ObjectConverters.IsNull}}"/>
+                </Panel>
+            </Border>
+
+            <Grid ColumnDefinitions="Auto,*" >
+                <Border Grid.Column="0" CornerRadius="8" ClipToBounds="True" Width="120" Height="180" Margin="0,0,16,0"
+                        Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
+                        IsVisible="{Binding Grid, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Image Source="{Binding Grid}" Stretch="UniformToFill"/>
+                </Border>
+                <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{Binding Kind}" Classes="eyebrow"/>
+                        <TextBlock Text="{Binding Game.DisplayName}" Classes="h2"/>
+                        <TextBlock Text="{Binding Location}" Classes="caption" TextWrapping="Wrap"/>
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Classes="accent" Command="{Binding OpenShortcutCommand}" Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <mi:MaterialIcon Kind="Steam" Width="16" Height="16"/>
+                                    <TextBlock Text="{Binding ShortcutButtonText}"/>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
