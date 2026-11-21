@@ -62,3 +62,33 @@ internal static class DepotCli
         }
     }
 }
+
+/// <summary><c>modular depot renew</c>: re-claim the latest build for "let Steam launch it" pins after a new patch.</summary>
+public sealed class DepotRenewCommand : AsyncCommand
+{
+    public override async Task<int> ExecuteAsync(CommandContext context)
+    {
+        using var cts = ConsoleCancellation.Create();
+        var service = new DepotVersionService();
+        if (service.SteamRunning)
+        {
+            LiveProgressDisplay.ShowError("Steam is running. Close Steam completely, then run this again.");
+            return 1;
+        }
+        try
+        {
+            await using var session = await Modular.Core.Steam.SteamSession.OpenStoredAsync(
+                new Modular.Core.Steam.SteamAccountStore(new Modular.Core.Security.DefaultSecretStore()), cts.Token);
+            var renewed = await service.RenewAsync(new SteamDepotClient(session),
+                new Progress<string>(m => AnsiConsole.MarkupLine(Markup.Escape(m))), cts.Token);
+            LiveProgressDisplay.ShowSuccess(renewed.Count == 0 ? "Every pinned game's claim is still current." : $"Renewed {renewed.Count} game(s).");
+            return 0;
+        }
+        catch (Exception ex) when (ex is Modular.Core.Steam.SteamNotLoggedInException or Modular.Core.Steam.SteamLogOnException
+                                       or Modular.Core.Steam.SteamDisconnectedException or InvalidOperationException)
+        {
+            LiveProgressDisplay.ShowError(ex.Message);
+            return 1;
+        }
+    }
+}

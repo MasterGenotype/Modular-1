@@ -481,6 +481,67 @@ public sealed class DepotVersionService
         return pin;
     }
 
+    /// <summary>What Steam serves as the latest public build of an app, compared with what it has installed.</summary>
+    public sealed record LatestInfo(uint AppId, uint? LatestBuildId, DateTimeOffset? LatestDate, bool NewerThanInstalled, bool ClaimIsStale);
+
+    /// <summary>
+    /// Asks Steam for an app's latest public build. <c>NewerThanInstalled</c>: the files on disk are
+    /// an older build than Steam's latest. <c>ClaimIsStale</c>: a "let Steam launch it" pin claims a
+    /// build that is no longer the latest, so Steam will flag an update and refuse to launch.
+    /// </summary>
+    public async Task<LatestInfo> CheckLatestAsync(uint appId, SteamDepotClient client, CancellationToken ct = default)
+    {
+        var acf = FindAcf(appId);
+        var latest = new Dictionary<uint, ulong>();
+        uint? latestBuild = null;
+        DateTimeOffset? latestDate = null;
+        foreach (var app in acf.InstalledDepots.Select(d => d.DlcAppId ?? acf.AppId).Distinct())
+        {
+            var info = await client.GetAppDepotsAsync(app, "public", ct);
+            if (app == acf.AppId)
+            {
+                latestBuild = info.BuildId;
+                latestDate = info.TimeUpdated;
+            }
+            foreach (var d in info.Depots.Where(x => x.ManifestId is not null))
+                latest.TryAdd(d.DepotId, d.ManifestId!.Value);
+        }
+        var installed = Pins.Load(appId)?.Depots
+            ?? acf.InstalledDepots.Where(d => d.ManifestId is not null).ToDictionary(d => d.DepotId, d => d.ManifestId!.Value);
+        var newer = installed.Any(i => latest.TryGetValue(i.Key, out var m) && m != i.Value);
+        var pin = Pins.Load(appId);
+        var stale = pin is { ReportsCurrent: true } && pin.ReportedDepots!.Any(r => latest.TryGetValue(r.Key, out var m) && m != r.Value);
+        return new LatestInfo(appId, latestBuild, latestDate, newer, stale);
+    }
+
+    /// <summary>
+    /// Re-claims the latest build for every "let Steam launch it" pin whose claim went stale (a new
+    /// patch shipped), so Play keeps working. Needs Steam closed; does nothing while it runs.
+    /// Returns the apps renewed.
+    /// </summary>
+    public async Task<IReadOnlyList<uint>> RenewAsync(SteamDepotClient client, IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        var renewed = new List<uint>();
+        if (_steamRunning())
+            return renewed;
+        foreach (var pin in Pins.List().Where(p => p.ReportsCurrent))
+        {
+            try
+            {
+                if (!(await CheckLatestAsync(pin.AppId, client, ct)).ClaimIsStale)
+                    continue;
+                await PinAsync(pin.AppId, null, asCurrent: true, client, ct);
+                renewed.Add(pin.AppId);
+                progress?.Report($"Renewed {SteamAppManifest.Find(pin.AppId)?.Name ?? pin.AppId.ToString()}: Steam sees it as up to date again.");
+            }
+            catch (Exception ex) when (ex is DepotOperationException or InvalidOperationException or IOException)
+            {
+                progress?.Report($"Couldn't renew app {pin.AppId}: {ex.Message}");
+            }
+        }
+        return renewed;
+    }
+
     /// <summary>Releases a pin (unlocking first), restoring Steam's own update settings. Returns the acf keys left as Steam set them.</summary>
     public async Task<IReadOnlyList<string>> UnpinAsync(uint appId, CancellationToken ct = default)
     {

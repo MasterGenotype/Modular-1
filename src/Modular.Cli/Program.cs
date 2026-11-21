@@ -411,7 +411,9 @@ class Program
                     .WithDescription("Opt-in hard lock: make the pinned build's files unchangeable (asks for admin rights)")
                     .WithExample("depot", "lock", "107100");
                 depot.AddCommand<DepotUnlockCommand>("unlock")
-                    .WithDescription("Remove the hard lock (asks for admin rights); the pin stays");
+                    .WithDescription("Remove the hard lock; the pin stays");
+                depot.AddCommand<DepotRenewCommand>("renew")
+                    .WithDescription("After a new patch, re-claim the latest build for 'let Steam launch it' pins so Play keeps working (Steam closed)");
                 depot.AddCommand<DepotShowCommand>("show")
                     .WithDescription("Summarize an archived manifest (offline)")
                     .WithExample("depot", "show", "1091501", "3524634124112875626");

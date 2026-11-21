@@ -49,6 +49,9 @@ public partial class GameVersionsViewModel : ViewModelBase
     [ObservableProperty] private bool _steamRunning;
     [ObservableProperty] private bool _hasStagedSwitch;
 
+    /// <summary>"A newer build is out: …" when the game is held on an older one.</summary>
+    [ObservableProperty] private string _newerText = "";
+
     /// <summary>After switching to a non-branch build, tell Steam it's current so Play works without updating.</summary>
     [ObservableProperty] private bool _tellSteamCurrentAfterSwitch = true;
 
@@ -126,7 +129,21 @@ public partial class GameVersionsViewModel : ViewModelBase
             try
             {
                 await using var session = await SteamSession.OpenStoredAsync(new SteamAccountStore(new DefaultSecretStore()), default);
-                versions = await _service.ListVersionsAsync(status, new SteamDepotClient(session));
+                var client = new SteamDepotClient(session);
+                if (pin is not null)
+                {
+                    var latest = await _service.CheckLatestAsync(_appId, client);
+                    if (latest.ClaimIsStale && !_service.SteamRunning)
+                    {
+                        await _service.PinAsync(_appId, null, asCurrent: true, client);
+                        Message = "A new patch came out; Modular renewed Steam's view so Play keeps working. Your files are unchanged.";
+                    }
+                    NewerText = latest.NewerThanInstalled
+                        ? $"A newer build is out: {latest.LatestBuildId?.ToString() ?? "?"}{(latest.LatestDate is { } d ? $" ({d.LocalDateTime:yyyy-MM-dd})" : "")}. You're held on yours; switch below when you're ready."
+                          + (latest.ClaimIsStale && _service.SteamRunning ? " Close Steam and refresh here so Play keeps working." : "")
+                        : "";
+                }
+                versions = await _service.ListVersionsAsync(status, client);
             }
             catch (Exception ex) when (ex is SteamNotLoggedInException or SteamLogOnException or SteamDisconnectedException or TimeoutException)
             {

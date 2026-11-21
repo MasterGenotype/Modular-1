@@ -164,6 +164,7 @@ public partial class GameDetectionViewModel : ViewModelBase
             TotalGames = Games.Count;
             ApplyFilter();
             _ = LoadCoversAsync(Games.ToList());
+            _ = CheckPinnedGamesAsync(Games.ToList());
             StatusMessage = $"Found {TotalGames} game(s)";
         }
         catch (OperationCanceledException)
@@ -218,6 +219,46 @@ public partial class GameDetectionViewModel
             IsFullyInstalled = true,
         };
         ActivePage = new SteamShortcutViewModel(service, service.PrefillForExe(exe), game, this, back: null, _dialogService);
+    }
+
+    /// <summary>
+    /// For games Modular holds on a build: badges the ones with a newer build out, and (Steam
+    /// closed) renews stale "let Steam launch it" claims so Play keeps working after a patch.
+    /// </summary>
+    private async Task CheckPinnedGamesAsync(IReadOnlyList<GameDisplayModel> games)
+    {
+        var service = new Modular.Core.Depots.DepotVersionService();
+        var pinned = service.Pins.List().ToDictionary(p => p.AppId);
+        var held = games.Where(g => !g.IsShortcut && pinned.ContainsKey((uint)g.AppId)).ToList();
+        foreach (var g in held)
+            g.IsHeld = true;
+        if (held.Count == 0)
+            return;
+        try
+        {
+            await using var session = await SteamSession.OpenStoredAsync(new SteamAccountStore(new Modular.Core.Security.DefaultSecretStore()), default);
+            var client = new Modular.Core.Depots.SteamDepotClient(session);
+            if (!service.SteamRunning)
+            {
+                var renewed = await service.RenewAsync(client);
+                if (renewed.Count > 0)
+                    StatusMessage = $"Renewed {renewed.Count} held game(s) after a new patch: Steam sees them as up to date again.";
+            }
+            foreach (var g in held)
+            {
+                var latest = await service.CheckLatestAsync((uint)g.AppId, client);
+                g.NewerBuildText = latest.NewerThanInstalled
+                    ? $"Newer build out: {latest.LatestBuildId?.ToString() ?? "?"}{(latest.LatestDate is { } d ? $" ({d.LocalDateTime:yyyy-MM-dd})" : "")}"
+                    : null;
+                if (latest.ClaimIsStale)
+                    g.NewerBuildText += " · close Steam and open Modular to keep Play working";
+            }
+        }
+        catch (Exception ex) when (ex is SteamNotLoggedInException or SteamLogOnException or SteamDisconnectedException
+                                       or InvalidOperationException or TimeoutException)
+        {
+            // Offline or not logged in: no badges this time.
+        }
     }
 
     /// <summary>Loads each tile's portrait cover: Steam's cached art, or the shortcut's grid image.</summary>
@@ -357,6 +398,17 @@ public partial class GameDisplayModel : ObservableObject
     public bool HasIconOnly => IconImage is not null && Cover is null;
 
     partial void OnCoverChanged(Bitmap? value) => OnPropertyChanged(nameof(HasIconOnly));
+
+    /// <summary>Modular holds this game on a build (pinned).</summary>
+    [ObservableProperty]
+    private bool _isHeld;
+
+    /// <summary>"Newer build out: 26300000 (2026-12-02)" for a held game; null when it's current.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNewerBuild))]
+    private string? _newerBuildText;
+
+    public bool HasNewerBuild => NewerBuildText is not null;
 
     public string StatusText => IsShortcut ? "Steam shortcut" : IsFullyInstalled ? "Installed" : "Partly installed";
 

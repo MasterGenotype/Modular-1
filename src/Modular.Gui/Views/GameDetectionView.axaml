@@ -92,6 +92,18 @@
                                                        FontWeight="SemiBold"/>
                                         </StackPanel>
                                         <Image Source="{Binding Cover}" Stretch="UniformToFill"/>
+                                        <!-- Held on a build; badge when a newer one is out -->
+                                        <Border Classes="pill" Margin="6" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                IsVisible="{Binding IsHeld}" Background="{DynamicResource SurfaceBrush}"
+                                                ToolTip.Tip="Modular holds this game on its build">
+                                            <mi:MaterialIcon Kind="Pin" Width="12" Height="12"/>
+                                        </Border>
+                                        <Border Margin="6" HorizontalAlignment="Stretch" VerticalAlignment="Bottom" CornerRadius="6"
+                                                Padding="6,3" Background="{DynamicResource AccentBrush}" IsVisible="{Binding HasNewerBuild}"
+                                                ToolTip.Tip="{Binding NewerBuildText}">
+                                            <TextBlock Text="Newer build out" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource AccentForegroundBrush}" HorizontalAlignment="Center"/>
+                                        </Border>
                                     </Panel>
                                 </Border>
                                 <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>

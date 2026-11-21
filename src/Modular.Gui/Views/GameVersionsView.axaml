@@ -23,6 +23,10 @@
             </Grid>
 
             <TextBlock Text="{Binding InstalledText}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <Border Background="{DynamicResource AccentBrush}" CornerRadius="6" Padding="8,4"
+                    IsVisible="{Binding NewerText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{Binding NewerText}" Foreground="{DynamicResource AccentForegroundBrush}" TextWrapping="Wrap"/>
+            </Border>
             <StackPanel Orientation="Horizontal" Spacing="6">
                 <mi:MaterialIcon Kind="Pin" Width="14" Height="14" IsVisible="{Binding IsPinned}"/>
                 <mi:MaterialIcon Kind="Lock" Width="14" Height="14" IsVisible="{Binding IsLocked}"/>

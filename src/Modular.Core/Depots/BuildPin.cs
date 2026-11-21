@@ -123,6 +123,13 @@ public sealed class BuildPinStore(string? root = null)
     }
 
     public void Delete(uint appId) => File.Delete(PathFor(appId));
+
+    /// <summary>Every pinned app.</summary>
+    public IReadOnlyList<BuildPin> List() => Directory.Exists(Root)
+        ? Directory.GetFiles(Root, "*.json")
+            .Select(f => uint.TryParse(System.IO.Path.GetFileNameWithoutExtension(f), out var id) ? Load(id) : null)
+            .OfType<BuildPin>().ToList()
+        : [];
 }
 
 /// <summary>Writes and checks the acf side of a pin.</summary>
