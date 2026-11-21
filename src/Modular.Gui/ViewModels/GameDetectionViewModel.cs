@@ -221,8 +221,11 @@ public partial class GameDetectionViewModel
             if (path is null || await DecodeAsync(path, 300, cts.Token) is not { } cover)
             {
                 missing.Add(game);
-                // Until a cover turns up, a shortcut shows its own icon.
-                if (game.ShortcutIcon is { Length: > 0 } icon && File.Exists(icon))
+                // Until a cover turns up, show the game's icon: the shortcut's, or Steam's.
+                var icon = game.IsShortcut
+                    ? game.ShortcutIcon
+                    : service.User.FindCachedArt((uint)game.AppId).GetValueOrDefault(Modular.Core.Steam.SteamArtKind.Icon);
+                if (icon is { Length: > 0 } && File.Exists(icon))
                     game.IconImage = await DecodeAsync(icon, 128, cts.Token);
                 continue;
             }

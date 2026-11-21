@@ -150,38 +150,41 @@ public sealed class SteamUserConfig
     }
 
     /// <summary>
-    /// The art Steam already downloaded for a game it sells, from <c>appcache/librarycache</c>
-    /// (per-app folder since 2024, flat files before).
+    /// The art Steam already downloaded for a game it sells, from <c>appcache/librarycache</c>.
+    /// Steam has used three layouts: flat <c>&lt;appid&gt;_library_600x900.jpg</c> files, a per-app
+    /// folder, and (2025+) per-app folders with each image in a content-hash subfolder and newer
+    /// names (<c>library_capsule.jpg</c>, <c>library_header.jpg</c>).
     /// </summary>
     public IReadOnlyDictionary<SteamArtKind, string> FindCachedArt(uint appId)
     {
         var found = new Dictionary<SteamArtKind, string>();
         var cache = Path.Combine(SteamRoot, "appcache", "librarycache");
         var dir = Path.Combine(cache, appId.ToString());
-        void Try(SteamArtKind kind, params string[] candidates)
+
+        // Every file in the app folder and its hash subfolders, newest first per name.
+        var files = Directory.Exists(dir)
+            ? new DirectoryInfo(dir).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 2 })
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .ToList()
+            : [];
+        string? Named(params string[] names) => names
+            .Select(n => files.FirstOrDefault(f => f.Name.Equals(n, StringComparison.OrdinalIgnoreCase))?.FullName)
+            .FirstOrDefault(p => p is not null);
+        string? Flat(string suffix) => File.Exists(Path.Combine(cache, $"{appId}_{suffix}")) ? Path.Combine(cache, $"{appId}_{suffix}") : null;
+
+        void Set(SteamArtKind kind, string? path)
         {
-            foreach (var c in candidates)
-            {
-                if (File.Exists(c))
-                {
-                    found.TryAdd(kind, c);
-                    return;
-                }
-            }
+            if (path is not null)
+                found.TryAdd(kind, path);
         }
-        Try(SteamArtKind.Grid, Path.Combine(dir, "library_600x900.jpg"), Path.Combine(cache, $"{appId}_library_600x900.jpg"));
-        Try(SteamArtKind.Wide, Path.Combine(dir, "header.jpg"), Path.Combine(cache, $"{appId}_header.jpg"));
-        Try(SteamArtKind.Hero, Path.Combine(dir, "library_hero.jpg"), Path.Combine(cache, $"{appId}_library_hero.jpg"));
-        Try(SteamArtKind.Logo, Path.Combine(dir, "logo.png"), Path.Combine(cache, $"{appId}_logo.png"));
-        if (Directory.Exists(dir))
-        {
-            // The icon is stored under its content hash (40 hex chars).
-            var icon = Directory.GetFiles(dir, "*.jpg")
-                .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f) is { Length: 40 } n && n.All(Uri.IsHexDigit));
-            if (icon is not null)
-                found.TryAdd(SteamArtKind.Icon, icon);
-        }
-        Try(SteamArtKind.Icon, Path.Combine(cache, $"{appId}_icon.jpg"));
+        Set(SteamArtKind.Grid, Named("library_600x900_2x.jpg", "library_600x900.jpg", "library_capsule_2x.jpg", "library_capsule.jpg") ?? Flat("library_600x900.jpg"));
+        Set(SteamArtKind.Wide, Named("header.jpg", "library_header_2x.jpg", "library_header.jpg") ?? Flat("header.jpg"));
+        Set(SteamArtKind.Hero, Named("library_hero_2x.jpg", "library_hero.jpg") ?? Flat("library_hero.jpg"));
+        Set(SteamArtKind.Logo, Named("logo_2x.png", "logo.png") ?? Flat("logo.png"));
+        // The icon is stored under its content hash (40 hex chars) at the app folder's top level.
+        Set(SteamArtKind.Icon, files.FirstOrDefault(f => f.DirectoryName == dir && f.Extension == ".jpg"
+                && Path.GetFileNameWithoutExtension(f.Name) is { Length: 40 } n && n.All(Uri.IsHexDigit))?.FullName
+            ?? Flat("icon.jpg"));
         return found;
     }
 
