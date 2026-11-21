@@ -369,6 +369,10 @@ public sealed class DepotPinCommand : AsyncCommand<DepotPinCommand.Settings>
         [CommandOption("--branch <BRANCH>")]
         [Description("Also select this official branch; its manifests must match what is installed (needs steam login)")]
         public string? Branch { get; init; }
+
+        [CommandOption("--as-current")]
+        [Description("Tell Steam the game is on the newest public build, so it neither flags an update nor blocks launching. Modular keeps the true build; unpin restores it (needs steam login). Pair with 'depot lock' so a Steam verify can't overwrite the files")]
+        public bool AsCurrent { get; init; }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -396,7 +400,42 @@ public sealed class DepotPinCommand : AsyncCommand<DepotPinCommand.Settings>
             depots[d.DepotId] = (view.ManifestId, view.TotalSize);
         }
 
+        if (settings.AsCurrent && settings.Branch is not null)
+        {
+            LiveProgressDisplay.ShowError("--as-current and --branch don't mix: a branch pin already stops Steam updating.");
+            return 1;
+        }
+
         uint? buildId = null;
+        Dictionary<uint, (ulong, ulong)>? reportAs = null;
+        uint? reportBuildId = null;
+        if (settings.AsCurrent)
+        {
+            try
+            {
+                await using var session = await SteamSession.OpenStoredAsync(new SteamAccountStore(new DefaultSecretStore()), cts.Token);
+                var client = new SteamDepotClient(session);
+                reportAs = new();
+                foreach (var app in acf.InstalledDepots.Select(d => d.DlcAppId ?? acf.AppId).Distinct())
+                {
+                    var info = await client.GetAppDepotsAsync(app, "public", cts.Token);
+                    if (app == acf.AppId)
+                        reportBuildId = info.BuildId;
+                    foreach (var d in info.Depots.Where(x => depots.ContainsKey(x.DepotId) && x.ManifestId is not null))
+                        reportAs[d.DepotId] = (d.ManifestId!.Value, d.Size ?? depots[d.DepotId].Item2);
+                }
+            }
+            catch (Exception ex) when (ex is SteamNotLoggedInException or SteamLogOnException or SteamDisconnectedException or InvalidOperationException)
+            {
+                LiveProgressDisplay.ShowError(ex.Message);
+                return 1;
+            }
+            if (reportBuildId is null || reportAs.Count == 0)
+            {
+                LiveProgressDisplay.ShowError("Steam didn't return the public build's manifests for this game.");
+                return 1;
+            }
+        }
         if (settings.Branch is { } branch)
         {
             try
@@ -426,9 +465,13 @@ public sealed class DepotPinCommand : AsyncCommand<DepotPinCommand.Settings>
         }
 
         var pins = new BuildPinStore();
-        var pin = BuildPinner.Apply(SteamAcfEditor.Load(acf.AcfPath), acf.AppId, depots, settings.Branch, buildId, pins.Load(acf.AppId));
+        var pin = BuildPinner.Apply(SteamAcfEditor.Load(acf.AcfPath), acf.AppId, depots, settings.Branch, buildId, pins.Load(acf.AppId),
+            reportAs: reportAs, reportBuildId: reportBuildId);
         pins.Save(pin);
-        LiveProgressDisplay.ShowSuccess($"Pinned {acf.Name}: {string.Join(", ", depots.Select(d => $"{d.Key}={d.Value.Item1}"))}; update only on launch{(settings.Branch is { } b ? $", branch {b}" : "")}.");
+        LiveProgressDisplay.ShowSuccess($"Pinned {acf.Name}: {string.Join(", ", depots.Select(d => $"{d.Key}={d.Value.Item1}"))}; update only on launch{(settings.Branch is { } b ? $", branch {b}" : "")}"
+            + (pin.ReportsCurrent ? $"; Steam is told it's on current build {pin.ReportedBuildId}." : "."));
+        if (pin.ReportsCurrent && !pin.Locked)
+            AnsiConsole.MarkupLine($"[grey]Lock it too, so a Steam 'verify files' can't overwrite the build: modular depot lock {acf.AppId}[/]");
         return 0;
     }
 }

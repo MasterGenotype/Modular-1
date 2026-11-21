@@ -301,6 +301,34 @@ public sealed class BuildPinTests : IDisposable
     }
 
     [Fact]
+    public void ReportAsCurrent_ClaimsLatestBuild_KeepsTruth_AndUnpinRestoresTruth()
+    {
+        const ulong old = 1228477902981854726, latest = 6071069523908843722;
+        var pin = BuildPinner.Apply(SteamAcfEditor.Load(Acf), 1857090, Depots(old), null, null, null, () => false,
+            reportAs: new Dictionary<uint, (ulong, ulong)> { [1857091] = (latest, 1_540_000_000) }, reportBuildId: 26268245);
+
+        pin.ReportsCurrent.Should().BeTrue();
+        pin.Depots[1857091].Should().Be(old, "the pin records what is really installed");
+        var acf = SteamAppManifest.Load(Acf);
+        acf.InstalledDepots.Single().ManifestId.Should().Be(latest, "Steam is told the game is current");
+        acf.BuildId.Should().Be(26268245u);
+        BuildPinner.CheckDrift(acf, SteamAcfEditor.Load(Acf), pin).Should().BeEmpty();
+        BuildPinner.IsSuperseded(acf, pin).Should().BeFalse();
+
+        // A new update ships: Steam records nothing new yet but flags the app.
+        var raw = SteamAcfEditor.Load(Acf);
+        raw.Set("6", "StateFlags");
+        raw.Save();
+        BuildPinner.CheckDrift(SteamAppManifest.Load(Acf), SteamAcfEditor.Load(Acf), pin).Should().ContainSingle();
+
+        BuildPinner.Remove(SteamAcfEditor.Load(Acf), pin, () => false);
+        acf = SteamAppManifest.Load(Acf);
+        acf.InstalledDepots.Single().ManifestId.Should().Be(old, "unpin puts the true manifest back");
+        SteamAcfEditor.Load(Acf).Get("InstalledDepots", "1857091", "size").Should().Be("1120000000");
+        SteamAcfEditor.Load(Acf).Get("AutoUpdateBehavior").Should().Be("0");
+    }
+
+    [Fact]
     public void RePin_KeepsTheOriginalValuesForUnpin()
     {
         var first = BuildPinner.Apply(SteamAcfEditor.Load(Acf), 1857090, Depots(1), null, null, null, () => false);

@@ -89,8 +89,17 @@ public sealed record BuildPin(
     string? Branch,
     uint? BuildId,
     Dictionary<string, string?> Replaced,
-    bool Locked = false)
+    bool Locked = false,
+    Dictionary<uint, ulong>? ReportedDepots = null,
+    uint? ReportedBuildId = null,
+    Dictionary<uint, ulong>? TrueSizes = null)
 {
+    /// <summary>
+    /// The acf tells Steam the game is on <see cref="ReportedDepots"/> (the newest public build), so
+    /// Steam sees nothing to update and launches normally; <see cref="Depots"/> stays the truth.
+    /// </summary>
+    public bool ReportsCurrent => ReportedDepots is { Count: > 0 };
+
     public const string AutoUpdateOnLaunchOnly = "1";
 }
 
@@ -125,10 +134,13 @@ public static class BuildPinner
 
     /// <summary>
     /// Records the true installed manifests, sets "update only on launch", and when the build is an
-    /// official branch selects that branch (BetaKey), which Steam then keeps frozen.
+    /// official branch selects that branch (BetaKey), which Steam then keeps frozen. With
+    /// <paramref name="reportAs"/> (the newest public build's manifests), the acf claims that build
+    /// instead, so Steam neither flags an update nor blocks launching; the pin keeps the truth.
     /// </summary>
     public static BuildPin Apply(SteamAcfEditor acf, uint appId, IReadOnlyDictionary<uint, (ulong Manifest, ulong Size)> depots,
-        string? branch, uint? buildId, BuildPin? previous, Func<bool>? steamRunning = null)
+        string? branch, uint? buildId, BuildPin? previous, Func<bool>? steamRunning = null,
+        IReadOnlyDictionary<uint, (ulong Manifest, ulong Size)>? reportAs = null, uint? reportBuildId = null)
     {
         if ((steamRunning ?? SteamProcess.IsRunning)())
             throw new InvalidOperationException("Steam is running. Close Steam before Modular edits its files.");
@@ -142,13 +154,20 @@ public static class BuildPinner
             acf.Set(value, path);
         }
 
+        Dictionary<uint, ulong>? reported = null;
         foreach (var (depot, (manifest, size)) in depots)
         {
-            acf.Set(manifest.ToString(), "InstalledDepots", depot.ToString(), "manifest");
-            acf.Set(size.ToString(), "InstalledDepots", depot.ToString(), "size");
+            var (writeManifest, writeSize) = (manifest, size);
+            if (reportAs is not null && reportAs.TryGetValue(depot, out var latest))
+            {
+                (writeManifest, writeSize) = latest;
+                (reported ??= new())[depot] = latest.Manifest;
+            }
+            acf.Set(writeManifest.ToString(), "InstalledDepots", depot.ToString(), "manifest");
+            acf.Set(writeSize.ToString(), "InstalledDepots", depot.ToString(), "size");
         }
-        if (buildId is not null)
-            acf.Set(buildId.ToString(), "buildid");
+        if (((reported is not null ? reportBuildId : null) ?? buildId) is { } writeBuild)
+            acf.Set(writeBuild.ToString(), "buildid");
 
         SetTracked(BuildPin.AutoUpdateOnLaunchOnly, "AutoUpdateBehavior");
         if (branch is not null && branch != "public")
@@ -163,7 +182,9 @@ public static class BuildPinner
             SetTracked("0", "TargetBuildID"); // tracked, so unpin puts Steam's value back
         acf.Save();
 
-        return new BuildPin(appId, DateTimeOffset.UtcNow, depots.ToDictionary(d => d.Key, d => d.Value.Manifest), branch, buildId, replaced);
+        return new BuildPin(appId, DateTimeOffset.UtcNow, depots.ToDictionary(d => d.Key, d => d.Value.Manifest), branch, buildId, replaced,
+            ReportedDepots: reported, ReportedBuildId: reported is not null ? reportBuildId : null,
+            TrueSizes: reported is not null ? depots.ToDictionary(d => d.Key, d => d.Value.Size) : null);
     }
 
     /// <summary>
@@ -176,6 +197,18 @@ public static class BuildPinner
         if ((steamRunning ?? SteamProcess.IsRunning)())
             throw new InvalidOperationException("Steam is running. Close Steam before Modular edits its files.");
         var kept = new List<string>();
+        if (pin.ReportsCurrent)
+        {
+            // Put the true manifests back, so Steam sees the old build and offers its update again.
+            foreach (var (depot, manifest) in pin.Depots)
+            {
+                acf.Set(manifest.ToString(), "InstalledDepots", depot.ToString(), "manifest");
+                if (pin.TrueSizes?.TryGetValue(depot, out var size) == true)
+                    acf.Set(size.ToString(), "InstalledDepots", depot.ToString(), "size");
+            }
+            if (pin.BuildId is { } trueBuild)
+                acf.Set(trueBuild.ToString(), "buildid");
+        }
         foreach (var (key, value) in pin.Replaced)
         {
             var path = key.Split('/');
@@ -206,6 +239,9 @@ public static class BuildPinner
     /// </summary>
     public static bool IsSuperseded(SteamAppManifest acf, BuildPin pin)
     {
+        // The acf holds what Modular claimed, not the truth; only the files on disk can tell.
+        if (pin.ReportsCurrent)
+            return false;
         if ((acf.StateFlags & (UpdateRequired | UpdateRunning | UpdatePaused | UpdateStarted)) != 0)
             return false;
         return pin.Depots.Any(d =>
@@ -226,11 +262,13 @@ public static class BuildPinner
             drift.Add($"AutoUpdateBehavior is {raw.Get("AutoUpdateBehavior") ?? "unset"}, not 1 (update only on launch).");
         if (pin.Branch is not null && pin.Branch != "public" && raw.Get("UserConfig", "BetaKey") != pin.Branch)
             drift.Add($"Branch changed: BetaKey is '{raw.Get("UserConfig", "BetaKey") ?? "public"}', pinned '{pin.Branch}'.");
-        foreach (var (depot, manifest) in pin.Depots)
+        foreach (var (depot, manifest) in pin.ReportedDepots ?? pin.Depots)
         {
             var recorded = acf.InstalledDepots.FirstOrDefault(d => d.DepotId == depot)?.ManifestId;
             if (recorded != manifest)
-                drift.Add($"acf records depot {depot} as {recorded?.ToString() ?? "absent"}, pinned {manifest}.");
+                drift.Add(pin.ReportsCurrent
+                    ? $"acf records depot {depot} as {recorded?.ToString() ?? "absent"}, Modular reported {manifest} to Steam."
+                    : $"acf records depot {depot} as {recorded?.ToString() ?? "absent"}, pinned {manifest}.");
         }
         return drift;
     }

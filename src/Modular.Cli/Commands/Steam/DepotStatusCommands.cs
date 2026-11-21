@@ -204,7 +204,8 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
             if (onDisk is not null && onDisk.ManifestId != manifest && !onDisk.EquivalentManifests.Contains(manifest))
                 drift.Add($"Depot {depot} on disk is {onDisk.ManifestId?.ToString() ?? "unknown"}, pinned {manifest}.");
         }
-        var what = $"{string.Join(", ", pin.Depots.Select(d => $"{d.Key}={d.Value}"))}{(pin.Branch is { } b ? $", branch {b}" : "")}";
+        var what = $"{string.Join(", ", pin.Depots.Select(d => $"{d.Key}={d.Value}"))}{(pin.Branch is { } b ? $", branch {b}" : "")}"
+            + (pin.ReportsCurrent ? $", reported to Steam as current build {pin.ReportedBuildId?.ToString() ?? "?"}" : "");
         if (PinLock.Paths(pin, new DepotManifestStore()) is { } lockPaths)
         {
             var state = BuildLock.GetState(acf.InstallPath, lockPaths);
