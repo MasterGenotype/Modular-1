@@ -79,6 +79,10 @@
                 </Border>
             </Grid>
 
+            <!-- Versions (Steam games) -->
+            <ContentControl Content="{Binding Versions}"
+                            IsVisible="{Binding Versions, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
             <!-- Installed mods -->
             <Border Classes="card">
                 <StackPanel Spacing="8">

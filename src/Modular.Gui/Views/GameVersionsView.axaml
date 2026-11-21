@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="400"
+             x:Class="Modular.Gui.Views.GameVersionsView"
+             x:DataType="vm:GameVersionsViewModel">
+
+    <Design.DataContext>
+        <vm:GameVersionsViewModel/>
+    </Design.DataContext>
+
+    <Border Classes="card">
+        <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="VERSIONS" Classes="eyebrow" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsBusy}" Padding="6,2"
+                        ToolTip.Tip="Read the installed build and Steam's versions again">
+                    <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"/>
+                </Button>
+            </Grid>
+
+            <TextBlock Text="{Binding InstalledText}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <mi:MaterialIcon Kind="Pin" Width="14" Height="14" IsVisible="{Binding IsPinned}"/>
+                <mi:MaterialIcon Kind="Lock" Width="14" Height="14" IsVisible="{Binding IsLocked}"/>
+                <TextBlock Text="{Binding PinText}" Classes="caption" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Drift}" IsVisible="{Binding HasDrift}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding StringFormat='• {0}'}" Foreground="{DynamicResource WarningBrush}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Pin and lock the installed build -->
+            <WrapPanel IsEnabled="{Binding !IsBusy}">
+                <Button Command="{Binding PinCommand}" IsVisible="{Binding CanPin}" Margin="0,0,6,6"
+                        ToolTip.Tip="Keep this build: Steam updates it only when you launch it (Steam must be closed)">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="PinOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Pin"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding PinAsCurrentCommand}" IsVisible="{Binding !ReportsCurrent}" Margin="0,0,6,6"
+                        ToolTip.Tip="Pin, and tell Steam this build is the latest so Play launches it without updating (Steam must be closed)">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="PlayCircleOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Pin and let Steam launch it"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding UnpinCommand}" IsVisible="{Binding CanUnpin}" Margin="0,0,6,6"
+                        ToolTip.Tip="Give the game back to Steam's normal updates (Steam must be closed)">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="PinOffOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Unpin"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding LockCommand}" IsVisible="{Binding CanLock}" Margin="0,0,6,6"
+                        ToolTip.Tip="Make the build's files unchangeable, so Steam can't update or overwrite them">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="LockOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Lock"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding UnlockCommand}" IsVisible="{Binding CanUnlock}" Margin="0,0,6,6">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <mi:MaterialIcon Kind="LockOpenVariantOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Unlock"/>
+                    </StackPanel>
+                </Button>
+                <Button Classes="accent" Command="{Binding FinishSwitchCommand}" IsVisible="{Binding HasStagedSwitch}" Margin="0,0,6,6"
+                        ToolTip.Tip="Apply the downloaded version (Steam must be closed)">
+                    <TextBlock Text="Finish switch"/>
+                </Button>
+                <Button Command="{Binding DiscardStagedCommand}" IsVisible="{Binding HasStagedSwitch}" Margin="0,0,6,6">
+                    <TextBlock Text="Discard download"/>
+                </Button>
+            </WrapPanel>
+            <TextBlock Text="Steam is running: pinning, unpinning and switching need it closed. Locking works either way."
+                       Classes="caption" IsVisible="{Binding SteamRunning}" TextWrapping="Wrap"/>
+
+            <!-- Versions -->
+            <ItemsControl ItemsSource="{Binding Versions}" IsEnabled="{Binding !IsBusy}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GameVersionRow">
+                        <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="0,6">
+                            <Grid ColumnDefinitions="2*,*,Auto,Auto">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Note}" Classes="caption" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding BuildText}" Classes="caption"/>
+                                    <TextBlock Text="{Binding DateText}" Classes="caption"/>
+                                </StackPanel>
+                                <Border Grid.Column="2" Classes="pill" IsVisible="{Binding IsInstalled}" Margin="8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Installed"/>
+                                </Border>
+                                <Button Grid.Column="3" IsVisible="{Binding CanSwitch}" VerticalAlignment="Center"
+                                        Command="{Binding $parent[UserControl].((vm:GameVersionsViewModel)DataContext).SwitchToCommand}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="Download this version and switch the game to it">
+                                    <TextBlock Text="Switch to this"/>
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <WrapPanel>
+                <CheckBox IsChecked="{Binding TellSteamCurrentAfterSwitch}" Margin="0,0,16,0"
+                          Content="After switching to a non-branch build, let Steam launch it"/>
+                <CheckBox IsChecked="{Binding LockAfterSwitch}" Content="Lock older builds after switching"/>
+            </WrapPanel>
+
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3"/>
+            <TextBlock Text="{Binding Message}" Classes="caption" TextWrapping="Wrap"
+                       IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        </StackPanel>
+    </Border>
+</UserControl>

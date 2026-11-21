@@ -78,6 +78,44 @@ public sealed class SteamDepotClient(SteamSession session)
     }
 
     /// <summary>
+    /// Every branch of an app from one PICS request: build, last update, description, whether it
+    /// needs a password, and the manifest each depot has on it. Private (password) branches show
+    /// no manifests until unlocked.
+    /// </summary>
+    public async Task<IReadOnlyList<SteamBranchInfo>> GetBranchesAsync(uint appId, CancellationToken ct = default)
+    {
+        var tokens = await session.Apps.PICSGetAccessTokens(appId, null).ToTask().WaitAsync(ct);
+        var token = tokens.AppTokens.TryGetValue(appId, out var t) ? t : 0UL;
+        var resultSet = await session.Apps.PICSGetProductInfo(new SteamApps.PICSRequest(appId, token), null).ToTask().WaitAsync(ct);
+        var app = resultSet.Results?.SelectMany(r => r.Apps).Where(kv => kv.Key == appId).Select(kv => kv.Value).FirstOrDefault()
+            ?? throw new InvalidOperationException($"PICS returned no product info for app {appId}.");
+        var depotsKv = app.KeyValues["depots"];
+        var branches = new List<SteamBranchInfo>();
+        foreach (var b in depotsKv["branches"].Children)
+        {
+            if (string.IsNullOrEmpty(b.Name))
+                continue;
+            var manifests = new Dictionary<uint, ulong>();
+            foreach (var child in depotsKv.Children)
+            {
+                if (!uint.TryParse(child.Name, out var depotId))
+                    continue;
+                var m = child["manifests"][b.Name];
+                if (ulong.TryParse(m["gid"].AsString() ?? m.AsString(), out var gid))
+                    manifests[depotId] = gid;
+            }
+            branches.Add(new SteamBranchInfo(
+                b.Name,
+                uint.TryParse(b["buildid"].AsString(), out var build) ? build : null,
+                long.TryParse(b["timeupdated"].AsString(), out var tu) ? DateTimeOffset.FromUnixTimeSeconds(tu) : null,
+                b["description"].AsString(),
+                b["pwdrequired"].AsString() == "1",
+                manifests));
+        }
+        return branches;
+    }
+
+    /// <summary>
     /// Downloads one manifest: depot key → manifest request code → CDN, trying servers in
     /// order of load. The returned manifest has its filenames decrypted.
     /// </summary>
@@ -173,6 +211,10 @@ public sealed class SteamCdnChunkSource : IChunkSource, IDisposable
 
     public void Dispose() => _cdn.Dispose();
 }
+
+/// <summary>One branch of an app (public, betas, legacy builds).</summary>
+public sealed record SteamBranchInfo(string Name, uint? BuildId, DateTimeOffset? TimeUpdated, string? Description,
+    bool PasswordRequired, IReadOnlyDictionary<uint, ulong> Manifests);
 
 public sealed record AppDepotInfo(
     uint AppId,

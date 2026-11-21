@@ -51,7 +51,12 @@ public partial class GamePageViewModel : ViewModelBase
         _shortcuts = owner is null ? null : SteamShortcutService.ForCurrentUser();
         LoadArt();
         _ = LoadModsAsync();
+        if (!game.IsShortcut && owner is not null)
+            Versions = new GameVersionsViewModel((uint)game.AppId, game.DisplayName, dialogs);
     }
+
+    /// <summary>The version browser (Steam games only).</summary>
+    public GameVersionsViewModel? Versions { get; }
 
     public GameDisplayModel Game { get; }
 
