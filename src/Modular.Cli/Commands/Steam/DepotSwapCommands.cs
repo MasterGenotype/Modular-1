@@ -459,9 +459,11 @@ public sealed class DepotUnpinCommand : AsyncCommand<DepotUnpinCommand.Settings>
         }
         if (pin.Locked && !await PinLock.SetAsync(acf, pin, new DepotManifestStore(), locked: false, cts.Token))
             return 1;
-        BuildPinner.Remove(SteamAcfEditor.Load(acf.AcfPath), pin);
+        var kept = BuildPinner.Remove(SteamAcfEditor.Load(acf.AcfPath), pin);
         pins.Delete(settings.AppId);
         LiveProgressDisplay.ShowSuccess($"Unpinned {acf.Name}. Steam's own update settings are restored; it will update the game to the latest build.");
+        if (kept.Count > 0)
+            LiveProgressDisplay.ShowWarning($"Left as they are, because they changed after the pin: {string.Join(", ", kept)}.");
         return 0;
     }
 }

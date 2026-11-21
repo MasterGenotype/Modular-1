@@ -166,14 +166,49 @@ public static class BuildPinner
         return new BuildPin(appId, DateTimeOffset.UtcNow, depots.ToDictionary(d => d.Key, d => d.Value.Manifest), branch, buildId, replaced);
     }
 
-    /// <summary>Restores the acf values the pin replaced. Manifest ids stay (they are true).</summary>
-    public static void Remove(SteamAcfEditor acf, BuildPin pin, Func<bool>? steamRunning = null)
+    /// <summary>
+    /// Restores the acf values the pin replaced. Manifest ids stay (they are true). A value Steam or
+    /// the user changed after the pin is newer than Modular's record, so it is kept; the keys kept that
+    /// way are returned.
+    /// </summary>
+    public static IReadOnlyList<string> Remove(SteamAcfEditor acf, BuildPin pin, Func<bool>? steamRunning = null)
     {
         if ((steamRunning ?? SteamProcess.IsRunning)())
             throw new InvalidOperationException("Steam is running. Close Steam before Modular edits its files.");
+        var kept = new List<string>();
         foreach (var (key, value) in pin.Replaced)
-            acf.Set(value, key.Split('/'));
+        {
+            var path = key.Split('/');
+            if (WrittenValue(pin, key) is { } written && acf.Get(path) != written)
+            {
+                kept.Add(key);
+                continue;
+            }
+            acf.Set(value, path);
+        }
         acf.Save();
+        return kept;
+    }
+
+    /// <summary>The value <see cref="Apply"/> writes for a tracked key, or null if it isn't one Apply sets.</summary>
+    private static string? WrittenValue(BuildPin pin, string key) => key switch
+    {
+        "AutoUpdateBehavior" => BuildPin.AutoUpdateOnLaunchOnly,
+        "UserConfig/BetaKey" or "MountedConfig/BetaKey" => pin.Branch,
+        "TargetBuildID" => "0",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Steam has replaced the pinned build: it records other manifests for every pinned depot and has
+    /// nothing left to download. The pin no longer holds anything; unpin it.
+    /// </summary>
+    public static bool IsSuperseded(SteamAppManifest acf, BuildPin pin)
+    {
+        if ((acf.StateFlags & (UpdateRequired | UpdateRunning | UpdatePaused | UpdateStarted)) != 0)
+            return false;
+        return pin.Depots.Count > 0 && pin.Depots.All(d =>
+            acf.InstalledDepots.FirstOrDefault(i => i.DepotId == d.Key)?.ManifestId is { } m && m != d.Value);
     }
 
     /// <summary>What has moved since the pin was set: the watchdog check run on every status and before launch.</summary>

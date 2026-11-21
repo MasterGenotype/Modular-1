@@ -219,7 +219,9 @@ public sealed class DepotStatusCommand : AsyncCommand<DepotStatusCommand.Setting
             AnsiConsole.MarkupLine($"Pin: [red]drifted[/] (pinned {pin.PinnedAt:u}: {Markup.Escape(what)})");
             foreach (var d in drift)
                 AnsiConsole.MarkupLine($"  [red]•[/] {Markup.Escape(d)}");
-            AnsiConsole.MarkupLine($"  [grey]Re-pin with 'modular depot pin {acf.AppId}' (Steam closed), or swap back.[/]");
+            AnsiConsole.MarkupLine(BuildPinner.IsSuperseded(acf, pin)
+                ? $"  [yellow]Steam has replaced the pinned build. Clear the pin with 'modular depot unpin {acf.AppId}' (Steam closed).[/]"
+                : $"  [grey]Re-pin with 'modular depot pin {acf.AppId}' (Steam closed), or swap back.[/]");
         }
     }
 

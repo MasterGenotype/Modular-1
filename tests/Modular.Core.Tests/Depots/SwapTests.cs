@@ -265,6 +265,42 @@ public sealed class BuildPinTests : IDisposable
     }
 
     [Fact]
+    public void Unpin_AfterSteamReplacedTheBuild_KeepsSteamsNewerValues()
+    {
+        // The Bastion case: pinned on an old build without a branch, then the user updated in Steam.
+        var raw = SteamAcfEditor.Load(Acf);
+        raw.Set("3406487", "TargetBuildID");
+        raw.Save();
+        var pin = BuildPinner.Apply(SteamAcfEditor.Load(Acf), 1857090, Depots(1228477902981854726), null, null, null, () => false);
+
+        raw = SteamAcfEditor.Load(Acf);
+        raw.Set("6071069523908843722", "InstalledDepots", "1857091", "manifest");
+        raw.Set("3500000", "TargetBuildID"); // Steam moved on past the value the pin saved
+        raw.Save();
+
+        BuildPinner.IsSuperseded(SteamAppManifest.Load(Acf), pin).Should().BeTrue();
+        var kept = BuildPinner.Remove(SteamAcfEditor.Load(Acf), pin, () => false);
+
+        kept.Should().Equal("TargetBuildID");
+        raw = SteamAcfEditor.Load(Acf);
+        raw.Get("TargetBuildID").Should().Be("3500000", "Steam's value is newer than the one the pin saved");
+        raw.Get("AutoUpdateBehavior").Should().Be("0", "still the pin's 1, so the original comes back");
+    }
+
+    [Fact]
+    public void IsSuperseded_FalseWhilePinHoldsOrUpdatePending()
+    {
+        var pin = BuildPinner.Apply(SteamAcfEditor.Load(Acf), 1857090, Depots(1228477902981854726), null, null, null, () => false);
+        BuildPinner.IsSuperseded(SteamAppManifest.Load(Acf), pin).Should().BeFalse();
+
+        var raw = SteamAcfEditor.Load(Acf);
+        raw.Set("6", "StateFlags");
+        raw.Set("6071069523908843722", "InstalledDepots", "1857091", "manifest");
+        raw.Save();
+        BuildPinner.IsSuperseded(SteamAppManifest.Load(Acf), pin).Should().BeFalse("Steam hasn't finished replacing it");
+    }
+
+    [Fact]
     public void RePin_KeepsTheOriginalValuesForUnpin()
     {
         var first = BuildPinner.Apply(SteamAcfEditor.Load(Acf), 1857090, Depots(1), null, null, null, () => false);
