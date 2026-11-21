@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 8;
+    private const int CurrentSchemaVersion = 9;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -191,6 +191,7 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             await CreateV6SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV8SchemaAsync(connection, (SqliteTransaction)transaction);
+            await CreateV9SchemaAsync(connection, (SqliteTransaction)transaction);
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
@@ -243,6 +244,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             if (fromVersion < 8)
             {
                 await CreateV8SchemaAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 9)
+            {
+                await CreateV9SchemaAsync(connection, (SqliteTransaction)transaction);
             }
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
@@ -583,6 +589,25 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             cmd.CommandText = $"UPDATE {table} SET load_index = order_index WHERE load_index IS NULL;";
             await cmd.ExecuteNonQueryAsync();
         }
+    }
+
+    /// <summary>
+    /// Creates the v9 schema: build stamps. A snapshot records the game build it was taken on,
+    /// and <c>deploy_build</c> holds the build each game's mod set was last deployed on.
+    /// </summary>
+    private static async Task CreateV9SchemaAsync(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        await AddColumnIfMissingAsync(connection, transaction, table: "snapshot", column: "build_json", definition: "TEXT");
+        await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS deploy_build (
+                game_key TEXT PRIMARY KEY NOT NULL,
+                build_json TEXT NOT NULL,
+                stamped_at_utc TEXT NOT NULL
+            );
+            """;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>

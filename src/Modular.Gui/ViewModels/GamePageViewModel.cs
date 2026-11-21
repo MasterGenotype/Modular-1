@@ -31,6 +31,14 @@ public partial class GamePageViewModel : ViewModelBase
     [ObservableProperty]
     private string _modsSummary = "Looking for installed mods…";
 
+    /// <summary>"Deployed on build 322538 (legacy)", from the deploy's build stamp.</summary>
+    [ObservableProperty]
+    private string _deployBuildText = "";
+
+    /// <summary>Set when the mods were deployed on another build than the one installed now.</summary>
+    [ObservableProperty]
+    private string _buildWarning = "";
+
     /// <summary>Progress of a snapshot, export or import.</summary>
     [ObservableProperty]
     private string _actionStatus = "";
@@ -52,7 +60,8 @@ public partial class GamePageViewModel : ViewModelBase
         LoadArt();
         _ = LoadModsAsync();
         if (!game.IsShortcut && owner is not null)
-            Versions = new GameVersionsViewModel((uint)game.AppId, game.DisplayName, dialogs);
+            Versions = new GameVersionsViewModel((uint)game.AppId, game.DisplayName, dialogs, owner.Snapshots, owner.InstallService,
+                onModsChanged: () => _ = LoadModsAsync());
     }
 
     /// <summary>The version browser (Steam games only).</summary>
@@ -106,6 +115,13 @@ public partial class GamePageViewModel : ViewModelBase
                 Mods.Add(new GameModRow(string.IsNullOrWhiteSpace(m.DisplayName) ? m.ModId : m.DisplayName!, m.Enabled,
                     m.InstallerId ?? "", m.InstalledAtUtc is { } at && DateTimeOffset.TryParse(at, out var t) ? t.LocalDateTime.ToString("yyyy-MM-dd") : ""));
             var enabled = mods.Count(m => m.Enabled);
+            if (!Game.IsShortcut && mods.Count > 0 && await install.Deployment.Mods.GetDeployBuildAsync(key) is { } deployed)
+            {
+                DeployBuildText = $"Deployed on {deployed.Label} ({deployed.StampedAt.LocalDateTime:yyyy-MM-dd}).";
+                BuildWarning = Modular.Core.Depots.BuildStamp.ForApp((uint)Game.AppId) is { } now && !now.SameBuildAs(deployed)
+                    ? $"The game is now on {now.Label}, not the build these mods were deployed on. Check they still work, or switch back under Versions."
+                    : "";
+            }
             ModsSummary = mods.Count == 0
                 ? "No mods installed through Modular."
                 : $"{mods.Count} mod(s) installed, {enabled} enabled.";
@@ -227,6 +243,8 @@ public partial class GamePageViewModel : ViewModelBase
             int Count(ModListAction a) => plan.Count(p => p.Action == a);
             var otherGame = !string.Equals(list.Game.Key, key, StringComparison.OrdinalIgnoreCase)
                 ? $"\n\nThis list was made for {list.Game.Name ?? list.Game.Key}, not {Game.DisplayName}." : "";
+            if (ModListImporter.BuildMismatch(list, key) is { } mismatch)
+                otherGame += $"\n\n{mismatch}";
             var message = $"{list.Mods.Count} mod(s) in the list:\n" +
                 $"• {Count(ModListAction.Download)} to download and install\n" +
                 $"• {Count(ModListAction.AlreadyInstalled)} already installed\n" +

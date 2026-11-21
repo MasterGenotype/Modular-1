@@ -9,9 +9,13 @@ using Modular.Gui.Services;
 namespace Modular.Gui.ViewModels;
 
 /// <summary>One version in a game's version list.</summary>
-public sealed class GameVersionRow(GameVersion version)
+public sealed class GameVersionRow(GameVersion version, int savedSets = 0)
 {
     public GameVersion Version { get; } = version;
+    /// <summary>How many snapshots were taken on this build (mod sets that can come back with it).</summary>
+    public int SavedSets { get; } = savedSets;
+    public bool HasSavedSets => SavedSets > 0;
+    public string SavedSetsText => SavedSets == 1 ? "1 mod set saved" : $"{SavedSets} mod sets saved";
     public string Label => Version.Label;
     public string BuildText => Version.BuildId is { } b ? $"build {b}" : Version.Description ?? "";
     public string DateText => Version.Date is { } d ? d.LocalDateTime.ToString("yyyy-MM-dd") : "";
@@ -31,6 +35,9 @@ public partial class GameVersionsViewModel : ViewModelBase
     private readonly string _gameName;
     private readonly IDialogService? _dialogs;
     private readonly DepotVersionService _service = new();
+    private readonly Modular.Core.Snapshots.SnapshotManager? _snapshots;
+    private readonly Modular.Core.Installers.ModInstallationService? _install;
+    private readonly Action? _onModsChanged;
 
     [ObservableProperty] private string _installedText = "Reading the installed build…";
     [ObservableProperty] private string _pinText = "";
@@ -64,11 +71,16 @@ public partial class GameVersionsViewModel : ViewModelBase
         PinText = "Pinned · Steam told it's current · Locked";
     }
 
-    public GameVersionsViewModel(uint appId, string gameName, IDialogService? dialogs, bool load = true)
+    public GameVersionsViewModel(uint appId, string gameName, IDialogService? dialogs,
+        Modular.Core.Snapshots.SnapshotManager? snapshots = null, Modular.Core.Installers.ModInstallationService? install = null,
+        Action? onModsChanged = null, bool load = true)
     {
         _appId = appId;
         _gameName = gameName;
         _dialogs = dialogs;
+        _snapshots = snapshots;
+        _install = install;
+        _onModsChanged = onModsChanged;
         if (load)
             _ = RefreshAsync();
     }
@@ -121,9 +133,10 @@ public partial class GameVersionsViewModel : ViewModelBase
                 versions = await _service.ListVersionsAsync(status, null);
                 Message = "Steam versions need a one-time login: run 'modular steam login' in a terminal. Archived builds are listed meanwhile.";
             }
+            var snapshots = _snapshots is null ? [] : await _snapshots.ListSnapshotsForAppAsync((int)_appId);
             Versions.Clear();
             foreach (var v in versions)
-                Versions.Add(new GameVersionRow(v));
+                Versions.Add(new GameVersionRow(v, snapshots.Count(sn => sn.Build is { } b && sn.ModCount > 0 && b.Matches(v.Manifests))));
 
             var installed = versions.FirstOrDefault(v => v.IsInstalled);
             var oldest = status.Depots.Where(d => d.BuildDate is not null).Select(d => d.BuildDate!.Value).DefaultIfEmpty().Max();
@@ -250,6 +263,7 @@ public partial class GameVersionsViewModel : ViewModelBase
         if (_dialogs is not null && !await _dialogs.ShowConfirmationAsync("Switch version", text))
             return;
 
+        await SaveCurrentSetAsync($"Before switching to {row.Label}");
         await RunAsync("Downloading…", () => WithClientAsync(async (_, session) =>
         {
             await _service.StageAsync(plan, session, new Progress<(uint DepotId, long Done, long Total)>(p =>
@@ -267,6 +281,42 @@ public partial class GameVersionsViewModel : ViewModelBase
         return await FinishAsync(staged?.Branch is null);
     });
 
+    /// <summary>Snapshots the installed mods (stamped with the build they're on) before the build changes.</summary>
+    private async Task SaveCurrentSetAsync(string name)
+    {
+        if (_snapshots is null || _install is null)
+            return;
+        try
+        {
+            var mods = await _install.Deployment.Mods.ListAsync(_appId.ToString());
+            if (mods.Count == 0 || SteamAppManifest.Find(_appId) is not { } acf)
+                return;
+            await _snapshots.CreateSnapshotAsync((int)_appId, _gameName, acf.InstallPath,
+                Modular.Core.Snapshots.SnapshotTrigger.Manual, name: name, gameKey: _appId.ToString());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Message = $"Couldn't save the current mod set first: {ex.Message}";
+        }
+    }
+
+    /// <summary>After a switch: offers the newest mod set saved on the build now installed.</summary>
+    private async Task<string?> OfferSavedSetAsync()
+    {
+        if (_snapshots is null || _install is null || _dialogs is null || BuildStamp.ForApp(_appId) is not { } now)
+            return null;
+        var saved = (await _snapshots.ListSnapshotsForAppAsync((int)_appId))
+            .FirstOrDefault(sn => sn.Build is { } b && sn.ModCount > 0 && b.SameBuildAs(now));
+        if (saved is null)
+            return null;
+        if (!await _dialogs.ShowConfirmationAsync("Restore mods for this build",
+                $"\"{saved.Name ?? saved.SnapshotId}\" ({saved.ModCount} mods) was saved on {now.Label}, the build now installed.\n\nRestore that mod set?"))
+            return null;
+        var result = await _snapshots.RestoreSnapshotAsync(saved.SnapshotId, _install);
+        _onModsChanged?.Invoke();
+        return result.Error is { } err ? $"Restoring the mod set failed: {err}" : $"Restored the mod set \"{saved.Name ?? saved.SnapshotId}\".";
+    }
+
     private async Task<string> FinishAsync(bool nonBranch)
     {
         var swap = await _service.PrepareSwapAsync(_appId);
@@ -283,6 +333,8 @@ public partial class GameVersionsViewModel : ViewModelBase
             await _service.SetLockAsync(_appId, locked: true);
             parts.Add("Files locked.");
         }
+        if (await OfferSavedSetAsync() is { } restored)
+            parts.Add(restored);
         return string.Join(" ", parts);
     }
 

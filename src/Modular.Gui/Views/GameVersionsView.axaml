@@ -97,6 +97,11 @@
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding BuildText}" Classes="caption"/>
                                     <TextBlock Text="{Binding DateText}" Classes="caption"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasSavedSets}"
+                                                ToolTip.Tip="Snapshots taken on this build; switching to it offers to restore the newest">
+                                        <mi:MaterialIcon Kind="PackageVariantClosed" Width="12" Height="12"/>
+                                        <TextBlock Text="{Binding SavedSetsText}" Classes="caption"/>
+                                    </StackPanel>
                                 </StackPanel>
                                 <Border Grid.Column="2" Classes="pill" IsVisible="{Binding IsInstalled}" Margin="8,0" VerticalAlignment="Center">
                                     <TextBlock Text="Installed"/>

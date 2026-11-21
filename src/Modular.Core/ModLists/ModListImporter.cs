@@ -49,6 +49,15 @@ public sealed class ModListImporter
         }).ToList();
     }
 
+    /// <summary>A warning when the list was made on another build of the game than the one installed; null when they match or either is unknown.</summary>
+    public static string? BuildMismatch(ModList list, string gameKey)
+    {
+        if (list.Game.Build is not { } listed || !uint.TryParse(gameKey, out var appId) || Modular.Core.Depots.BuildStamp.ForApp(appId) is not { } current)
+            return null;
+        return listed.SameBuildAs(current) ? null
+            : $"This list was made on {listed.Label}; this game is on {current.Label}. Mods may not work on a different build.";
+    }
+
     /// <param name="resolveUrl">Turns a source into a download URL (Nexus needs Premium for this).</param>
     /// <param name="modsRoot">Modular's mods folder; downloads land in its usual layout.</param>
     public async Task<ModListImportResult> ApplyAsync(

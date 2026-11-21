@@ -31,6 +31,9 @@ public class SnapshotRecord
     public SnapshotTrigger Trigger { get; set; }
     public string CreatedAtUtc { get; set; } = string.Empty;
     public int ModCount { get; set; }
+
+    /// <summary>The game build the snapshot was taken on (null for snapshots older than build stamps).</summary>
+    public Modular.Core.Depots.BuildStamp? Build { get; set; }
 }
 
 /// <summary>
@@ -250,6 +253,9 @@ public class SnapshotManager
         // Its committed changesets can name the same mod several times over.
         var modCount = managedMods.Count > 0 ? managedMods.Count : gameChangesets.Count;
 
+        // The build the mods were set up for, so a version switch can bring the right set back.
+        var build = gameAppId > 0 ? Modular.Core.Depots.BuildStamp.ForApp((uint)gameAppId) : null;
+
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
         try
@@ -259,9 +265,10 @@ public class SnapshotManager
             {
                 cmd.Transaction = (SqliteTransaction)transaction;
                 cmd.CommandText = """
-                    INSERT INTO snapshot (snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count)
-                    VALUES (@id, @appid, @game_name, @path, @name, @desc, @trigger, @created, @count)
+                    INSERT INTO snapshot (snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc, mod_count, build_json)
+                    VALUES (@id, @appid, @game_name, @path, @name, @desc, @trigger, @created, @count, @build)
                     """;
+                cmd.Parameters.AddWithValue("@build", (object?)build?.ToJson() ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@id", snapshotId);
                 cmd.Parameters.AddWithValue("@appid", gameAppId);
                 cmd.Parameters.AddWithValue("@game_name", gameName);
@@ -341,7 +348,8 @@ public class SnapshotManager
                 Description = description,
                 Trigger = trigger,
                 CreatedAtUtc = createdAt,
-                ModCount = modCount
+                ModCount = modCount,
+                Build = build
             };
         }
         catch
@@ -926,8 +934,23 @@ public class SnapshotManager
     // committed changeset instead; the mod set's size is read in its place.
     private const string SnapshotColumns = """
         snapshot_id, game_appid, game_name, game_install_path, name, description, trigger, created_at_utc,
-        COALESCE(NULLIF((SELECT COUNT(*) FROM snapshot_game_mod g WHERE g.snapshot_id = snapshot.snapshot_id), 0), mod_count)
+        COALESCE(NULLIF((SELECT COUNT(*) FROM snapshot_game_mod g WHERE g.snapshot_id = snapshot.snapshot_id), 0), mod_count),
+        build_json
         """;
+
+    /// <summary>A game's snapshots, newest first.</summary>
+    public async Task<List<SnapshotRecord>> ListSnapshotsForAppAsync(int gameAppId, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT {SnapshotColumns} FROM snapshot WHERE game_appid = @appid ORDER BY created_at_utc DESC";
+        cmd.Parameters.AddWithValue("@appid", gameAppId);
+        var list = new List<SnapshotRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(ReadSnapshotRecord(reader));
+        return list;
+    }
 
     private static SnapshotRecord ReadSnapshotRecord(SqliteDataReader reader)
     {
@@ -949,7 +972,8 @@ public class SnapshotManager
             Description = reader.IsDBNull(5) ? null : reader.GetString(5),
             Trigger = trigger,
             CreatedAtUtc = reader.GetString(7),
-            ModCount = reader.GetInt32(8)
+            ModCount = reader.GetInt32(8),
+            Build = reader.FieldCount > 9 && !reader.IsDBNull(9) ? Modular.Core.Depots.BuildStamp.FromJson(reader.GetString(9)) : null
         };
     }
 }

@@ -19,10 +19,43 @@ public sealed class DatabaseSchemaTests : IDisposable
         await using var database = new ModularDatabase(Path.Combine(_dir, "fresh.db"));
         await database.InitializeAsync();
 
-        (await UserVersionAsync(database)).Should().Be(8);
+        (await UserVersionAsync(database)).Should().Be(9);
         (await ColumnsAsync(database, "game_mod")).Should().Contain("load_index");
         (await ColumnsAsync(database, "snapshot_game_mod")).Should().Contain("load_index");
         (await ColumnsAsync(database, "game_owned_mod")).Should().Contain(["state", "file_name", "module_uuid"]);
+    }
+
+    [Fact]
+    public async Task AVersion8Database_GainsBuildStamps_WithItsSnapshotsUntouched()
+    {
+        var path = Path.Combine(_dir, "v8.db");
+
+        await using (var database = new ModularDatabase(path))
+        {
+            await database.InitializeAsync();
+            await ExecAsync(database, """
+                INSERT INTO snapshot (snapshot_id, game_appid, game_name, game_install_path, trigger, created_at_utc, mod_count)
+                VALUES ('s1', 107100, 'Bastion', '/g', 'manual', 'now', 2);
+                DROP TABLE deploy_build;
+                ALTER TABLE snapshot DROP COLUMN build_json;
+                PRAGMA user_version = 8;
+                """);
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        await using (var database = new ModularDatabase(path))
+        {
+            await database.InitializeAsync();
+
+            (await UserVersionAsync(database)).Should().Be(9);
+            (await ColumnsAsync(database, "snapshot")).Should().Contain("build_json");
+            (await ColumnsAsync(database, "deploy_build")).Should().Contain("build_json");
+            var stamp = new Modular.Core.Depots.BuildStamp("legacy", 322538, new() { [107101] = 362369545429999215 }, DateTimeOffset.UtcNow);
+            var repo = new GameModRepository(database);
+            await repo.SetDeployBuildAsync("107100", stamp);
+            (await repo.GetDeployBuildAsync("107100"))!.SameBuildAs(stamp).Should().BeTrue();
+        }
     }
 
     [Fact]
@@ -47,7 +80,7 @@ public sealed class DatabaseSchemaTests : IDisposable
         {
             await database.InitializeAsync();
 
-            (await UserVersionAsync(database)).Should().Be(8);
+            (await UserVersionAsync(database)).Should().Be(9);
             (await ColumnsAsync(database, "game_owned_mod")).Should().Contain("remote_mod_id");
             var mods = await new GameModRepository(database).ListAsync("g");
             mods.Select(m => (m.ModId, m.LoadIndex)).Should().Equal(("first", 3));
@@ -78,7 +111,7 @@ public sealed class DatabaseSchemaTests : IDisposable
         {
             await database.InitializeAsync();
 
-            (await UserVersionAsync(database)).Should().Be(8);
+            (await UserVersionAsync(database)).Should().Be(9);
 
             var mods = await new GameModRepository(database).ListAsync("g");
             mods.Select(m => (m.ModId, m.OrderIndex, m.LoadIndex))

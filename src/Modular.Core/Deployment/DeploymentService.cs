@@ -150,6 +150,20 @@ public sealed class DeploymentService
         }
 
         result.Plan = plan;
+
+        // Remember which build of the game this mod set went onto.
+        if (result.Success && installation.SteamAppId is int appId and > 0)
+        {
+            try
+            {
+                if (Depots.BuildStamp.ForApp((uint)appId) is { } stamp)
+                    await _mods.SetDeployBuildAsync(installation.GameKey, stamp, ct);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or Microsoft.Data.Sqlite.SqliteException)
+            {
+                _logger?.LogDebug(ex, "Could not record the deployed build for {Game}", installation.GameKey);
+            }
+        }
         return result;
     }
 

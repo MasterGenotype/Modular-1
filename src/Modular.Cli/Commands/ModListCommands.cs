@@ -103,6 +103,8 @@ public sealed class ModListImportCommand : AsyncCommand<ModListImportCommand.Set
             AnsiConsole.MarkupLine($"  [yellow]{Markup.Escape(p.Entry.Name)}[/] [grey]{Markup.Escape(p.Detail)}[/]");
         foreach (var note in list.Notes)
             AnsiConsole.MarkupLine($"[grey]• {Markup.Escape(note)}[/]");
+        if (ModListImporter.BuildMismatch(list, gameKey) is { } mismatch)
+            AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(mismatch)}[/]");
         if (!settings.Apply)
         {
             AnsiConsole.MarkupLine("[grey]Nothing changed. Add --apply to download and install.[/]");

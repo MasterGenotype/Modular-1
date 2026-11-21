@@ -47,7 +47,11 @@ public sealed record ModList
 }
 
 /// <summary>The game a list is for.</summary>
-public sealed record ModListGame(string Key, string? Name, int? SteamAppId, string? NexusDomain, string? BuildId);
+public sealed record ModListGame(string Key, string? Name, int? SteamAppId, string? NexusDomain, string? BuildId)
+{
+    /// <summary>The game build the list was made on (true depot manifests), for a mismatch warning on import.</summary>
+    public Modular.Core.Depots.BuildStamp? Build { get; init; }
+}
 
 /// <summary>One mod in a list.</summary>
 public sealed record ModListEntry

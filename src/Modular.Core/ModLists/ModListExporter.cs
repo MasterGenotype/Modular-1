@@ -171,9 +171,10 @@ public sealed partial class ModListExporter
             notes.Add($"{manual} mod(s) have no download source (installed from local files); the importer lists them to supply by hand.");
 
         int? steamAppId = int.TryParse(gameKey, out var appId) ? appId : null;
+        var build = steamAppId is { } a ? Modular.Core.Depots.BuildStamp.ForApp((uint)a) : null;
         return new ModList
         {
-            Game = new ModListGame(gameKey, gameName, steamAppId, nexusDomain, buildId),
+            Game = new ModListGame(gameKey, gameName, steamAppId, nexusDomain, build?.BuildId?.ToString() ?? buildId) { Build = build },
             ExportedBy = $"Modular {typeof(ModListExporter).Assembly.GetName().Version}",
             Mods = entries,
             Notes = notes,

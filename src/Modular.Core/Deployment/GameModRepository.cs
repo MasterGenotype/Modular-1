@@ -315,6 +315,31 @@ public sealed class GameModRepository
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
+    /// <summary>Records the game build a game's mod set was deployed on.</summary>
+    public async Task SetDeployBuildAsync(string gameKey, Depots.BuildStamp stamp, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO deploy_build (game_key, build_json, stamped_at_utc) VALUES ($key, $json, $at)
+            ON CONFLICT(game_key) DO UPDATE SET build_json = excluded.build_json, stamped_at_utc = excluded.stamped_at_utc
+            """;
+        cmd.Parameters.AddWithValue("$key", gameKey);
+        cmd.Parameters.AddWithValue("$json", stamp.ToJson());
+        cmd.Parameters.AddWithValue("$at", stamp.StampedAt.ToString("o"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>The game build a game's mod set was last deployed on, if recorded.</summary>
+    public async Task<Depots.BuildStamp?> GetDeployBuildAsync(string gameKey, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT build_json FROM deploy_build WHERE game_key = $key";
+        cmd.Parameters.AddWithValue("$key", gameKey);
+        return Depots.BuildStamp.FromJson(await cmd.ExecuteScalarAsync(ct) as string);
+    }
+
     /// <summary>Sets the name a mod is listed under.</summary>
     /// <returns>True when a row was updated.</returns>
     public async Task<bool> SetDisplayNameAsync(

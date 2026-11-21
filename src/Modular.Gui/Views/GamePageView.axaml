@@ -88,6 +88,10 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="INSTALLED MODS" Classes="eyebrow"/>
                     <TextBlock Text="{Binding ModsSummary}" Classes="caption"/>
+                    <TextBlock Text="{Binding DeployBuildText}" Classes="caption"
+                               IsVisible="{Binding DeployBuildText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <TextBlock Text="{Binding BuildWarning}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap"
+                               IsVisible="{Binding BuildWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <WrapPanel IsEnabled="{Binding !IsWorking}">
                         <Button Command="{Binding TakeSnapshotCommand}" Margin="0,0,8,8"
                                 ToolTip.Tip="Record this game's installed mods; restore the set later from Backups">
