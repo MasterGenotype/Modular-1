@@ -119,6 +119,19 @@ uninstall-gui: ## Uninstall GUI from ~/.local/bin
 uninstall-all: uninstall-cli uninstall-gui ## Uninstall everything
 	@echo "All Modular components uninstalled"
 
+LOCK_HELPER_DIR = /usr/lib/modular
+POLKIT_ACTIONS_DIR = /usr/share/polkit-1/actions
+
+install-lock-helper: ## Install the build-lock helper + polkit policy (needs root once: sudo make install-lock-helper)
+	install -D -o root -g root -m 0755 packaging/lock-helper/modular-lock-helper $(LOCK_HELPER_DIR)/modular-lock-helper
+	install -D -o root -g root -m 0644 packaging/lock-helper/io.modular.build-lock.policy $(POLKIT_ACTIONS_DIR)/io.modular.build-lock.policy
+	@echo "Build-lock helper installed (polkit action io.modular.build-lock)"
+
+uninstall-lock-helper: ## Remove the build-lock helper + polkit policy (sudo)
+	rm -f $(LOCK_HELPER_DIR)/modular-lock-helper $(POLKIT_ACTIONS_DIR)/io.modular.build-lock.policy
+	-rmdir $(LOCK_HELPER_DIR) 2>/dev/null
+	@echo "Build-lock helper removed"
+
 ##@ Run Targets
 
 run: ## Run CLI in development mode

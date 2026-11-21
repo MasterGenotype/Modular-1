@@ -6,6 +6,7 @@ using Modular.Cli.Commands.GameDetection;
 using Modular.Cli.Commands.Modules;
 using Modular.Cli.Commands.Plugins;
 using Modular.Cli.Commands.Profile;
+using Modular.Cli.Commands.Steam;
 using Modular.Cli.Commands.Switch;
 using Modular.Cli.Commands.Switch.Totk;
 using Modular.Cli.Commands.Telemetry;
@@ -343,6 +344,62 @@ class Program
 
                 telemetry.AddCommand<TelemetryClearCommand>("clear")
                     .WithDescription("Clear all telemetry data");
+            });
+
+            // Steam account (Modular's own SteamKit2 session) and depot manifests
+            config.AddBranch("steam", steam =>
+            {
+                steam.SetDescription("Modular's own Steam login (separate from the Steam client)");
+                steam.AddCommand<SteamLoginCommand>("login")
+                    .WithDescription("Log in with account name + password; Steam Guard by app approval or code")
+                    .WithExample("steam", "login")
+                    .WithExample("steam", "login", "--user", "myaccount");
+                steam.AddCommand<SteamStatusCommand>("status")
+                    .WithDescription("Show the stored login; --check logs on to verify it");
+                steam.AddCommand<SteamLogoutCommand>("logout")
+                    .WithDescription("Remove the stored Steam login");
+            });
+
+            config.AddBranch("depot", depot =>
+            {
+                depot.SetDescription("Steam depot manifests: list, fetch, archive");
+                depot.AddCommand<DepotListCommand>("list")
+                    .WithDescription("List an app's depots and current manifests (needs steam login)")
+                    .WithExample("depot", "list", "1091500");
+                depot.AddCommand<DepotFetchCommand>("fetch")
+                    .WithDescription("Download a depot manifest into Modular's archive (needs steam login)")
+                    .WithExample("depot", "fetch", "1091500", "1091501")
+                    .WithExample("depot", "fetch", "1091500", "1091501", "3524634124112875626");
+                depot.AddCommand<DepotArchiveCommand>("archive")
+                    .WithDescription("Copy manifests from Steam's depotcache into Modular's archive")
+                    .WithExample("depot", "archive");
+                depot.AddCommand<DepotStatusCommand>("status")
+                    .WithDescription("Which build is really installed (checked against archived manifests, not the acf)")
+                    .WithExample("depot", "status", "1091500")
+                    .WithExample("depot", "status", "1091500", "--online", "--verify");
+                depot.AddCommand<DepotDiffCommand>("diff")
+                    .WithDescription("Files and download size between two archived manifests (offline)")
+                    .WithExample("depot", "diff", "1091501", "3389237510439361019", "3524634124112875626");
+                depot.AddCommand<DepotStageCommand>("stage")
+                    .WithDescription("Download a build into a staging folder (game untouched); resumable")
+                    .WithExample("depot", "stage", "1091500", "--to-branch", "2_31_old", "--dry-run")
+                    .WithExample("depot", "stage", "1857090", "--manifest", "1857091=1228477902981854726");
+                depot.AddCommand<DepotSwapCommand>("swap")
+                    .WithDescription("Apply the staged build and pin it against Steam updates (Steam must be closed)")
+                    .WithExample("depot", "swap", "1857090");
+                depot.AddCommand<DepotPinCommand>("pin")
+                    .WithDescription("Pin the installed build: update only on launch, optional official branch (Steam closed)")
+                    .WithExample("depot", "pin", "1091500", "--branch", "2_31_old");
+                depot.AddCommand<DepotUnpinCommand>("unpin")
+                    .WithDescription("Restore Steam's update settings from before the pin (Steam closed)");
+                depot.AddCommand<DepotLockCommand>("lock")
+                    .WithDescription("Opt-in hard lock: make the pinned build's files unchangeable (asks for admin rights)")
+                    .WithExample("depot", "lock", "107100");
+                depot.AddCommand<DepotUnlockCommand>("unlock")
+                    .WithDescription("Remove the hard lock (asks for admin rights); the pin stays");
+                depot.AddCommand<DepotShowCommand>("show")
+                    .WithDescription("Summarize an archived manifest (offline)")
+                    .WithExample("depot", "show", "1091501", "3524634124112875626");
             });
 
             // Switch mod pipeline commands
