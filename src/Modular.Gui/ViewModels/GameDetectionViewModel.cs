@@ -36,6 +36,11 @@ public partial class GameDetectionViewModel : ViewModelBase
     internal Modular.Core.Backends.NexusMods.NexusModsBackend? Nexus { get; }
     internal Modular.Core.Configuration.AppSettings? Settings { get; }
     internal Modular.Core.Database.ModularDatabase? Database { get; }
+    internal Modular.Core.Backends.ModIo.ModIoBackend? ModIo { get; }
+
+    /// <summary>Online lookups for mod lists: Nexus when logged in, mod.io always.</summary>
+    internal Modular.Core.ModLists.ModListLookups Lookups => new(
+        string.IsNullOrEmpty(Settings?.NexusApiKey) ? null : Nexus, ModIo);
 
     /// <summary>Mod database access for a game's page (null in the designer).</summary>
     internal ModInstallationService? InstallService => _installService;
@@ -88,8 +93,10 @@ public partial class GameDetectionViewModel : ViewModelBase
     // DI constructor
     public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService, ModInstallationService installService,
         Modular.Core.Snapshots.SnapshotManager snapshots, Modular.Core.Backends.NexusMods.NexusModsBackend nexus,
-        Modular.Core.Configuration.AppSettings settings, Modular.Core.Database.ModularDatabase database)
+        Modular.Core.Configuration.AppSettings settings, Modular.Core.Database.ModularDatabase database,
+        Modular.Core.Backends.ModIo.ModIoBackend modio)
     {
+        ModIo = modio;
         Database = database;
         _scanner = scanner;
         _dialogService = dialogService;

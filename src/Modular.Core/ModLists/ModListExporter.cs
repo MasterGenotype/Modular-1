@@ -15,7 +15,7 @@ public sealed record RemoteModFile(string FileId, string FileName, long? Size, s
 /// (Nexus) mod id; the exact file id from the record, else by matching the archive's name or
 /// size against the mod's file list online.
 /// </summary>
-public sealed class ModListExporter
+public sealed partial class ModListExporter
 {
     private readonly ModularDatabase _db;
     private readonly GameModuleRegistry _modules;
@@ -26,10 +26,9 @@ public sealed class ModListExporter
         _modules = modules ?? new GameModuleRegistry();
     }
 
-    /// <param name="listFiles">Lists a mod's files on Nexus (domain, mod id); null stays offline.</param>
+    /// <param name="lookups">Online lookups (Nexus, mod.io); null stays offline.</param>
     public async Task<ModList> ExportAsync(
-        string gameKey, string? gameName, string? buildId,
-        Func<string, string, CancellationToken, Task<IReadOnlyList<RemoteModFile>>>? listFiles,
+        string gameKey, string? gameName, string? buildId, ModListLookups? lookups,
         IProgress<string>? progress = null, CancellationToken ct = default)
     {
         var repo = new GameModRepository(_db);
@@ -52,25 +51,69 @@ public sealed class ModListExporter
             var archiveName = record?.FileName ?? (archive is null ? null : Path.GetFileName(archive));
             long? size = record?.Size ?? (archive is not null && File.Exists(archive) ? new FileInfo(archive).Length : null);
 
-            // Source: the archive's record, then the install's own, then a Nexus-style numeric id.
+            // Source: the archive's record, then the install's own, then what the archive's place
+            // and name say (a mod.io download, or a Nexus-style numeric id).
             string? backend = record?.Backend ?? (mod.Source is { Length: > 0 } s && s != "local" ? s : null);
             string? remoteId = record?.ModId;
             string? fileId = record?.FileId ?? mod.SourceFileId;
+            string? game = record?.GameDomain;
+            string? note = null;
+            if (backend is null && LooksLikeModIo(mod.ModId, archive, archiveName))
+                backend = "modio";
+
+            if (backend == "modio")
+            {
+                if (remoteId is null && archiveName is not null && ModIoNumbered().Match(archiveName) is { Success: true } numbered)
+                    remoteId = numbered.Groups[1].Value;
+                if (lookups is { HasModIo: true })
+                {
+                    try
+                    {
+                        // The install id "modio-<name_id>" or the archive's folder (its mod's title) finds the mod.
+                        var nameId = mod.ModId.StartsWith("modio-", StringComparison.OrdinalIgnoreCase) && remoteId is null
+                            ? mod.ModId["modio-".Length..] : null;
+                        var title = archive is not null ? Path.GetFileName(Path.GetDirectoryName(archive)) : null;
+                        var found = remoteId is not null ? null : await lookups.FindModIoAsync(nameId, title, ct);
+                        if (found is not null)
+                        {
+                            remoteId = found.ModId;
+                            game = found.Game;
+                            if (name == mod.ModId)
+                                name = found.Name;
+                        }
+                        if (remoteId is not null && fileId is null)
+                        {
+                            var files = await lookups.ListFilesAsync("modio", game, remoteId, ct);
+                            fileId = MatchFile(files, archiveName, size)?.FileId;
+                            if (fileId is null && files.Count > 0)
+                                note = "The installed file is no longer on the mod page.";
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Leave it for the user to find.
+                    }
+                }
+                game ??= "";
+            }
+
             var idPart = mod.ModId.Split('-')[0];
             if (backend is null && ModDisplayNames.IsNumericId(idPart) && nexusDomain is not null)
                 backend = "nexusmods";
-            remoteId ??= ModDisplayNames.IsNumericId(idPart) ? idPart : null;
-            var game = record?.GameDomain ?? nexusDomain;
+            if (backend == "nexusmods")
+            {
+                remoteId ??= ModDisplayNames.IsNumericId(idPart) ? idPart : null;
+                game ??= nexusDomain;
+            }
 
-            string? note = null;
-            if (backend == "nexusmods" && remoteId is not null && fileId is null && listFiles is not null)
+            if (backend == "nexusmods" && remoteId is not null && fileId is null && lookups is { HasNexus: true })
             {
                 foreach (var domain in record?.GameDomain is { } d ? [d] : domains)
                 {
                     IReadOnlyList<RemoteModFile> files;
                     try
                     {
-                        files = await listFiles(domain, remoteId, ct);
+                        files = await lookups.ListFilesAsync("nexusmods", domain, remoteId, ct);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -172,6 +215,15 @@ public sealed class ModListExporter
             return bySize;
         return null;
     }
+
+    /// <summary>A mod.io download: under the mods folder's modio/ tree, named "modio-&lt;id&gt;-…", or installed as "modio-…".</summary>
+    private static bool LooksLikeModIo(string modId, string? archive, string? archiveName) =>
+        modId.StartsWith("modio-", StringComparison.OrdinalIgnoreCase)
+        || (archiveName is not null && ModIoNumbered().IsMatch(archiveName))
+        || (archive is not null && archive.Replace('\\', '/').Contains("/modio/", StringComparison.OrdinalIgnoreCase));
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^modio-(\d+)-")]
+    private static partial System.Text.RegularExpressions.Regex ModIoNumbered();
 
     private sealed record ArchiveRecord(string? Backend, string? ModId, string? GameDomain, string? FileId, string? FileName, long? Size, string? Sha256);
 

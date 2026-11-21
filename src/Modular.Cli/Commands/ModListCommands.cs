@@ -39,17 +39,11 @@ public sealed class ModListExportCommand : AsyncCommand<ModListExportCommand.Set
         using var services = await RuntimeServices.InitializeMinimalAsync();
         await using var db = await ModListCli.OpenDatabaseAsync();
 
-        Func<string, string, CancellationToken, Task<IReadOnlyList<RemoteModFile>>>? listFiles = null;
-        if (!settings.Offline && await ModListCli.NexusAsync(services, cts.Token) is { } nexus)
-        {
-            listFiles = async (domain, modId, ct) => (await nexus.GetModFilesAsync(modId, domain, ct: ct))
-                .Select(f => new RemoteModFile(f.FileId, f.FileName, f.SizeBytes, f.Version,
-                    f.UploadedAt is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)) : null)).ToList();
-        }
+        var lookups = settings.Offline ? null : await ModListCli.LookupsAsync(services, cts.Token);
 
         var installation = await new Modular.Core.GameDetection.GameInstallationResolver(database: db).ResolveAsync(settings.Game, persist: false, cts.Token);
         var list = await AnsiConsole.Status().StartAsync("Reading installed mods…", async status =>
-            await new ModListExporter(db).ExportAsync(settings.Game, installation?.DisplayName, installation?.BuildId, listFiles,
+            await new ModListExporter(db).ExportAsync(settings.Game, installation?.DisplayName, installation?.BuildId, lookups,
                 new Progress<string>(m => status.Status($"Reading {Markup.Escape(m)}…")), cts.Token));
 
         var output = settings.Output ?? $"{ModListCli.FileStem(installation?.DisplayName ?? settings.Game)}{ModList.Extension}";
@@ -121,16 +115,12 @@ public sealed class ModListImportCommand : AsyncCommand<ModListImportCommand.Set
             AnsiConsole.MarkupLine($"[red]Game {Markup.Escape(gameKey)} is not installed here.[/]");
             return 1;
         }
-        if (await ModListCli.NexusAsync(services, cts.Token) is not { } nexus)
-        {
-            AnsiConsole.MarkupLine("[red]Not logged in to NexusMods. Run 'modular login'.[/]");
-            return 1;
-        }
+        var lookups = await ModListCli.LookupsAsync(services, cts.Token);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
         var result = await AnsiConsole.Status().StartAsync("Installing…", async status =>
             await importer.ApplyAsync(list, installation, gameKey,
-                (src, ct) => nexus.ResolveDownloadUrlAsync(src.ModId, src.FileId!, src.Game, ct), http, services.Settings.ModsDirectory,
+                lookups.ResolveUrlAsync, http, services.Settings.ModsDirectory,
                 new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token));
 
         AnsiConsole.MarkupLine($"Installed [bold]{result.Installed}[/], already there {result.Skipped}, failed {result.Failed.Count}, need you {result.NeedsUser.Count}.");
@@ -157,8 +147,12 @@ internal static class ModListCli
         return db;
     }
 
-    public static async Task<NexusModsBackend?> NexusAsync(RuntimeServices services, CancellationToken ct) =>
-        services.CreateBackendRegistry().Get("nexusmods") is NexusModsBackend nexus && await services.EnsureNexusLoginAsync(ct) ? nexus : null;
+    public static async Task<ModListLookups> LookupsAsync(RuntimeServices services, CancellationToken ct)
+    {
+        var registry = services.CreateBackendRegistry();
+        var nexus = registry.Get("nexusmods") is NexusModsBackend n && await services.EnsureNexusLoginAsync(ct) ? n : null;
+        return new ModListLookups(nexus, registry.Get("modio") as Modular.Core.Backends.ModIo.ModIoBackend);
+    }
 
     public static string FileStem(string name) =>
         string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : c is ' ' or '-' or '_' ? '-' : '\0').Where(c => c != '\0')).Trim('-');

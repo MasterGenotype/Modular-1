@@ -189,21 +189,15 @@ public partial class GamePageViewModel : ViewModelBase
         IsWorking = true;
         try
         {
-            Func<string, string, CancellationToken, Task<IReadOnlyList<RemoteModFile>>>? listFiles = null;
-            if (_owner.Nexus is { } nexus && !string.IsNullOrEmpty(_owner.Settings?.NexusApiKey))
-            {
-                listFiles = async (domain, modId, ct) => (await nexus.GetModFilesAsync(modId, domain, ct: ct))
-                    .Select(f => new RemoteModFile(f.FileId, f.FileName, f.SizeBytes, f.Version,
-                        f.UploadedAt is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)) : null)).ToList();
-            }
-            var list = await new ModListExporter(_owner.Database!).ExportAsync(key, Game.DisplayName, null, listFiles,
+            var lookups = _owner.Lookups;
+            var list = await new ModListExporter(_owner.Database!).ExportAsync(key, Game.DisplayName, null, lookups,
                 new Progress<string>(m => ActionStatus = $"Reading {m}…"));
             var stem = string.Concat(Game.DisplayName.Select(c => char.IsLetterOrDigit(c) ? c : c is ' ' or '-' ? '-' : '\0').Where(c => c != '\0')).Trim('-');
             var path = Path.Combine(folder, stem + ModList.Extension);
             await File.WriteAllTextAsync(path, list.ToJson());
             var exact = list.Mods.Count(m => m.Source?.FileId is not null);
             ActionStatus = $"Saved {list.Mods.Count} mod(s) to {path}: {exact} download exactly, {list.Mods.Count - exact} need picking by hand"
-                + (listFiles is null ? " (log in to Nexus in Settings for exact files)." : ".");
+                + (lookups.HasNexus ? "." : " (log in to Nexus in Settings for exact Nexus files).");
         }
         catch (Exception ex)
         {
@@ -245,11 +239,6 @@ public partial class GamePageViewModel : ViewModelBase
             }
             if (!await _dialogs.ShowConfirmationAsync("Install mod list", message + "\n\nDownload and install now?"))
                 return;
-            if (_owner.Nexus is not { } nexus || string.IsNullOrEmpty(_owner.Settings?.NexusApiKey))
-            {
-                await _dialogs.ShowErrorAsync("Install mod list", "Log in to NexusMods in Settings first.");
-                return;
-            }
             var installation = await install.Deployment.ResolveInstallationAsync(key);
             if (installation is null)
             {
@@ -259,7 +248,7 @@ public partial class GamePageViewModel : ViewModelBase
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
             var result = await importer.ApplyAsync(list, installation, key,
-                (src, ct) => nexus.ResolveDownloadUrlAsync(src.ModId, src.FileId!, src.Game, ct), http,
+                _owner.Lookups.ResolveUrlAsync, http,
                 _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
             var report = $"Installed {result.Installed}, already there {result.Skipped}, failed {result.Failed.Count}.";
             if (result.Failed.Count > 0)

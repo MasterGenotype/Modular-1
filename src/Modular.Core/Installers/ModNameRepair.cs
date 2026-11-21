@@ -49,12 +49,14 @@ public sealed class ModNameRepair
             foreach (var mod in await repo.ListAsync(key, ct: ct))
             {
                 var shown = string.IsNullOrWhiteSpace(mod.DisplayName) ? mod.ModId : mod.DisplayName;
-                // "24893-2": the second file installed from mod 24893.
-                var parts = shown.Split('-');
-                if (!(ModDisplayNames.IsNumericId(shown) || (parts.Length == 2 && parts.All(ModDisplayNames.IsNumericId))))
+                // "24893-2" / "4864-kavt": another file installed from mod 24893 / 4864.
+                var parts = shown.Split('-', 2);
+                var isSuffixed = parts.Length == 2 && ModDisplayNames.IsNumericId(parts[0])
+                    && parts[1].Length > 0 && parts[1].All(c => char.IsAsciiDigit(c) || char.IsAsciiLetterLower(c) || c == '-');
+                if (!(ModDisplayNames.IsNumericId(shown) || isSuffixed))
                     continue;
                 var listed = parts[0];
-                var fileNumber = parts.Length == 2 ? parts[1] : null;
+                var fileNumber = isSuffixed ? parts[1] : null;
 
                 var archive = mod.ChangesetId is { } cs ? (await changesets.GetChangesetAsync(cs, ct))?.ArchivePath : null;
                 string? name = null;
