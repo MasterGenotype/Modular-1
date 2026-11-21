@@ -31,7 +31,7 @@ internal static class PinLock
             LiveProgressDisplay.ShowError("A pinned manifest is missing from Modular's archive; can't list the build's files.");
             return false;
         }
-        AnsiConsole.MarkupLine($"[grey]{(locked ? "Locking" : "Unlocking")} {paths.Count} file(s); your system will ask for administrator rights…[/]");
+        AnsiConsole.MarkupLine($"[grey]{(locked ? "Locking" : "Unlocking")} {paths.Count} file(s)…[/]");
         try
         {
             var r = await BuildLock.SetAsync(acf.InstallPath, paths, locked, ct);

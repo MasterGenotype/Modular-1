@@ -6,11 +6,11 @@
   <vendor>Modular</vendor>
   <action id="io.modular.build-lock">
     <description>Lock or unlock a game's files so its installed version can't change</description>
-    <message>Modular needs administrator rights to lock or unlock this game's files, so Steam can't update or overwrite them.</message>
+    <message>Lock or unlock this game's files so Steam can't update or overwrite them.</message>
     <defaults>
       <allow_any>no</allow_any>
-      <allow_inactive>no</allow_inactive>
-      <allow_active>auth_admin_keep</allow_active>
+      <allow_inactive>yes</allow_inactive>
+      <allow_active>yes</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/modular/modular-lock-helper</annotate>
   </action>

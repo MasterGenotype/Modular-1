@@ -85,7 +85,7 @@ public static class BuildLock
         // pkexec: 126 = authorization dismissed/denied, 127 = not authorized or no agent.
         if (process.ExitCode is 126 or 127)
             throw new BuildLockUnavailableException(
-                "Administrator authorization was not given (prompt dismissed, or no polkit agent, e.g. in Game Mode).");
+                "The system would not run Modular's lock helper. Its polkit policy is missing, or an older one that still asks for a password is installed: reinstall modular-git.");
         if (process.ExitCode != 0)
             throw new BuildLockUnavailableException($"The lock helper failed ({process.ExitCode}): {stderr.Trim()}");
 
