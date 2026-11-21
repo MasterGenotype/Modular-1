@@ -217,6 +217,17 @@ class Program
                 .WithExample("uninstall", "a1b2c3d4e5f6")
                 .WithExample("uninstall", "--game", "1091500", "--mod", "my-mod");
 
+            config.AddBranch("modlist", modlist =>
+            {
+                modlist.SetDescription("Share a game's installed mods as a list another Modular can install");
+                modlist.AddCommand<ModListExportCommand>("export")
+                    .WithDescription("Write a game's installed mods to a .modular-modlist.json file")
+                    .WithExample("modlist", "export", "--game", "1091500");
+                modlist.AddCommand<ModListImportCommand>("import")
+                    .WithDescription("Show (or with --apply, install) the mods of a list")
+                    .WithExample("modlist", "import", "Cyberpunk-2077.modular-modlist.json");
+            });
+
             config.AddCommand<FixNamesCommand>("fix-names")
                 .WithDescription("Name installed mods that are listed under their bare mod number")
                 .WithExample("fix-names", "--game", "1091500", "--apply");

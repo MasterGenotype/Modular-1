@@ -84,6 +84,31 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="INSTALLED MODS" Classes="eyebrow"/>
                     <TextBlock Text="{Binding ModsSummary}" Classes="caption"/>
+                    <WrapPanel IsEnabled="{Binding !IsWorking}">
+                        <Button Command="{Binding TakeSnapshotCommand}" Margin="0,0,8,8"
+                                ToolTip.Tip="Record this game's installed mods; restore the set later from Backups">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="CameraOutline" Width="16" Height="16"/>
+                                <TextBlock Text="Take snapshot"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ExportModListCommand}" Margin="0,0,8,8"
+                                ToolTip.Tip="Save these mods as a list file another Modular can install (exact Nexus files, same order)">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                                <TextBlock Text="Export mod list…"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ImportModListCommand}" Margin="0,0,8,8"
+                                ToolTip.Tip="Install the mods of a .modular-modlist.json file into this game">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
+                                <TextBlock Text="Install from mod list…"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding ActionStatus}" Classes="caption" TextWrapping="Wrap"
+                               IsVisible="{Binding ActionStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <DataGrid ItemsSource="{Binding Mods}" IsVisible="{Binding HasMods}"
                               AutoGenerateColumns="False" IsReadOnly="True" MaxHeight="520"
                               CanUserSortColumns="True" GridLinesVisibility="Horizontal">

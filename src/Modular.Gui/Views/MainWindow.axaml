@@ -162,7 +162,8 @@
                                                VerticalAlignment="Bottom" Margin="0,0,0,3"/>
                                 </StackPanel>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom"
+                                        IsVisible="{Binding ShowDownloadHints}">
                                 <Border Classes="pill" ToolTip.Tip="Refresh the current view">
                                     <TextBlock Text="Ctrl+R  refresh"/>
                                 </Border>

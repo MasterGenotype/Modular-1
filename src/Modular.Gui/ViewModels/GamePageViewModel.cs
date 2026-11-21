@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Modular.Core.ModLists;
+using Modular.Core.Snapshots;
 using Modular.Core.Steam;
 using Modular.Gui.Services;
 
@@ -28,6 +30,13 @@ public partial class GamePageViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _modsSummary = "Looking for installed mods…";
+
+    /// <summary>Progress of a snapshot, export or import.</summary>
+    [ObservableProperty]
+    private string _actionStatus = "";
+
+    [ObservableProperty]
+    private bool _isWorking;
 
     // Designer constructor
     public GamePageViewModel() : this(new GameDisplayModel { DisplayName = "Bastion", AppId = 107100, InstallPath = "/games/Bastion" }, null, null)
@@ -126,6 +135,143 @@ public partial class GamePageViewModel : ViewModelBase
         catch
         {
             return null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task TakeSnapshotAsync()
+    {
+        if (_owner?.Snapshots is not { } snapshots || _dialogs is null || IsWorking)
+            return;
+        var name = await _dialogs.ShowInputAsync("Take snapshot",
+            $"A snapshot records {Game.DisplayName}'s installed mods so you can restore this set later (Backups page). Name it:",
+            $"{Game.DisplayName} {DateTime.Now:yyyy-MM-dd HH:mm}");
+        if (name is null)
+            return;
+        IsWorking = true;
+        try
+        {
+            var key = await GameKeyAsync();
+            var snapshot = await snapshots.CreateSnapshotAsync(Game.IsShortcut ? 0 : Game.AppId, Game.DisplayName,
+                Game.IsShortcut ? Game.InstallDirectory : Game.InstallPath, SnapshotTrigger.Manual, name: name, gameKey: key);
+            ActionStatus = $"Snapshot \"{name}\" saved with {snapshot.ModCount} mod(s). Restore it from Backups.";
+        }
+        catch (Exception ex)
+        {
+            ActionStatus = $"Snapshot failed: {ex.Message}";
+        }
+        finally
+        {
+            IsWorking = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportModListAsync()
+    {
+        if (_owner?.InstallService is not { } install || _dialogs is null || IsWorking)
+            return;
+        var key = await GameKeyAsync();
+        if (key is null || Mods.Count == 0)
+        {
+            ActionStatus = "No installed mods to export.";
+            return;
+        }
+        var folder = await _dialogs.ShowFolderBrowserAsync("Save the mod list in…",
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+        if (folder is null)
+            return;
+        IsWorking = true;
+        try
+        {
+            Func<string, string, CancellationToken, Task<IReadOnlyList<RemoteModFile>>>? listFiles = null;
+            if (_owner.Nexus is { } nexus && !string.IsNullOrEmpty(_owner.Settings?.NexusApiKey))
+            {
+                listFiles = async (domain, modId, ct) => (await nexus.GetModFilesAsync(modId, domain, ct: ct))
+                    .Select(f => new RemoteModFile(f.FileId, f.FileName, f.SizeBytes, f.Version,
+                        f.UploadedAt is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)) : null)).ToList();
+            }
+            var list = await new ModListExporter(_owner.Database!).ExportAsync(key, Game.DisplayName, null, listFiles,
+                new Progress<string>(m => ActionStatus = $"Reading {m}…"));
+            var stem = string.Concat(Game.DisplayName.Select(c => char.IsLetterOrDigit(c) ? c : c is ' ' or '-' ? '-' : '\0').Where(c => c != '\0')).Trim('-');
+            var path = Path.Combine(folder, stem + ModList.Extension);
+            await File.WriteAllTextAsync(path, list.ToJson());
+            var exact = list.Mods.Count(m => m.Source?.FileId is not null);
+            ActionStatus = $"Saved {list.Mods.Count} mod(s) to {path}: {exact} download exactly, {list.Mods.Count - exact} need picking by hand"
+                + (listFiles is null ? " (log in to Nexus in Settings for exact files)." : ".");
+        }
+        catch (Exception ex)
+        {
+            ActionStatus = $"Export failed: {ex.Message}";
+        }
+        finally
+        {
+            IsWorking = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportModListAsync()
+    {
+        if (_owner?.InstallService is not { } install || _dialogs is null || IsWorking)
+            return;
+        var picked = (await _dialogs.ShowFileBrowserAsync("Choose a mod list (.modular-modlist.json)")).FirstOrDefault();
+        if (picked is null)
+            return;
+        IsWorking = true;
+        try
+        {
+            var list = ModList.Load(picked);
+            var key = await GameKeyAsync() ?? list.Game.Key;
+            var importer = new ModListImporter(install);
+            var plan = await importer.PlanAsync(list, key);
+            int Count(ModListAction a) => plan.Count(p => p.Action == a);
+            var otherGame = !string.Equals(list.Game.Key, key, StringComparison.OrdinalIgnoreCase)
+                ? $"\n\nThis list was made for {list.Game.Name ?? list.Game.Key}, not {Game.DisplayName}." : "";
+            var message = $"{list.Mods.Count} mod(s) in the list:\n" +
+                $"• {Count(ModListAction.Download)} to download and install\n" +
+                $"• {Count(ModListAction.AlreadyInstalled)} already installed\n" +
+                $"• {Count(ModListAction.PickFile) + Count(ModListAction.Manual)} you'll need to get by hand (listed afterwards)" +
+                otherGame + (list.Notes.Count > 0 ? "\n\n" + string.Join("\n", list.Notes) : "");
+            if (Count(ModListAction.Download) == 0)
+            {
+                await _dialogs.ShowInfoAsync("Install mod list", message + "\n\nNothing to download.");
+                return;
+            }
+            if (!await _dialogs.ShowConfirmationAsync("Install mod list", message + "\n\nDownload and install now?"))
+                return;
+            if (_owner.Nexus is not { } nexus || string.IsNullOrEmpty(_owner.Settings?.NexusApiKey))
+            {
+                await _dialogs.ShowErrorAsync("Install mod list", "Log in to NexusMods in Settings first.");
+                return;
+            }
+            var installation = await install.Deployment.ResolveInstallationAsync(key);
+            if (installation is null)
+            {
+                await _dialogs.ShowErrorAsync("Install mod list", $"Modular can't find {Game.DisplayName}'s install.");
+                return;
+            }
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+            var result = await importer.ApplyAsync(list, installation, key,
+                (src, ct) => nexus.ResolveDownloadUrlAsync(src.ModId, src.FileId!, src.Game, ct), http,
+                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
+            var report = $"Installed {result.Installed}, already there {result.Skipped}, failed {result.Failed.Count}.";
+            if (result.Failed.Count > 0)
+                report += "\n\nFailed:\n" + string.Join("\n", result.Failed.Select(f => $"• {f.Entry.Name}: {f.Error}"));
+            if (result.NeedsUser.Count > 0)
+                report += "\n\nGet these by hand:\n" + string.Join("\n", result.NeedsUser.Select(n => $"• {n.Entry.Name}: {n.Detail}"));
+            ActionStatus = report.Split('\n')[0];
+            await _dialogs.ShowInfoAsync("Install mod list", report);
+            await LoadModsAsync();
+        }
+        catch (Exception ex)
+        {
+            ActionStatus = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsWorking = false;
         }
     }
 

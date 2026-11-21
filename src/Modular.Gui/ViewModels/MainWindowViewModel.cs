@@ -23,7 +23,11 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PageGroup))]
     [NotifyPropertyChangedFor(nameof(PageCaption))]
+    [NotifyPropertyChangedFor(nameof(ShowDownloadHints))]
     private string _selectedPage = "NexusMods";
+
+    /// <summary>The Ctrl+R / Ctrl+D hints belong to the pages that browse and download mods.</summary>
+    public bool ShowDownloadHints => PageGroup is "SOURCES" or "LIBRARY";
 
     /// <summary>Sidebar group of the current page, shown above the page title.</summary>
     public string PageGroup => SelectedPage switch

@@ -32,6 +32,11 @@ public partial class GameDetectionViewModel : ViewModelBase
             VisibleGames.Add(g);
     }
 
+    internal Modular.Core.Snapshots.SnapshotManager? Snapshots { get; }
+    internal Modular.Core.Backends.NexusMods.NexusModsBackend? Nexus { get; }
+    internal Modular.Core.Configuration.AppSettings? Settings { get; }
+    internal Modular.Core.Database.ModularDatabase? Database { get; }
+
     /// <summary>Mod database access for a game's page (null in the designer).</summary>
     internal ModInstallationService? InstallService => _installService;
 
@@ -81,11 +86,17 @@ public partial class GameDetectionViewModel : ViewModelBase
     }
 
     // DI constructor
-    public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService, ModInstallationService installService)
+    public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService, ModInstallationService installService,
+        Modular.Core.Snapshots.SnapshotManager snapshots, Modular.Core.Backends.NexusMods.NexusModsBackend nexus,
+        Modular.Core.Configuration.AppSettings settings, Modular.Core.Database.ModularDatabase database)
     {
+        Database = database;
         _scanner = scanner;
         _dialogService = dialogService;
         _installService = installService;
+        Snapshots = snapshots;
+        Nexus = nexus;
+        Settings = settings;
         _ = ScanGamesAsync();
     }
 
