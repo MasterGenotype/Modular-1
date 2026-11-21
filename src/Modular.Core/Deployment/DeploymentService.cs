@@ -420,8 +420,20 @@ public sealed class DeploymentService
     /// </summary>
     /// <param name="installation">The resolved installation.</param>
     /// <returns>What was removed and restored.</returns>
-    public DeploymentResult Purge(GameInstallation installation) =>
-        _deployer.Purge(installation);
+    public DeploymentResult Purge(GameInstallation installation)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+
+        var result = _deployer.Purge(installation);
+
+        if (result.Success)
+        {
+            result.Warnings.AddRange(Deployer.AfterDeploymentChanged(
+                _resolver.GetModule(installation), installation, _logger));
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// Applies an explicit load order on top of the stored one.

@@ -18,4 +18,7 @@ public static class GameIds
 
     /// <summary>Baldur's Gate 3 (Steam AppID 1086940).</summary>
     public const string BaldursGate3 = "baldursgate3";
+
+    /// <summary>Enshrouded (Steam AppID 1203620).</summary>
+    public const string Enshrouded = "enshrouded";
 }

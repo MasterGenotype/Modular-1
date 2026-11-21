@@ -203,6 +203,14 @@ public abstract class GameModuleBase : IGameModule
     /// <inheritdoc />
     public virtual IReadOnlyList<string>? GetUpdateSensitivePaths() => null;
 
+    /// <inheritdoc />
+    public virtual IReadOnlyList<RequiredFramework> GetRequiredFrameworks() =>
+        Array.Empty<RequiredFramework>();
+
+    /// <inheritdoc />
+    public virtual IReadOnlyList<string> AfterDeploymentChanged(GameInstallation installation) =>
+        Array.Empty<string>();
+
     /// <summary>
     /// Tests whether a path relative to the install root exists, as either a file
     /// or a directory. Matching is case-insensitive even on case-sensitive

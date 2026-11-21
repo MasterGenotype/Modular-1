@@ -68,6 +68,8 @@ CLI (Modular.Cli)    ──┤──> Core (Modular.Core) ──> FluentHttp (Mo
 - **Authentication** (`Authentication/`) — NexusMods WebSocket-based browser SSO flow.
 - **Rate Limiting** (`RateLimiting/`) — Thread-safe `NexusRateLimiter` parses `x-rl-*` response headers. Dual-tier: 20K daily, 500 hourly.
 - **Installers** (`Installers/`) — `FomodInstaller`, `BepInExInstaller`, `LooseFileInstaller` with confidence-based detection.
+- **Required frameworks** — a module's `GetRequiredFrameworks()` names loaders its mods need (pinned URL + SHA-256). `ModInstallationService` downloads one via `FrameworkProvisioner` and installs it as an ordinary mod the first time a mod for that game is installed. `IGameModule.AfterDeploymentChanged` runs after every deploy and purge.
+- **Enshrouded** (`Installers/Enshrouded/`, `Modules/EnshroudedGameModule.cs`) — mods are EML folders (`mods/<id>/mod.json`); EML v0.2.0 (`dbghelp.dll`) is the required framework. EML rebuilds `enshrouded.kfc` from `enshrouded.kfc.bak` on every launch, so once EML is gone `EnshroudedKfc` restores the backup (only when its version tag matches). One manifest EML cannot read stops all mods loading, so `ValidateStaged` rejects them.
 
 ### Switch (`src/Modular.Switch/`)
 

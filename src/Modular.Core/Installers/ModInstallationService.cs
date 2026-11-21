@@ -128,6 +128,9 @@ public class ModInstallationService
         _deployment = deployment ?? new DeploymentService(
             database, _stagingManager, _gameResolver, settings);
 
+        Frameworks = new FrameworkProvisioner(
+            _archiveStorePath ?? _fallbackArchiveStorePath, logger: logger);
+
         if (pluginLoader != null)
             RegisterPluginContributions(pluginLoader);
     }
@@ -159,6 +162,109 @@ public class ModInstallationService
             _logger?.LogInformation(
                 "Registered {Count} plugin game module(s)", modules.Count);
         }
+    }
+
+    /// <summary>
+    /// Fetches the loaders modules require. Replaceable so tests need no network.
+    /// </summary>
+    public FrameworkProvisioner Frameworks { get; set; }
+
+    /// <summary>
+    /// Installs each loader the game's mods require that is not already in the game
+    /// folder, as an ordinary mod.
+    /// </summary>
+    /// <remarks>
+    /// A loader Modular installed and the user then disabled is left disabled: that was a
+    /// choice. A failure never fails the mod's own install; it is reported as a warning.
+    /// </remarks>
+    private async Task EnsureRequiredFrameworksAsync(
+        IGameModule module,
+        string targetDirectory,
+        string gameKey,
+        ModInstallationOptions options,
+        ModInstallationResult result,
+        IProgress<InstallProgress>? progress,
+        CancellationToken ct)
+    {
+        IReadOnlyList<RequiredFramework> frameworks;
+        try
+        {
+            frameworks = module.GetRequiredFrameworks();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Game module {ModuleId} threw listing required frameworks", module.ModuleId);
+            return;
+        }
+
+        foreach (var framework in frameworks)
+        {
+            if (FileExistsIgnoringCase(targetDirectory, framework.PresencePath))
+                continue;
+
+            if (await _deployment.Mods.GetAsync(gameKey, framework.DisplayName, ct) != null)
+            {
+                result.Warnings.Add(
+                    $"{framework.DisplayName} is installed but not deployed; mods for this game " +
+                    "will not load until it is enabled.");
+                continue;
+            }
+
+            progress?.Report(new InstallProgress { CurrentOperation = $"Installing {framework.DisplayName}..." });
+
+            try
+            {
+                var archive = await Frameworks.GetArchiveAsync(framework, ct);
+                var installed = await InstallAsync(
+                    archive,
+                    targetDirectory,
+                    new ModInstallationOptions
+                    {
+                        ModId = framework.DisplayName,
+                        GameId = options.GameId,
+                        Source = "framework",
+                        AutoSnapshot = false,
+                        AdoptArchive = false,
+                        ReleaseArchive = false,
+                        SkipRequiredFrameworks = true
+                    },
+                    progress,
+                    ct);
+
+                if (installed.Success)
+                {
+                    result.Warnings.Add($"Installed {framework.DisplayName} {framework.Version}, which this game's mods need.");
+                    result.Warnings.AddRange(installed.Warnings);
+                    if (installed.Deployment != null)
+                        result.Deployment = installed.Deployment;
+                }
+                else
+                {
+                    result.Warnings.Add(
+                        $"Could not install {framework.DisplayName}, which this game's mods need: {installed.Error}");
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                result.Warnings.Add(
+                    $"Could not download {framework.DisplayName}, which this game's mods need: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool FileExistsIgnoringCase(string directory, string relativePath)
+    {
+        var path = Path.Combine(directory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(path))
+            return true;
+
+        var parent = Path.GetDirectoryName(path);
+        if (parent == null || !Directory.Exists(parent))
+            return false;
+
+        var name = Path.GetFileName(path);
+        return Directory.EnumerateFiles(parent)
+            .Any(f => string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -677,6 +783,14 @@ public class ModInstallationService
             _logger?.LogInformation(
                 "Installation complete: {Count} files installed in {Duration:F1}s",
                 installResult.InstalledFiles.Count, stopwatch.Elapsed.TotalSeconds);
+
+            // Step 9b: the loaders this game's mods run through, installed the first time
+            // any of its mods is, so a mod never sits there doing nothing.
+            if (staged && !options.NoDeploy && !options.SkipRequiredFrameworks && module != null)
+            {
+                await EnsureRequiredFrameworksAsync(
+                    module, targetDirectory, gameKey, options, result, progress, ct);
+            }
 
             // Auto-snapshot after a successful deploy. An install that deployed nothing
             // changed nothing in the game folder, so there is no new state to capture.
@@ -1984,6 +2098,12 @@ public class ModInstallationOptions
     /// archive alone.
     /// </summary>
     public bool ReleaseArchive { get; set; } = true;
+
+    /// <summary>
+    /// Whether to skip installing the loaders the game's mods require
+    /// (<see cref="IGameModule.GetRequiredFrameworks"/>). Set for the loader's own install.
+    /// </summary>
+    public bool SkipRequiredFrameworks { get; set; }
 }
 
 /// <summary>

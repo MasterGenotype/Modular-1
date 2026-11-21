@@ -43,6 +43,7 @@ public sealed class GameModuleRegistry
         Register(new FF7RemakeGameModule(factory));
         Register(new HorizonZeroDawnGameModule(factory));
         Register(new BaldursGate3GameModule(factory, categories));
+        Register(new EnshroudedGameModule(factory));
     }
 
     /// <summary>

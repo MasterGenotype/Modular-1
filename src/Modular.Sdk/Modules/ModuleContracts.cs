@@ -437,3 +437,28 @@ public readonly record struct DeployConstraint(
     bool ForceCopy,
     bool DisallowSymlink,
     string Reason);
+
+/// <summary>
+/// A loader a game's mods need, pinned to one verified download.
+/// </summary>
+/// <param name="Id">Short stable id, used as the installed mod's id.</param>
+/// <param name="DisplayName">Name shown for the installed mod.</param>
+/// <param name="Version">The pinned release.</param>
+/// <param name="DownloadUrl">Where the file is downloaded from.</param>
+/// <param name="Sha256">Lower-case hex SHA-256 the download must match.</param>
+/// <param name="FileName">
+/// The downloaded file's name. A bare file (not an archive) is installed at the game
+/// root under this name.
+/// </param>
+/// <param name="PresencePath">
+/// Game-root-relative file whose presence means the loader is already installed, by
+/// Modular or by hand.
+/// </param>
+public sealed record RequiredFramework(
+    string Id,
+    string DisplayName,
+    string Version,
+    string DownloadUrl,
+    string Sha256,
+    string FileName,
+    string PresencePath);

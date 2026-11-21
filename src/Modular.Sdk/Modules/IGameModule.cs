@@ -279,4 +279,27 @@ public interface IGameModule
     /// update even when other mods depend on it.
     /// </remarks>
     IReadOnlyList<string>? GetUpdateSensitivePaths() => null;
+
+    /// <summary>
+    /// Loaders the game's mods cannot work without, which Modular downloads and installs
+    /// itself the first time a mod for the game is installed.
+    /// </summary>
+    /// <returns>The frameworks, or an empty list when mods need nothing extra.</returns>
+    /// <remarks>
+    /// Each is installed as an ordinary mod, so it is staged, deployed, purged and
+    /// uninstalled like any other.
+    /// </remarks>
+    IReadOnlyList<RequiredFramework> GetRequiredFrameworks() => Array.Empty<RequiredFramework>();
+
+    /// <summary>
+    /// Called after every deploy and purge, once the game folder holds exactly what
+    /// Modular means it to, to tidy up game state that mods' tools leave behind.
+    /// </summary>
+    /// <param name="installation">The resolved installation.</param>
+    /// <returns>Lines for the deploy report; empty when nothing was done.</returns>
+    /// <remarks>
+    /// Enshrouded is the case that needs it: EML rewrites the game's data index on every
+    /// launch, so once EML is gone the original has to be put back.
+    /// </remarks>
+    IReadOnlyList<string> AfterDeploymentChanged(GameInstallation installation) => Array.Empty<string>();
 }

@@ -144,6 +144,8 @@ public sealed class Deployer : IDeployer
 
             await WriteLoadOrderAsync(installation, module, plan, result, ct);
 
+            result.Warnings.AddRange(AfterDeploymentChanged(module, installation, _logger));
+
             CollectLaunchRequirements(installation, module, plan, result);
 
             result.Success = result.Error == null;
@@ -786,6 +788,28 @@ public sealed class Deployer : IDeployer
             }
 
             current = Path.GetDirectoryName(full);
+        }
+    }
+
+    /// <summary>
+    /// Runs the module's after-deploy hook, which must never fail a deploy or purge.
+    /// </summary>
+    /// <param name="module">The game's module.</param>
+    /// <param name="installation">The resolved installation.</param>
+    /// <param name="logger">Optional logger.</param>
+    /// <returns>Lines for the report.</returns>
+    internal static IReadOnlyList<string> AfterDeploymentChanged(
+        IGameModule module, GameInstallation installation, ILogger? logger)
+    {
+        try
+        {
+            return module.AfterDeploymentChanged(installation);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(
+                ex, "Game module {ModuleId} failed tidying up after deployment", module.ModuleId);
+            return [$"{module.DisplayName}: tidying up after deployment failed: {ex.Message}"];
         }
     }
 

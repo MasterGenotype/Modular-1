@@ -23,7 +23,7 @@ public sealed class GameModuleRegistryTests : IDisposable
         var registry = new GameModuleRegistry();
 
         registry.Modules.Select(m => m.ModuleId)
-            .Should().BeEquivalentTo(["cyberpunk2077", "ff7remake", "horizonzerodawn", "baldursgate3"]);
+            .Should().BeEquivalentTo(["cyberpunk2077", "ff7remake", "horizonzerodawn", "baldursgate3", "enshrouded"]);
     }
 
     [Theory]
@@ -31,6 +31,7 @@ public sealed class GameModuleRegistryTests : IDisposable
     [InlineData(GameIds.FinalFantasy7Remake, "ff7remake")]
     [InlineData(GameIds.HorizonZeroDawn, "horizonzerodawn")]
     [InlineData(GameIds.BaldursGate3, "baldursgate3")]
+    [InlineData(GameIds.Enshrouded, "enshrouded")]
     public void ResolveByGameId_Slug_FindsModule(string slug, string expectedModuleId)
     {
         new GameModuleRegistry().ResolveByGameId(slug)!.ModuleId.Should().Be(expectedModuleId);
@@ -48,6 +49,7 @@ public sealed class GameModuleRegistryTests : IDisposable
     [InlineData("1091500", "cyberpunk2077")]
     [InlineData("1462040", "ff7remake")]
     [InlineData("1151640", "horizonzerodawn")]
+    [InlineData("1203620", "enshrouded")]
     public void ResolveByGameId_AppIdString_FindsModule(string appId, string expectedModuleId)
     {
         new GameModuleRegistry().ResolveByGameId(appId)!.ModuleId.Should().Be(expectedModuleId);
@@ -278,12 +280,23 @@ public sealed class GameModuleRegistryTests : IDisposable
     [Fact]
     public void BuiltInModules_DeclareNoPackageRoutesOrDeployConstraints()
     {
-        // The three built-in modules route through their analyzers and have no verified
-        // link problem, so the declarative table and the constraint hook stay empty.
+        // The built-in modules route through their analyzers, so the declarative table
+        // stays empty. Only Enshrouded has a verified link problem: ShroudForge writes
+        // its settings into a mod's extended.mod.json, which a hardlink would carry back
+        // into the staged copy.
         foreach (var module in new GameModuleRegistry().Modules)
         {
             module.GetPackageRoutes().Should().BeEmpty(module.ModuleId);
-            module.GetDeployConstraints().Should().BeEmpty(module.ModuleId);
+
+            if (module.ModuleId == "enshrouded")
+            {
+                module.GetDeployConstraints().Should().ContainSingle()
+                    .Which.PathGlob.Should().Be("mods/*/extended.mod.json");
+            }
+            else
+            {
+                module.GetDeployConstraints().Should().BeEmpty(module.ModuleId);
+            }
         }
     }
 

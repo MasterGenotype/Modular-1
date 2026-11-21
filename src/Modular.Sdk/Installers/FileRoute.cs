@@ -140,6 +140,12 @@ public static class PackageTypes
     /// <summary>A Horizon Zero Dawn loose asset or loader file.</summary>
     public const string HzdLooseFile = "hzd.loose_file";
 
+    /// <summary>An Enshrouded mod folder (<c>mods/&lt;id&gt;/mod.json</c>), run by EML.</summary>
+    public const string EnshroudedMod = "enshrouded.mod";
+
+    /// <summary>An Enshrouded mod loader file beside <c>enshrouded.exe</c>, such as EML's <c>dbghelp.dll</c>.</summary>
+    public const string EnshroudedLoader = "enshrouded.loader";
+
     /// <summary>A Baldur's Gate 3 <c>.pak</c> mod, which lives in the user <c>Mods</c> folder.</summary>
     public const string Bg3Pak = "bg3.pak";
 
