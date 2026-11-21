@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -22,6 +23,12 @@ public partial class GamePageViewModel : ViewModelBase
     [ObservableProperty]
     private Bitmap? _grid;
 
+    /// <summary>Mods Modular installed for this game, in load order.</summary>
+    public ObservableCollection<GameModRow> Mods { get; } = new();
+
+    [ObservableProperty]
+    private string _modsSummary = "Looking for installed mods…";
+
     // Designer constructor
     public GamePageViewModel() : this(new GameDisplayModel { DisplayName = "Bastion", AppId = 107100, InstallPath = "/games/Bastion" }, null, null)
     {
@@ -34,15 +41,67 @@ public partial class GamePageViewModel : ViewModelBase
         _dialogs = dialogs;
         _shortcuts = owner is null ? null : SteamShortcutService.ForCurrentUser();
         LoadArt();
+        _ = LoadModsAsync();
     }
 
     public GameDisplayModel Game { get; }
 
     public string Kind => Game.IsShortcut ? "Non-Steam game" : $"Steam game · App {Game.AppId}";
 
-    public string Location => Game.IsShortcut ? Game.InstallPath : Game.InstallPath;
+    public string LocationLabel => Game.IsShortcut ? "Program" : "Install folder";
 
-    public string ShortcutButtonText => Game.IsShortcut ? "Edit Steam shortcut…" : "Create Steam shortcut…";
+    public string Location => Game.InstallPath;
+
+    public string SizeText => Game.IsShortcut ? "—" : Game.SizeText;
+
+    public string ShortcutButtonText => Game.IsShortcut ? "Edit this Steam shortcut…" : "Create a Steam shortcut for this game…";
+
+    public bool HasMods => Mods.Count > 0;
+
+    /// <summary>
+    /// The key Modular stores this game's mods under: the Steam app id, or for a non-Steam game the
+    /// key of the module that claims its folder (e.g. "enshrouded").
+    /// </summary>
+    private async Task<string?> GameKeyAsync()
+    {
+        var install = _owner?.InstallService;
+        if (install is null)
+            return null;
+        if (!Game.IsShortcut)
+            return Game.AppId.ToString();
+        var keys = await install.Deployment.Mods.ListGameKeysAsync();
+        var folder = Directory.Exists(Game.InstallDirectory) ? Game.InstallDirectory : Path.GetDirectoryName(Game.InstallPath);
+        if (folder is null || install.ModuleRegistry.ResolveByPath(folder)?.Module is not { } module)
+            return null;
+        return module.GameIds.Prepend(module.ModuleId).FirstOrDefault(k => keys.Contains(k, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private async Task LoadModsAsync()
+    {
+        try
+        {
+            var key = await GameKeyAsync();
+            if (key is null || _owner?.InstallService is not { } install)
+            {
+                ModsSummary = "No mods installed through Modular.";
+                return;
+            }
+            var mods = await install.Deployment.Mods.ListAsync(key);
+            Mods.Clear();
+            foreach (var m in mods)
+                Mods.Add(new GameModRow(string.IsNullOrWhiteSpace(m.DisplayName) ? m.ModId : m.DisplayName!, m.Enabled,
+                    m.InstallerId ?? "", m.InstalledAtUtc is { } at && DateTimeOffset.TryParse(at, out var t) ? t.LocalDateTime.ToString("yyyy-MM-dd") : ""));
+            var enabled = mods.Count(m => m.Enabled);
+            ModsSummary = mods.Count == 0
+                ? "No mods installed through Modular."
+                : $"{mods.Count} mod(s) installed, {enabled} enabled.";
+            OnPropertyChanged(nameof(HasMods));
+        }
+        catch (Exception ex)
+        {
+            ModsSummary = $"Couldn't read installed mods: {ex.Message}";
+        }
+    }
 
     private void LoadArt()
     {
@@ -100,4 +159,10 @@ public partial class GamePageViewModel : ViewModelBase
         }
         _owner.ActivePage = new SteamShortcutViewModel(_shortcuts, request, Game, _owner, back: this, _dialogs);
     }
+}
+
+/// <summary>One installed mod on a game's page.</summary>
+public sealed record GameModRow(string Name, bool Enabled, string Installer, string InstalledOn)
+{
+    public string StateText => Enabled ? "Enabled" : "Disabled";
 }

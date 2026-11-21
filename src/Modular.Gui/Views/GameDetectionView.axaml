@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Modular.Gui.ViewModels"
              xmlns:mi="using:Material.Icons.Avalonia"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="Modular.Gui.Views.GameDetectionView"
              x:DataType="vm:GameDetectionViewModel">
 
@@ -12,82 +12,93 @@
         <vm:GameDetectionViewModel/>
     </Design.DataContext>
 
+    <UserControl.Styles>
+        <Style Selector="Button.tile">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,14,16"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.tile Border.cover">
+            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Button.tile:pointerover Border.cover">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="Button.tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </UserControl.Styles>
+
     <Panel>
     <ContentControl Content="{Binding ActivePage}" IsVisible="{Binding !ShowList}"/>
     <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowList}">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
-            <TextBlock Grid.Column="0" Text="{Binding TotalGames, StringFormat='{}{0} game(s) detected'}"
-                       VerticalAlignment="Center" Opacity="0.7"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <Button Command="{Binding OpenGameCommand}" CommandParameter="{Binding SelectedGame}"
-                        IsEnabled="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
-                        ToolTip.Tip="Open the selected game's page (or double-click a row)">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                        <mi:MaterialIcon Kind="OpenInApp" Width="16" Height="16"/>
-                        <TextBlock Text="Open"/>
-                    </StackPanel>
-                </Button>
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
+            <TextBlock Grid.Column="0" Text="{Binding TotalGames, StringFormat='{}{0} game(s)'}"
+                       VerticalAlignment="Center" Opacity="0.7" Margin="0,0,12,0"/>
+            <TextBox Grid.Column="1" Text="{Binding FilterText}" Watermark="Filter games" MaxWidth="320"
+                     HorizontalAlignment="Left"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
                 <Button Command="{Binding AddNonSteamGameCommand}"
-                        ToolTip.Tip="Pick a program and make a Steam shortcut for it">
+                        ToolTip.Tip="Pick any program (a game Steam doesn't sell, an emulator…) and add it to Steam as a shortcut, with artwork">
                     <StackPanel Orientation="Horizontal" Spacing="5">
-                        <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
-                        <TextBlock Text="Add non-Steam game"/>
+                        <mi:MaterialIcon Kind="Steam" Width="16" Height="16"/>
+                        <TextBlock Text="Add a program to Steam…"/>
                     </StackPanel>
                 </Button>
-                <Button Command="{Binding ScanGamesCommand}"
-                        IsEnabled="{Binding !IsLoading}">
+                <Button Command="{Binding ScanGamesCommand}" IsEnabled="{Binding !IsLoading}"
+                        ToolTip.Tip="Look for games again">
                     <StackPanel Orientation="Horizontal" Spacing="5">
-                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
-                        <TextBlock Text="Scan"/>
+                        <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                        <TextBlock Text="Rescan"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
         </Grid>
 
-        <!-- Loading Indicator -->
         <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
                      VerticalAlignment="Top" Margin="0,0,0,10"/>
 
-        <!-- Games DataGrid -->
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Games}"
-                  SelectedItem="{Binding SelectedGame}"
-                  DoubleTapped="OnGameDoubleTapped"
-                  IsVisible="{Binding !IsLoading}"
-                  AutoGenerateColumns="False"
-                  CanUserReorderColumns="True"
-                  CanUserResizeColumns="True"
-                  CanUserSortColumns="True"
-                  GridLinesVisibility="Horizontal"
-                  IsReadOnly="True">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="ID" Binding="{Binding IdText}" Width="100"/>
-                <DataGridTextColumn Header="Source" Binding="{Binding SourceText}" Width="90"/>
-                <DataGridTextColumn Header="Game" Binding="{Binding DisplayName}" Width="*"/>
-                <DataGridTextColumn Header="Install Path" Binding="{Binding InstallPath}" Width="2*"/>
-                <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="80"/>
-                <DataGridTemplateColumn Header="Status" Width="100">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate x:DataType="vm:GameDisplayModel">
-                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="5,0">
-                                <Panel>
-                                    <mi:MaterialIcon Kind="CheckCircle" Width="14" Height="14" Foreground="{DynamicResource SuccessBrush}"
-                                                     IsVisible="{Binding IsFullyInstalled}"/>
-                                    <mi:MaterialIcon Kind="AlertCircle" Width="14" Height="14" Foreground="{DynamicResource WarningBrush}"
-                                                     IsVisible="{Binding !IsFullyInstalled}"/>
-                                </Panel>
-                                <Panel>
-                                    <TextBlock Text="Installed" FontSize="12" IsVisible="{Binding IsFullyInstalled}"/>
-                                    <TextBlock Text="Partial" FontSize="12" IsVisible="{Binding !IsFullyInstalled}"/>
-                                </Panel>
+        <!-- Game tiles: cover art; tap one for its page -->
+        <ScrollViewer Grid.Row="1" IsVisible="{Binding !IsLoading}" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding VisibleGames}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GameDisplayModel">
+                        <Button Classes="tile" Width="150"
+                                Command="{Binding $parent[UserControl].((vm:GameDetectionViewModel)DataContext).OpenGameCommand}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding DisplayName}">
+                            <StackPanel Spacing="6">
+                                <Border Classes="cover" CornerRadius="8" ClipToBounds="True" Width="150" Height="225"
+                                        Background="{DynamicResource SurfaceBrush}">
+                                    <Panel>
+                                        <StackPanel VerticalAlignment="Center" Margin="10" Spacing="8"
+                                                    IsVisible="{Binding !HasCover}">
+                                            <mi:MaterialIcon Kind="GamepadVariantOutline" Width="32" Height="32" Opacity="0.4"/>
+                                            <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" TextAlignment="Center"
+                                                       FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                        <Image Source="{Binding Cover}" Stretch="UniformToFill"/>
+                                    </Panel>
+                                </Border>
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding SourceText}" Classes="caption"/>
                             </StackPanel>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
 
-        <!-- Status Bar -->
         <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,10,0,0" Opacity="0.7"/>
     </Grid>
     </Panel>

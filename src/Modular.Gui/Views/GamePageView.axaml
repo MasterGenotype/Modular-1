@@ -34,18 +34,40 @@
                 </Panel>
             </Border>
 
-            <Grid ColumnDefinitions="Auto,*" >
-                <Border Grid.Column="0" CornerRadius="8" ClipToBounds="True" Width="120" Height="180" Margin="0,0,16,0"
+            <Grid ColumnDefinitions="Auto,*">
+                <Border Grid.Column="0" CornerRadius="8" ClipToBounds="True" Width="150" Height="225" Margin="0,0,16,0"
+                        VerticalAlignment="Top"
                         Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
                         IsVisible="{Binding Grid, Converter={x:Static ObjectConverters.IsNotNull}}">
                     <Image Source="{Binding Grid}" Stretch="UniformToFill"/>
                 </Border>
                 <Border Grid.Column="1" Classes="card">
-                    <StackPanel Spacing="8">
+                    <StackPanel Spacing="10">
                         <TextBlock Text="{Binding Kind}" Classes="eyebrow"/>
-                        <TextBlock Text="{Binding Game.DisplayName}" Classes="h2"/>
-                        <TextBlock Text="{Binding Location}" Classes="caption" TextWrapping="Wrap"/>
-                        <WrapPanel Margin="0,8,0,0">
+                        <TextBlock Text="{Binding Game.DisplayName}" Classes="title"/>
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                            <Grid.Styles>
+                                <Style Selector="TextBlock.key">
+                                    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                    <Setter Property="Margin" Value="0,0,16,6"/>
+                                </Style>
+                                <Style Selector="TextBlock.val">
+                                    <Setter Property="Margin" Value="0,0,0,6"/>
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                </Style>
+                            </Grid.Styles>
+                            <TextBlock Grid.Row="0" Text="Source" Classes="key"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Game.SourceText}" Classes="val"/>
+                            <TextBlock Grid.Row="1" Text="ID" Classes="key"/>
+                            <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Game.IdText}" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="2" Text="Size" Classes="key"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SizeText}" Classes="val"/>
+                            <TextBlock Grid.Row="3" Text="Status" Classes="key"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Game.StatusText}" Classes="val"/>
+                            <TextBlock Grid.Row="4" Text="{Binding LocationLabel}" Classes="key"/>
+                            <SelectableTextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Location}" TextWrapping="Wrap"/>
+                        </Grid>
+                        <WrapPanel Margin="0,4,0,0">
                             <Button Classes="accent" Command="{Binding OpenShortcutCommand}" Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <mi:MaterialIcon Kind="Steam" Width="16" Height="16"/>
@@ -56,6 +78,24 @@
                     </StackPanel>
                 </Border>
             </Grid>
+
+            <!-- Installed mods -->
+            <Border Classes="card">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="INSTALLED MODS" Classes="eyebrow"/>
+                    <TextBlock Text="{Binding ModsSummary}" Classes="caption"/>
+                    <DataGrid ItemsSource="{Binding Mods}" IsVisible="{Binding HasMods}"
+                              AutoGenerateColumns="False" IsReadOnly="True" MaxHeight="520"
+                              CanUserSortColumns="True" GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="*"/>
+                            <DataGridTextColumn Header="State" Binding="{Binding StateText}" Width="90"/>
+                            <DataGridTextColumn Header="Installer" Binding="{Binding Installer}" Width="140"/>
+                            <DataGridTextColumn Header="Installed" Binding="{Binding InstalledOn}" Width="110"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

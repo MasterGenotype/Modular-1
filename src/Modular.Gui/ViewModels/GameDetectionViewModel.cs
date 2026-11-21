@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Media.Imaging;
 using Modular.Core.GameDetection;
+using Modular.Core.Installers;
 using Modular.Core.Steam;
 using Modular.Gui.Services;
 
@@ -11,6 +13,27 @@ public partial class GameDetectionViewModel : ViewModelBase
 {
     private readonly SteamGameScanner? _scanner;
     private readonly IDialogService? _dialogService;
+    private readonly ModInstallationService? _installService;
+    private CancellationTokenSource? _coverCts;
+
+    /// <summary>Games shown as tiles, after the filter.</summary>
+    public ObservableCollection<GameDisplayModel> VisibleGames { get; } = new();
+
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value) => ApplyFilter();
+
+    private void ApplyFilter()
+    {
+        VisibleGames.Clear();
+        foreach (var g in Games.Where(g => string.IsNullOrWhiteSpace(FilterText)
+                     || g.DisplayName.Contains(FilterText.Trim(), StringComparison.OrdinalIgnoreCase)))
+            VisibleGames.Add(g);
+    }
+
+    /// <summary>Mod database access for a game's page (null in the designer).</summary>
+    internal ModInstallationService? InstallService => _installService;
 
     [ObservableProperty]
     private ObservableCollection<GameDisplayModel> _games = new();
@@ -54,13 +77,16 @@ public partial class GameDetectionViewModel : ViewModelBase
             IsFullyInstalled = true
         });
         TotalGames = 2;
+        ApplyFilter();
     }
 
     // DI constructor
-    public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService)
+    public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService, ModInstallationService installService)
     {
         _scanner = scanner;
         _dialogService = dialogService;
+        _installService = installService;
+        _ = ScanGamesAsync();
     }
 
     [RelayCommand]
@@ -117,6 +143,8 @@ public partial class GameDetectionViewModel : ViewModelBase
             foreach (var g in sorted)
                 Games.Add(g);
             TotalGames = Games.Count;
+            ApplyFilter();
+            _ = LoadCoversAsync(Games.ToList());
             StatusMessage = $"Found {TotalGames} game(s)";
         }
         catch (OperationCanceledException)
@@ -173,6 +201,38 @@ public partial class GameDetectionViewModel
         ActivePage = new SteamShortcutViewModel(service, service.PrefillForExe(exe), game, this, back: null, _dialogService);
     }
 
+    /// <summary>Loads each tile's portrait cover: Steam's cached art, or the shortcut's grid image.</summary>
+    private async Task LoadCoversAsync(IReadOnlyList<GameDisplayModel> games)
+    {
+        _coverCts?.Cancel();
+        var cts = _coverCts = new CancellationTokenSource();
+        var service = SteamShortcutService.ForCurrentUser();
+        if (service is null)
+            return;
+        foreach (var game in games)
+        {
+            if (cts.IsCancellationRequested)
+                return;
+            string? path = game.IsShortcut
+                ? service.CurrentArt(game.ShortcutAppId).GetValueOrDefault(Modular.Core.Steam.SteamArtKind.Grid)
+                : service.User.FindCachedArt((uint)game.AppId).GetValueOrDefault(Modular.Core.Steam.SteamArtKind.Grid);
+            if (path is null)
+                continue;
+            try
+            {
+                game.Cover = await Task.Run(() =>
+                {
+                    using var fs = File.OpenRead(path);
+                    return Bitmap.DecodeToWidth(fs, 300);
+                }, cts.Token);
+            }
+            catch when (!cts.IsCancellationRequested)
+            {
+                // No cover: the tile shows the name instead.
+            }
+        }
+    }
+
     /// <summary>Back to the list; rescans so a new shortcut shows up.</summary>
     internal async Task CloseActivePageAsync(bool rescan)
     {
@@ -193,6 +253,15 @@ public partial class GameDisplayModel : ObservableObject
     private uint _shortcutAppId;
 
     public string IdText => IsShortcut ? ShortcutAppId.ToString() : AppId.ToString();
+
+    /// <summary>Portrait cover for the tile; null shows the name on a plain tile.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCover))]
+    private Bitmap? _cover;
+
+    public bool HasCover => Cover is not null;
+
+    public string StatusText => IsShortcut ? "Steam shortcut" : IsFullyInstalled ? "Installed" : "Partly installed";
 
     public string SourceText => IsShortcut ? "Non-Steam" : "Steam";
 
