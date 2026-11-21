@@ -217,6 +217,10 @@ class Program
                 .WithExample("uninstall", "a1b2c3d4e5f6")
                 .WithExample("uninstall", "--game", "1091500", "--mod", "my-mod");
 
+            config.AddCommand<FixNamesCommand>("fix-names")
+                .WithDescription("Name installed mods that are listed under their bare mod number")
+                .WithExample("fix-names", "--game", "1091500", "--apply");
+
             config.AddCommand<ListInstalledCommand>("installed")
                 .WithDescription("List installed mods")
                 .WithExample("installed")

@@ -315,6 +315,25 @@ public sealed class GameModRepository
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
+    /// <summary>Sets the name a mod is listed under.</summary>
+    /// <returns>True when a row was updated.</returns>
+    public async Task<bool> SetDisplayNameAsync(
+        string gameKey, string modId, string displayName, CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE game_mod SET display_name = $name
+            WHERE game_key = $gameKey AND mod_id = $modId
+            """;
+        cmd.Parameters.AddWithValue("$name", displayName);
+        cmd.Parameters.AddWithValue("$gameKey", gameKey);
+        cmd.Parameters.AddWithValue("$modId", modId);
+
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
     /// <summary>
     /// Replaces a game's entire mod set in one transaction.
     /// </summary>

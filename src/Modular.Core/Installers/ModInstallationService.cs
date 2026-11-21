@@ -668,7 +668,10 @@ public class ModInstallationService
                     ModuleId = module?.ModuleId,
                     InstallerId = selection.Installer.InstallerId,
                     StagingPath = stagingDirectory!,
-                    DisplayName = options.ModId,
+                    DisplayName = options.DisplayName
+                        ?? (ModDisplayNames.IsNumericId(options.ModId)
+                            ? ModDisplayNames.FromArchiveFileName(archivePath, options.ModId) ?? options.ModId
+                            : options.ModId),
                     Source = options.Source,
                     SourceFileId = options.SourceFileId,
                     ChangesetId = changesetId
@@ -2008,6 +2011,12 @@ public class ModInstallationOptions
 {
     /// <summary>Optional mod identifier for tracking.</summary>
     public string? ModId { get; set; }
+
+    /// <summary>
+    /// The name to list the mod under, when the caller knows it (e.g. from the Nexus API). Without
+    /// it a numeric <see cref="ModId"/> is named from the archive file name, never the number.
+    /// </summary>
+    public string? DisplayName { get; set; }
 
     /// <summary>
     /// Game the archive is being installed for: a NexusMods slug, a Steam AppID or
