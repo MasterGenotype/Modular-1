@@ -200,14 +200,15 @@ public static class BuildPinner
     };
 
     /// <summary>
-    /// Steam has replaced the pinned build: it records other manifests for every pinned depot and has
-    /// nothing left to download. The pin no longer holds anything; unpin it.
+    /// Steam has replaced the pinned build: it records another manifest for a pinned depot and has
+    /// nothing left to download. Depots both builds share keep their manifest, so one change is enough.
+    /// The pin no longer holds anything; unpin it.
     /// </summary>
     public static bool IsSuperseded(SteamAppManifest acf, BuildPin pin)
     {
         if ((acf.StateFlags & (UpdateRequired | UpdateRunning | UpdatePaused | UpdateStarted)) != 0)
             return false;
-        return pin.Depots.Count > 0 && pin.Depots.All(d =>
+        return pin.Depots.Any(d =>
             acf.InstalledDepots.FirstOrDefault(i => i.DepotId == d.Key)?.ManifestId is { } m && m != d.Value);
     }
 
