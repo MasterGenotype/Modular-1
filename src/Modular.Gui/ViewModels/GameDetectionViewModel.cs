@@ -14,6 +14,7 @@ public partial class GameDetectionViewModel : ViewModelBase
     private readonly SteamGameScanner? _scanner;
     private readonly IDialogService? _dialogService;
     private readonly ModInstallationService? _installService;
+    private readonly Dictionary<string, GamePageViewModel> _pages = new();
     private CancellationTokenSource? _coverCts;
 
     /// <summary>Games shown as tiles, after the filter.</summary>
@@ -194,7 +195,14 @@ public partial class GameDetectionViewModel
         game ??= SelectedGame;
         if (game is null)
             return;
-        ActivePage = new GamePageViewModel(game, this, _dialogService);
+        // One page per game for as long as Modular runs: a check or install started on it keeps
+        // showing its progress when you come back, and its buttons stay busy meanwhile.
+        var key = game.IsShortcut ? $"s{game.ShortcutAppId}" : $"a{game.AppId}";
+        if (!_pages.TryGetValue(key, out var page))
+            _pages[key] = page = new GamePageViewModel(game, this, _dialogService);
+        else
+            page.Reopened();
+        ActivePage = page;
     }
 
     [RelayCommand]

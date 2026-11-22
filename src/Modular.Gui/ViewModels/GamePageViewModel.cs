@@ -265,6 +265,7 @@ public partial class GamePageViewModel : ViewModelBase
             }
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+            using var gate = await InstallGate.EnterAsync($"installing {Game.DisplayName}'s mod list", m => ActionStatus = m);
             var result = await importer.ApplyAsync(list, installation, key,
                 _owner.Lookups.ResolveUrlAsync, http,
                 _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
@@ -331,6 +332,7 @@ public partial class GamePageViewModel : ViewModelBase
                     name: $"Before updating {chosen.Count} mod(s)", gameKey: key);
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+            using var gate = await InstallGate.EnterAsync($"updating {Game.DisplayName}'s mods", m => ActionStatus = m);
             var result = await updater.ApplyAsync(key, installation, chosen.Select(i => check.Updates[i]).ToList(), http,
                 _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
             var report = $"Updated {result.Updated}, failed {result.Failed.Count}.";
@@ -348,6 +350,13 @@ public partial class GamePageViewModel : ViewModelBase
         {
             IsWorking = false;
         }
+    }
+
+    /// <summary>Shown again from the games list: re-reads the mod list unless an operation here is still running.</summary>
+    internal void Reopened()
+    {
+        if (!IsWorking)
+            _ = LoadModsAsync();
     }
 
     [RelayCommand]

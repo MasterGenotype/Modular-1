@@ -336,6 +336,7 @@ public partial class GameVersionsViewModel : ViewModelBase
 
     private async Task<string> FinishAsync(bool nonBranch)
     {
+        using var gate = await InstallGate.EnterAsync($"switching {_gameName}'s version", m => Message = m);
         var swap = await _service.PrepareSwapAsync(_appId);
         var pin = await _service.ApplySwapAsync(swap, new Progress<string>(m => Message = m));
         var parts = new List<string> { "Switched and pinned." };
