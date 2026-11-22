@@ -237,6 +237,39 @@
                     </StackPanel>
                 </Border>
 
+                <!-- SteamGridDB Section -->
+                <Border Classes="card" Padding="14">
+                    <StackPanel Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <mi:MaterialIcon Kind="ImageMultiple" Classes="glyph"/>
+                            <TextBlock Text="SteamGridDB" Classes="h2" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <TextBlock Text="API Key" Margin="0,0,0,5"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Text="{Binding SteamGridDbApiKey}"
+                                         PasswordChar="•"
+                                         Watermark="Cover art for the Games tab and Steam shortcuts"
+                                         IsVisible="{Binding !ShowSteamGridDbKey}"/>
+                                <TextBox Text="{Binding SteamGridDbApiKey}"
+                                         Watermark="Cover art for the Games tab and Steam shortcuts"
+                                         IsVisible="{Binding ShowSteamGridDbKey}"/>
+                                <Button Grid.Column="1" Command="{Binding ToggleSteamGridDbKeyVisibilityCommand}"
+                                        Margin="5,0,0,0" ToolTip.Tip="Show or hide the key">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="Eye" Width="16" Height="16" IsVisible="{Binding !ShowSteamGridDbKey}"/>
+                                        <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16" IsVisible="{Binding ShowSteamGridDbKey}"/>
+                                    </Panel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <TextBlock Text="Get a free key at steamgriddb.com → Preferences → API. Kept in the system keyring, not the config file."
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Backends Section -->
                 <Border Classes="card" Padding="14">
                     <StackPanel Spacing="10">

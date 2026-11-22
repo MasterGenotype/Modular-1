@@ -55,6 +55,16 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private string _modIoApiKey = string.Empty;
 
+    /// <summary>SteamGridDB API key (cover art and Steam shortcut artwork), kept in the secret store.</summary>
+    [ObservableProperty]
+    private string _steamGridDbApiKey = string.Empty;
+
+    [ObservableProperty]
+    private bool _showSteamGridDbKey;
+
+    private string _savedSteamGridDbApiKey = string.Empty;
+    private bool _loadingSecrets;
+
     [ObservableProperty]
     private string _modIoAccessToken = string.Empty;
 
@@ -228,6 +238,9 @@ public partial class SettingsViewModel : ViewModelBase
             ? string.Join(", ", _settings.ModIoGameIds)
             : string.Empty;
 
+        // SteamGridDB (secret store, read in the background)
+        _ = LoadSteamGridDbKeyAsync();
+
         // Backends
         NexusModsBackendEnabled = _settings.EnabledBackends.Contains(BackendIds.NexusMods);
         GameBananaBackendEnabled = _settings.EnabledBackends.Contains(BackendIds.GameBanana);
@@ -265,6 +278,32 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnNexusModsBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnGameBananaBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
     partial void OnModIoApiKeyChanged(string value) => HasUnsavedChanges = true;
+    partial void OnSteamGridDbApiKeyChanged(string value)
+    {
+        if (!_loadingSecrets)
+            HasUnsavedChanges = true;
+    }
+
+    private async Task LoadSteamGridDbKeyAsync()
+    {
+        try
+        {
+            var key = await new Modular.Core.Security.DefaultSecretStore().GetAsync(Modular.Core.Steam.SteamGridDbClient.SecretKey) ?? string.Empty;
+            _loadingSecrets = true;
+            SteamGridDbApiKey = _savedSteamGridDbApiKey = key;
+        }
+        catch (Exception)
+        {
+            // No secret store: the field starts empty.
+        }
+        finally
+        {
+            _loadingSecrets = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleSteamGridDbKeyVisibility() => ShowSteamGridDbKey = !ShowSteamGridDbKey;
     partial void OnModIoAccessTokenChanged(string value) => HasUnsavedChanges = true;
     partial void OnModIoGameIdsChanged(string value) => HasUnsavedChanges = true;
     partial void OnModIoBackendEnabledChanged(bool value) => HasUnsavedChanges = true;
@@ -375,6 +414,18 @@ public partial class SettingsViewModel : ViewModelBase
             _settings.ModIoApiKey = ModIoApiKey.Trim();
             _settings.ModIoAccessToken = ModIoAccessToken.Trim();
             _settings.ModIoGameIds = ParseIntList(ModIoGameIds);
+
+            // SteamGridDB: the secret store, not the config file.
+            var gridKey = SteamGridDbApiKey.Trim();
+            if (gridKey != _savedSteamGridDbApiKey)
+            {
+                var secrets = new Modular.Core.Security.DefaultSecretStore();
+                if (gridKey.Length == 0)
+                    await secrets.DeleteAsync(Modular.Core.Steam.SteamGridDbClient.SecretKey);
+                else
+                    await secrets.SetAsync(Modular.Core.Steam.SteamGridDbClient.SecretKey, gridKey);
+                _savedSteamGridDbApiKey = gridKey;
+            }
 
             // Backends
             _settings.EnabledBackends = BuildEnabledBackends();

@@ -74,11 +74,9 @@
             <Grid RowDefinitions="Auto,Auto,*">
                 <!-- SteamGridDB: key prompt or game search -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10" IsVisible="{Binding NeedsGridKey}">
-                    <TextBlock Text="SteamGridDB API key" VerticalAlignment="Center"/>
-                    <TextBox Text="{Binding GridKeyInput}" PasswordChar="•" Width="320"
-                             Watermark="steamgriddb.com → Preferences → API"/>
-                    <Button Content="Save key" Command="{Binding SaveGridKeyCommand}"/>
-                    <TextBlock Text="Free key; without it you can still use Steam's art and files." Classes="caption" VerticalAlignment="Center"/>
+                    <TextBlock Text="Add a SteamGridDB API key in Settings for community artwork; Steam's art and files work without it."
+                               Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Content="Open Settings" Command="{Binding OpenSettingsCommand}"/>
                 </StackPanel>
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,*" Margin="0,0,0,10" IsVisible="{Binding HasGridKey}">
                     <TextBlock Text="SteamGridDB" VerticalAlignment="Center" Margin="0,0,8,0"/>

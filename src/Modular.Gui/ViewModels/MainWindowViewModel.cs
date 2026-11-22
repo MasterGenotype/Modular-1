@@ -169,6 +169,8 @@ public partial class MainWindowViewModel : ViewModelBase
         });
 
         // Hand downloaded archives to the installer and show it
+        WeakReferenceMessenger.Default.Register<NavigateToPageMessage>(this, (r, m) => NavigateTo(m.Page));
+
         WeakReferenceMessenger.Default.Register<SendToInstallerMessage>(this, (r, m) =>
         {
             Dispatcher.UIThread.Post(() =>

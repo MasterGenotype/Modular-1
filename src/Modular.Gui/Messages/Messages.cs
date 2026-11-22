@@ -66,3 +66,9 @@ public class SendToInstallerMessage
     /// <summary>Paths of the downloaded archives to install.</summary>
     public IReadOnlyList<string> ArchivePaths { get; }
 }
+
+/// <summary>Asks the main window to show a page (e.g. "Settings").</summary>
+public sealed class NavigateToPageMessage(string page)
+{
+    public string Page { get; } = page;
+}

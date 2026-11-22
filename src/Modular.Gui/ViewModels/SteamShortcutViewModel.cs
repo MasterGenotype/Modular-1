@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Modular.Core.Depots;
 using Modular.Core.Security;
 using Modular.Core.Steam;
@@ -99,7 +100,6 @@ public partial class SteamShortcutViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(NeedsGridKey))]
     private bool _hasGridKey;
 
-    [ObservableProperty] private string _gridKeyInput = "";
     [ObservableProperty] private string _gridSearchText = "";
     [ObservableProperty] private SteamGridDbGame? _selectedGridGame;
 
@@ -217,15 +217,8 @@ public partial class SteamShortcutViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task SaveGridKeyAsync()
-    {
-        var key = GridKeyInput.Trim();
-        if (key.Length == 0)
-            return;
-        await _secrets.SetAsync(SteamGridDbClient.SecretKey, key);
-        GridKeyInput = "";
-        await InitGridDbAsync();
-    }
+    private void OpenSettings() =>
+        CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new Modular.Gui.Messages.NavigateToPageMessage("Settings"));
 
     [RelayCommand]
     private async Task SearchGridAsync()
