@@ -145,6 +145,36 @@ public static class DependencyConventions
         }
     }
 
+    /// <summary>
+    /// Sets where an archive came from in its record, keeping everything else the record holds
+    /// (a released archive's details, declared requirements). Creates the record if there is none.
+    /// </summary>
+    /// <exception cref="IOException">The record could not be written.</exception>
+    public static void SetRecordSource(string archivePath, DeclaredSource source)
+    {
+        ArgumentNullException.ThrowIfNull(archivePath);
+        ArgumentNullException.ThrowIfNull(source);
+        var path = archivePath + DownloadRecordSuffix;
+        System.Text.Json.Nodes.JsonObject record;
+        try
+        {
+            record = File.Exists(path)
+                ? System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) as System.Text.Json.Nodes.JsonObject ?? new()
+                : new();
+        }
+        catch (JsonException)
+        {
+            record = new();
+        }
+        record["Backend"] = source.BackendId;
+        record["ModId"] = source.ModId;
+        record["GameDomain"] = source.GameDomain;
+        record["FileId"] = source.FileId;
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, record.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(tmp, path, overwrite: true);
+    }
+
     /// <summary>Reads Modular's own download record.</summary>
     /// <param name="archivePath">Path of the archive the record sits beside.</param>
     /// <remarks>

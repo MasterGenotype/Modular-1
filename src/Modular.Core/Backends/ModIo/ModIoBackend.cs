@@ -393,6 +393,9 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
                         })),
                     itemCt);
 
+                // Record where it came from beside the file, so it stays traceable after install.
+                Modular.Core.Dependencies.Conventions.DependencyConventions.WriteDownloadRecord(outputPath,
+                    new Modular.Core.Dependencies.Conventions.DeclaredSource(Id, modId, game, fileId));
                 _logger?.LogInformation(
                     "Downloaded: {File}{Resumed}", outputPath, result.Resumed ? " (resumed)" : string.Empty);
             }

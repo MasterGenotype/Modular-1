@@ -584,6 +584,10 @@ public class NexusModsBackend : IModBackend, ISearchableBackend, IRequirementsBa
         }
 
         _database.AddRecord(record);
+        // Beside the file too, so it stays traceable to its mod and file after install
+        // (the record survives the archive being released) and in mod lists and updates.
+        Modular.Core.Dependencies.Conventions.DependencyConventions.WriteDownloadRecord(outputPath,
+            new Modular.Core.Dependencies.Conventions.DeclaredSource(Id, modId, gameDomain, file.FileId));
         _logger?.LogInformation("Downloaded: {File}{Resumed}", file.FileName, result.Resumed ? " (resumed)" : string.Empty);
     }
 

@@ -216,3 +216,51 @@ public sealed class ModUpdateCommand : AsyncCommand<ModUpdateCommand.Settings>
         return result.Failed.Count == 0 ? 0 : 1;
     }
 }
+
+/// <summary><c>modular sources recover --game &lt;key&gt; [--apply]</c>: fill in where installed mods came from.</summary>
+public sealed class SourcesRecoverCommand : AsyncCommand<SourcesRecoverCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--game <GAME>")]
+        [Description("Game key (Steam app id such as 1086940)")]
+        public string Game { get; init; } = "";
+
+        [CommandOption("--apply")]
+        [Description("Write the sources into the archives' records (default: only show them)")]
+        public bool Apply { get; init; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Game))
+        {
+            AnsiConsole.MarkupLine("[red]Give the game with --game.[/]");
+            return 1;
+        }
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+        using var services = await RuntimeServices.InitializeMinimalAsync();
+        await using var db = await ModListCli.OpenDatabaseAsync();
+        var recovery = new SourceRecovery(db, services.Settings.DatabasePath);
+        var lookups = await ModListCli.LookupsAsync(services, cts.Token);
+        var results = await AnsiConsole.Status().StartAsync("Tracing sources…", async status =>
+            await recovery.RecoverAsync(settings.Game, lookups, settings.Apply,
+                new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token));
+
+        foreach (var group in results.GroupBy(r => r.Source is null ? $"not found: {r.Method}" : r.Method).OrderBy(g => g.Key))
+            AnsiConsole.MarkupLine($"[bold]{group.Count()}[/] {Markup.Escape(group.Key)}");
+        foreach (var r in results.Where(r => r.Source is null))
+            AnsiConsole.MarkupLine($"  [grey]{Markup.Escape(r.Name)}[/]");
+        var found = results.Count(r => r.Source is not null);
+        if (settings.Apply && found > 0)
+        {
+            // The updater's remembered sources are rebuilt from the records next time.
+            var cache = Path.Combine(Path.GetDirectoryName(services.Settings.DatabasePath)!, "sources", settings.Game + ".json");
+            if (File.Exists(cache))
+                File.Delete(cache);
+        }
+        AnsiConsole.MarkupLine($"{found} source(s) {(settings.Apply ? "written" : "found; add --apply to write them")}.");
+        return 0;
+    }
+}

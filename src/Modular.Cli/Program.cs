@@ -228,6 +228,14 @@ class Program
                     .WithExample("modlist", "import", "Cyberpunk-2077.modular-modlist.json");
             });
 
+            config.AddBranch("sources", sources =>
+            {
+                sources.SetDescription("Where installed mods came from");
+                sources.AddCommand<SourcesRecoverCommand>("recover")
+                    .WithDescription("Fill in missing sources from the download history, mod.io and Nexus")
+                    .WithExample("sources", "recover", "--game", "1086940");
+            });
+
             config.AddCommand<ModUpdateCommand>("update")
                 .WithDescription("Find newer files for a game's installed mods; --apply installs them in place")
                 .WithExample("update", "--game", "1091500");
