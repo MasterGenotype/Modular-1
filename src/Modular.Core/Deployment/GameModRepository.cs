@@ -340,6 +340,19 @@ public sealed class GameModRepository
         return Depots.BuildStamp.FromJson(await cmd.ExecuteScalarAsync(ct) as string);
     }
 
+    /// <summary>Every installed mod's listed name, by the changeset that installed it.</summary>
+    public async Task<Dictionary<string, string>> ListNamesByChangesetAsync(CancellationToken ct = default)
+    {
+        var connection = await _database.GetConnectionAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT changeset_id, display_name FROM game_mod WHERE changeset_id IS NOT NULL AND display_name IS NOT NULL";
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            names[reader.GetString(0)] = reader.GetString(1);
+        return names;
+    }
+
     /// <summary>Sets the name a mod is listed under.</summary>
     /// <returns>True when a row was updated.</returns>
     public async Task<bool> SetDisplayNameAsync(

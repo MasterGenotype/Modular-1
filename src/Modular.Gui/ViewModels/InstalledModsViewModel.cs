@@ -740,7 +740,8 @@ public partial class InstalledModsViewModel : ViewModelBase
         try
         {
             var installed = await _installService.ListInstalledAsync();
-            var report = await _dependencyService.FindAsync(targets, installed, includeUnmanaged);
+            var names = await _installService.Deployment.Mods.ListNamesByChangesetAsync();
+            var report = await _dependencyService.FindAsync(targets, installed, includeUnmanaged, namesByChangeset: names);
 
             if (report.Items.Count == 0)
             {
@@ -754,13 +755,16 @@ public partial class InstalledModsViewModel : ViewModelBase
 
             // What can be queued: mods with a backend id, and declared dependencies a name
             // search found candidates for. The rest can only be reported.
+            // Required ones first; optional ones (listed by mods that support or recommend
+            // them, not need them) after, unticked.
             var selectable = report.Items
                 .Where(i => i.Kind == MissingDependencyKind.Downloadable ||
                             (i.Kind == MissingDependencyKind.Unidentified && i.Candidates.Count > 0))
+                .OrderBy(i => i.Optional)
                 .ToList();
             var manual = report.Items.Except(selectable).ToList();
 
-            var summary = DescribeReport(report, selectable.Count, manual);
+            var summary = DescribeReport(report, selectable, manual);
 
             if (selectable.Count == 0)
             {
@@ -976,16 +980,26 @@ public partial class InstalledModsViewModel : ViewModelBase
     }
 
     private static string DescribeReport(
-        MissingDependencyReport report, int selectableCount, IReadOnlyList<MissingDependency> manual)
+        MissingDependencyReport report, IReadOnlyList<MissingDependency> selectable, IReadOnlyList<MissingDependency> manual)
     {
+        var required = selectable.Count(i => !i.Optional);
+        var optional = selectable.Count - required;
         var lines = new List<string>
         {
-            selectableCount > 0
-                ? $"{selectableCount} missing dependency(ies) can be fetched. Ticked items are downloaded " +
-                  "and added to the install list; ones already downloaded are added without downloading " +
-                  "again. Optional items and items matched by name are unticked until you confirm them."
+            selectable.Count > 0
+                ? $"{required} required dependency(ies) can be fetched (ticked)" +
+                  (optional > 0 ? $"; {optional} optional one(s) are listed after them, unticked: mods that other mods " +
+                                  "support or recommend, not ones they need." : ".") +
+                  " Ticked items are downloaded and added to the install list; ones already downloaded are added " +
+                  "without downloading again. Items matched by name stay unticked until you confirm them."
                 : "None of the missing dependencies can be downloaded from here."
         };
+
+        if (report.ToolsMentioned.Count > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"Listed by some authors but not mods, so not fetched (tools, runtimes, game patches): {string.Join(", ", report.ToolsMentioned)}.");
+        }
 
         if (manual.Count > 0)
         {

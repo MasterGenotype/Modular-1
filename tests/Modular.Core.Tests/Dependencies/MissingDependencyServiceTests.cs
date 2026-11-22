@@ -53,13 +53,15 @@ public sealed class MissingDependencyServiceTests
         backend.Requirements["9702"] =
         [
             new ModRequirement { ModId = "353", Name = "P4 Patches", Notes = "You need Patches_for_VFX_Heads file" },
+            new ModRequirement { Name = "Some Asset Library", IsExternal = true, SameGame = false, Url = "https://example.test/library" },
             new ModRequirement { Name = "BG3 Mod Manager", IsExternal = true, SameGame = false, Url = "https://example.test/bg3mm" }
         ];
 
         var report = await Service(backend).FindAsync([Durge], [Durge]);
 
         report.ModsChecked.Should().Be(1);
-        report.Items.Should().HaveCount(2);
+        report.Items.Should().HaveCount(2, "BG3 Mod Manager is a program authors mention, not a mod to fetch");
+        report.ToolsMentioned.Should().Equal("BG3 Mod Manager");
 
         var patches = report.Items[0];
         patches.Kind.Should().Be(MissingDependencyKind.Downloadable);
@@ -72,7 +74,7 @@ public sealed class MissingDependencyServiceTests
         var manager = report.Items[1];
         manager.Kind.Should().Be(MissingDependencyKind.External);
         manager.ModId.Should().BeNull();
-        manager.Url.Should().Be("https://example.test/bg3mm");
+        manager.Url.Should().Be("https://example.test/library");
     }
 
     [Fact]

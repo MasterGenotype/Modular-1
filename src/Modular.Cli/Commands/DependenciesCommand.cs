@@ -90,8 +90,9 @@ public class DependenciesCommand : AsyncCommand<DependenciesCommand.Settings>
                 {
                     // A check narrowed to one mod reports that mod's needs; a check of
                     // everything also covers mods other managers put in place.
+                    var names = await installService.Deployment.Mods.ListNamesByChangesetAsync(cts.Token);
                     report = await service.FindAsync(
-                        targets, installed, includeUnmanaged: settings.Mod == null, cts.Token);
+                        targets, installed, includeUnmanaged: settings.Mod == null, cts.Token, namesByChangeset: names);
                 });
 
             Render(report);
@@ -149,7 +150,7 @@ public class DependenciesCommand : AsyncCommand<DependenciesCommand.Settings>
                     Markup.Escape(how));
             }
 
-            AnsiConsole.MarkupLine($"[bold]Missing dependencies ({report.Items.Count}):[/]");
+            AnsiConsole.MarkupLine($"[bold]Missing dependencies ({report.Items.Count(i => !i.Optional)} required, {report.Items.Count(i => i.Optional)} optional):[/]");
             AnsiConsole.Write(table);
         }
 
@@ -166,6 +167,9 @@ public class DependenciesCommand : AsyncCommand<DependenciesCommand.Settings>
                 "[grey]Taken as installed, by name, from the game's mod folder: " +
                 Markup.Escape(string.Join(", ", report.SatisfiedElsewhere)) + "[/]");
         }
+
+        if (report.ToolsMentioned.Count > 0)
+            AnsiConsole.MarkupLine($"[grey]Not mods, not fetched (tools, runtimes, game patches): {Markup.Escape(string.Join(", ", report.ToolsMentioned))}[/]");
 
         if (report.Untraceable.Count > 0)
         {

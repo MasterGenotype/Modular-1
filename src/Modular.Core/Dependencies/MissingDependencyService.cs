@@ -102,6 +102,12 @@ public sealed record MissingDependencyReport
     /// <summary>What is missing, downloadable items first.</summary>
     public IReadOnlyList<MissingDependency> Items { get; init; } = [];
 
+    /// <summary>
+    /// Tools authors list on their pages (BG3 Mod Manager, Vortex, …): programs you run, not mods
+    /// to install, so they are never offered for download.
+    /// </summary>
+    public IReadOnlyList<string> ToolsMentioned { get; init; } = [];
+
     /// <summary>How many installed mods had their requirements looked up on a backend.</summary>
     public int ModsChecked { get; init; }
 
@@ -164,9 +170,40 @@ public sealed class MissingDependencyService
     // A note an author put in brackets after a requirement's name: "Codeware (No REDMOD version)".
     private static readonly Regex BracketedNote = new(@"\s*[\(\[][^\)\]]*[\)\]]", RegexOptions.Compiled);
 
-    // An author's note that opens by calling the requirement optional: "(Optional) Adds…".
+    // An author's note calling the requirement optional: "(Optional) Adds…", "Not a hard
+    // requirement but…", "… KAVT only (optional)". A note that also says "required" outright
+    // ("REQUIRED version 1.2") is not optional.
     private static readonly Regex OptionalNote = new(
-        @"^\W*optional\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        @"\boptional\b|\bnot (?:a )?(?:hard |strict )?requir|\bnot required\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex RequiredNote = new(
+        @"(?<!not |not a |not a hard |not strictly )\brequired\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // Conditional wording: "Only required if you want …", "If you use X instead of Y".
+    private static readonly Regex ConditionalNote = new(
+        @"\bonly (?:required|needed|necessary) (?:if|when|for)\b|^\W*if you\b|\binstead of\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    internal static bool IsOptionalNote(string? note) =>
+        note != null && (ConditionalNote.IsMatch(note) || (OptionalNote.IsMatch(note) && !RequiredNote.IsMatch(note)));
+
+    // What authors list as "requirements" that are not mods: mod managers and modding tools,
+    // system runtimes, and versions of the game itself.
+    private static readonly Regex ToolName = new(
+        @"^\s*(?:bg3\s*mod\s*manager|bg3mm|vortex|mod\s*organi[sz]er(?:\s*2)?|mo2|lslib|bg3\s*multitool|nexus\s*mods?\s*app)\b" +
+        @"|visual\s*c\+\+|redistributable|\.net\s*(?:desktop\s*)?runtime|directx" +
+        @"|^\s*(?:bg3|baldur'?s\s*gate\s*3)\s*(?:patch|hotfix)\b|^\s*(?:patch|hotfix)\s*\d",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // Baldur's Gate 3 Script Extender, however an author spells it.
+    private static readonly Regex ScriptExtender = new(
+        @"script\s*extender|\bbg3\s*se\b|norbyte'?s?\s*(?:bg3)?\s*se\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    internal static bool IsTool(string name, string? url) =>
+        ToolName.IsMatch(name) || (url != null && url.Contains("LaughingLeader/BG3ModManager", StringComparison.OrdinalIgnoreCase));
 
     // The mod id an install was made with, when it is a NexusMods one: "16325", or
     // "16325-eotb" for one of that mod's files installed on its own.
@@ -226,8 +263,10 @@ public sealed class MissingDependencyService
         IReadOnlyList<ChangesetRecord> targets,
         IReadOnlyList<ChangesetRecord> installed,
         bool includeUnmanaged = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlyDictionary<string, string>? namesByChangeset = null)
     {
+        _names = namesByChangeset;
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentNullException.ThrowIfNull(installed);
 
@@ -251,6 +290,11 @@ public sealed class MissingDependencyService
         // What is installed, by hub identity and by the identifiers each mod's own
         // packaging says it provides, so a satisfied requirement can be dropped.
         var installedIds = new HashSet<(string Backend, string Domain, string ModId)>();
+        // Script Extender is listed under many names; one installed copy satisfies them all.
+        // Its loader is bin/DWrite.dll in the game folder, however its mod was named.
+        var scriptExtenderInstalled = installed.Any(r =>
+            ScriptExtender.IsMatch(DisplayName(r)) || ScriptExtender.IsMatch(r.ModId ?? "") ||
+            (r.TargetDirectory is { Length: > 0 } dir && File.Exists(Path.Combine(dir, "bin", "DWrite.dll"))));
         var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var record in installed)
@@ -358,7 +402,8 @@ public sealed class MissingDependencyService
                     }
 
                     if (present.Contains(Normalize(requirement.Name)) ||
-                        present.Contains(Normalize(BracketedNote.Replace(requirement.Name, " "))))
+                        present.Contains(Normalize(BracketedNote.Replace(requirement.Name, " "))) ||
+                        (scriptExtenderInstalled && ScriptExtender.IsMatch(requirement.Name)))
                     {
                         if (!satisfiedElsewhere.Contains(requirement.Name, StringComparer.OrdinalIgnoreCase))
                             satisfiedElsewhere.Add(requirement.Name);
@@ -387,7 +432,7 @@ public sealed class MissingDependencyService
 
                     item.AddRequiredBy(DisplayName(record));
                     item.AddNote(requirement.Notes);
-                    item.AddStrength(optional: requirement.Notes != null && OptionalNote.IsMatch(requirement.Notes));
+                    item.AddStrength(optional: IsOptionalNote(requirement.Notes));
                 }
             }
         }
@@ -557,9 +602,12 @@ public sealed class MissingDependencyService
                 item.DownloadedArchives = archives;
         }
 
+        var tools = merged.Values.Where(i => IsTool(i.Name, i.Url)).ToList();
         return new MissingDependencyReport
         {
+            ToolsMentioned = tools.Select(t => t.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             Items = merged.Values
+                .Except(tools)
                 .Select(i => i.Build())
                 .OrderBy(i => i.Kind)
                 .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
@@ -874,10 +922,15 @@ public sealed class MissingDependencyService
         }
     }
 
-    private static string DisplayName(ChangesetRecord record) =>
-        !string.IsNullOrWhiteSpace(record.ModId)
-            ? record.ModId
-            : Path.GetFileNameWithoutExtension(record.ArchivePath) ?? record.ChangesetId;
+    // Names the mods are listed under (game_mod.display_name), by changeset; set per FindAsync call.
+    private IReadOnlyDictionary<string, string>? _names;
+
+    private string DisplayName(ChangesetRecord record) =>
+        _names is not null && _names.TryGetValue(record.ChangesetId, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : !string.IsNullOrWhiteSpace(record.ModId)
+                ? record.ModId
+                : Path.GetFileNameWithoutExtension(record.ArchivePath) ?? record.ChangesetId;
 
     /// <summary>
     /// Whether a file is one of a mod's main files, as opposed to an optional extra.
