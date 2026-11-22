@@ -288,6 +288,69 @@ public partial class GamePageViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task CheckUpdatesAsync()
+    {
+        if (_owner?.InstallService is not { } install || _owner.Database is not { } db || _dialogs is null || IsWorking)
+            return;
+        var key = await GameKeyAsync();
+        if (key is null || Mods.Count == 0)
+        {
+            ActionStatus = "No installed mods to update.";
+            return;
+        }
+        IsWorking = true;
+        try
+        {
+            var updater = new ModUpdateService(db, install, _owner.Lookups);
+            var check = await updater.CheckAsync(key, new Progress<string>(m => ActionStatus = m));
+            if (check.Updates.Count == 0)
+            {
+                ActionStatus = $"Everything is up to date ({check.Checked} mod(s) checked" +
+                    (check.NoSource > 0 ? $"; {check.NoSource} installed from local files can't be checked)." : ").");
+                return;
+            }
+            var chosen = await _dialogs.ShowMultiSelectAsync("Mod updates",
+                $"{check.Updates.Count} mod(s) have newer files. Ticked ones are downloaded and installed in place: same order, " +
+                "same enabled state. A snapshot of the current set is taken first, so you can go back from Backups.",
+                check.Updates.Select(u => u.Describe).ToList(),
+                Enumerable.Range(0, check.Updates.Count).ToList());
+            if (chosen.Count == 0)
+            {
+                ActionStatus = "No updates installed.";
+                return;
+            }
+            var installation = await install.Deployment.ResolveInstallationAsync(key);
+            if (installation is null)
+            {
+                ActionStatus = $"Modular can't find {Game.DisplayName}'s install.";
+                return;
+            }
+            if (_owner.Snapshots is { } snapshots)
+                await snapshots.CreateSnapshotAsync(Game.IsShortcut ? 0 : Game.AppId, Game.DisplayName,
+                    Game.IsShortcut ? Game.InstallDirectory : Game.InstallPath, SnapshotTrigger.Manual,
+                    name: $"Before updating {chosen.Count} mod(s)", gameKey: key);
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+            var result = await updater.ApplyAsync(key, installation, chosen.Select(i => check.Updates[i]).ToList(), http,
+                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
+            var report = $"Updated {result.Updated}, failed {result.Failed.Count}.";
+            if (result.Failed.Count > 0)
+                report += "\n\n" + string.Join("\n", result.Failed.Select(f => $"• {f.Update.Name}: {f.Error}"));
+            ActionStatus = report.Split('\n')[0];
+            await _dialogs.ShowInfoAsync("Mod updates", report);
+            await LoadModsAsync();
+        }
+        catch (Exception ex)
+        {
+            ActionStatus = $"Update check failed: {ex.Message}";
+        }
+        finally
+        {
+            IsWorking = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task BackAsync()
     {
         if (_owner is not null)

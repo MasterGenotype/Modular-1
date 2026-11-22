@@ -228,6 +228,10 @@ class Program
                     .WithExample("modlist", "import", "Cyberpunk-2077.modular-modlist.json");
             });
 
+            config.AddCommand<ModUpdateCommand>("update")
+                .WithDescription("Find newer files for a game's installed mods; --apply installs them in place")
+                .WithExample("update", "--game", "1091500");
+
             config.AddCommand<FixNamesCommand>("fix-names")
                 .WithDescription("Name installed mods that are listed under their bare mod number")
                 .WithExample("fix-names", "--game", "1091500", "--apply");

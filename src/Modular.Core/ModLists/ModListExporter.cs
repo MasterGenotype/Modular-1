@@ -7,7 +7,8 @@ using Modular.Core.Modules;
 namespace Modular.Core.ModLists;
 
 /// <summary>One file on a mod's download page, for matching an archive to its file id.</summary>
-public sealed record RemoteModFile(string FileId, string FileName, long? Size, string? Version = null, DateTimeOffset? UploadedAt = null);
+public sealed record RemoteModFile(string FileId, string FileName, long? Size, string? Version = null, DateTimeOffset? UploadedAt = null,
+    string? Category = null);
 
 /// <summary>
 /// Builds a <see cref="ModList"/> from what Modular installed for a game. The download source
@@ -182,6 +183,20 @@ public sealed partial class ModListExporter
     }
 
     /// <summary>
+    /// The upload time (and version) a Nexus download name carries: Unix seconds at the end of
+    /// "Name-id-ver-1717876940", or "Name id 2.0 2026-11-15T19-05Z abc" in the newer form.
+    /// </summary>
+    public static (DateTimeOffset? Uploaded, string? Version) UploadInfoFromName(string? archiveName)
+    {
+        var stem = archiveName is null ? "" : Path.GetFileNameWithoutExtension(archiveName);
+        if (System.Text.RegularExpressions.Regex.Match(stem, @"-(\d{10})$") is { Success: true } unix)
+            return (DateTimeOffset.FromUnixTimeSeconds(long.Parse(unix.Groups[1].Value)), null);
+        if (System.Text.RegularExpressions.Regex.Match(stem, @" (\S+) (\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})Z \w+$") is { Success: true } iso)
+            return (DateTimeOffset.Parse($"{iso.Groups[2].Value}T{iso.Groups[3].Value}:{iso.Groups[4].Value}:00Z"), iso.Groups[1].Value);
+        return (null, null);
+    }
+
+    /// <summary>
     /// The Nexus file an archive came from: same file name; else the upload time Nexus puts in
     /// download names (Unix seconds in "Name-id-ver-1717876940", or "2026-11-15T19-05Z" with the
     /// version in the newer "Name id 2.0 2026-11-15T19-05Z abc" form); else a unique size match
@@ -194,16 +209,7 @@ public sealed partial class ModListExporter
         if (archiveName is not null && files.FirstOrDefault(f => f.FileName.Equals(archiveName, StringComparison.OrdinalIgnoreCase)) is { } byName)
             return byName;
 
-        var stem = archiveName is null ? "" : Path.GetFileNameWithoutExtension(archiveName);
-        DateTimeOffset? uploaded = null;
-        string? version = null;
-        if (System.Text.RegularExpressions.Regex.Match(stem, @"-(\d{10})$") is { Success: true } unix)
-            uploaded = DateTimeOffset.FromUnixTimeSeconds(long.Parse(unix.Groups[1].Value));
-        else if (System.Text.RegularExpressions.Regex.Match(stem, @" (\S+) (\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})Z \w+$") is { Success: true } iso)
-        {
-            version = iso.Groups[1].Value;
-            uploaded = DateTimeOffset.Parse($"{iso.Groups[2].Value}T{iso.Groups[3].Value}:{iso.Groups[4].Value}:00Z");
-        }
+        var (uploaded, version) = UploadInfoFromName(archiveName);
         if (uploaded is { } at)
         {
             var near = files.Where(f => f.UploadedAt is { } u && Math.Abs((u - at).TotalMinutes) < 2).ToList();

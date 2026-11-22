@@ -34,7 +34,7 @@ public sealed class ModListLookups
             _ => [],
         };
         return files.Select(f => new RemoteModFile(f.FileId, f.FileName, f.SizeBytes, f.Version,
-            f.UploadedAt is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)) : null)).ToList();
+            f.UploadedAt is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)) : null, f.Category?.ToLowerInvariant())).ToList();
     }
 
     /// <summary>A mod.io mod by its name id (the URL slug), else by exact title.</summary>

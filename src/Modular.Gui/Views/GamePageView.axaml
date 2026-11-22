@@ -93,6 +93,13 @@
                     <TextBlock Text="{Binding BuildWarning}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap"
                                IsVisible="{Binding BuildWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <WrapPanel IsEnabled="{Binding !IsWorking}">
+                        <Button Command="{Binding CheckUpdatesCommand}" Margin="0,0,8,8"
+                                ToolTip.Tip="Look for newer files of these mods on Nexus and mod.io, and install the ones you pick in place">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Update" Width="16" Height="16"/>
+                                <TextBlock Text="Check for updates"/>
+                            </StackPanel>
+                        </Button>
                         <Button Command="{Binding TakeSnapshotCommand}" Margin="0,0,8,8"
                                 ToolTip.Tip="Record this game's installed mods; restore the set later from Backups">
                             <StackPanel Orientation="Horizontal" Spacing="6">

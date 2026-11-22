@@ -159,3 +159,60 @@ internal static class ModListCli
     public static string FileStem(string name) =>
         string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : c is ' ' or '-' or '_' ? '-' : '\0').Where(c => c != '\0')).Trim('-');
 }
+
+/// <summary><c>modular update --game &lt;key&gt; [--apply]</c>: newer files for installed mods, installed in place.</summary>
+public sealed class ModUpdateCommand : AsyncCommand<ModUpdateCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--game <GAME>")]
+        [Description("Game key (Steam app id such as 1091500, or e.g. enshrouded)")]
+        public string Game { get; init; } = "";
+
+        [CommandOption("--apply")]
+        [Description("Download and install every update found (default: only list them)")]
+        public bool Apply { get; init; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Game))
+        {
+            AnsiConsole.MarkupLine("[red]Give the game with --game.[/]");
+            return 1;
+        }
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+        using var services = await RuntimeServices.InitializeMinimalAsync();
+        await using var db = await ModListCli.OpenDatabaseAsync();
+        var plugins = new PluginLoader();
+        plugins.LoadAllPlugins();
+        var install = services.CreateInstallationService(db, plugins);
+        var updater = new ModUpdateService(db, install, await ModListCli.LookupsAsync(services, cts.Token));
+
+        var check = await AnsiConsole.Status().StartAsync("Checking for updates…", async status =>
+            await updater.CheckAsync(settings.Game, new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token));
+        foreach (var u in check.Updates)
+            AnsiConsole.MarkupLine($"  [green]{Markup.Escape(u.Describe)}[/]");
+        AnsiConsole.MarkupLine($"[bold]{check.Updates.Count}[/] update(s) among {check.Checked} mod(s) checked" +
+            (check.NoSource > 0 ? $"; {check.NoSource} have no known source (local files)." : "."));
+        if (!settings.Apply || check.Updates.Count == 0)
+            return 0;
+
+        var installation = await install.Deployment.ResolveInstallationAsync(settings.Game, cts.Token);
+        if (installation is null)
+        {
+            AnsiConsole.MarkupLine($"[red]Game {Markup.Escape(settings.Game)} is not installed here.[/]");
+            return 1;
+        }
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
+        var result = await AnsiConsole.Status().StartAsync("Updating…", async status =>
+            await updater.ApplyAsync(settings.Game, installation, check.Updates, http, services.Settings.ModsDirectory,
+                new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token));
+        AnsiConsole.MarkupLine($"Updated [bold]{result.Updated}[/], failed {result.Failed.Count}.");
+        foreach (var (u, error) in result.Failed)
+            AnsiConsole.MarkupLine($"  [red]{Markup.Escape(u.Name)}[/]: {Markup.Escape(error)}");
+        return result.Failed.Count == 0 ? 0 : 1;
+    }
+}
