@@ -68,6 +68,9 @@ public sealed record ModListEntry
     public string? ArchiveName { get; init; }
     public long? Size { get; init; }
     public string? Sha256 { get; init; }
+    /// <summary>The installer answers the mod was installed with (question id → option id), repeated on import.</summary>
+    public Dictionary<string, string>? Choices { get; init; }
+
     /// <summary>Why the entry needs the user, e.g. the installed file was removed from the mod page.</summary>
     public string? Note { get; init; }
 }

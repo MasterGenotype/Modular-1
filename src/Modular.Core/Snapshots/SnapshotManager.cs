@@ -161,6 +161,9 @@ public sealed class SnapshotGameModRecord
     public int OrderIndex { get; init; }
 
     /// <summary>Position in the game's load order when captured; null for an older snapshot.</summary>
+    /// <summary>The installer answers the mod was installed with.</summary>
+    public IReadOnlyDictionary<string, string>? InstallChoices { get; init; }
+
     public int? LoadIndex { get; init; }
 
     /// <summary>Whether the mod was enabled.</summary>
@@ -308,11 +311,11 @@ public class SnapshotManager
                     INSERT INTO snapshot_game_mod
                         (snapshot_id, game_key, mod_id, module_id, installer_id, staging_path,
                          staging_hash, order_index, enabled, changeset_id, source,
-                         source_file_id, display_name, load_index)
+                         source_file_id, display_name, load_index, install_choices)
                     VALUES
                         (@sid, @gameKey, @modId, @moduleId, @installerId, @stagingPath,
                          @stagingHash, @orderIndex, @enabled, @changesetId, @source,
-                         @sourceFileId, @displayName, @loadIndex)
+                         @sourceFileId, @displayName, @loadIndex, @installChoices)
                     """;
                 cmd.Parameters.AddWithValue("@sid", snapshotId);
                 cmd.Parameters.AddWithValue("@gameKey", mod.GameKey);
@@ -328,6 +331,7 @@ public class SnapshotManager
                 cmd.Parameters.AddWithValue("@source", mod.Source);
                 cmd.Parameters.AddWithValue("@sourceFileId", (object?)mod.SourceFileId ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@displayName", (object?)mod.DisplayName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@installChoices", (object?)Modular.Core.Installers.InstallChoices.ToJson(mod.InstallChoices) ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@loadIndex", (object?)(mod.LoadIndex ?? mod.OrderIndex) ?? DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
@@ -763,7 +767,7 @@ public class SnapshotManager
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, staging_hash,
                    order_index, enabled, changeset_id, source, source_file_id, display_name,
-                   load_index
+                   load_index, install_choices
             FROM snapshot_game_mod
             WHERE snapshot_id = @sid
             ORDER BY order_index, mod_id
@@ -789,7 +793,8 @@ public class SnapshotManager
                 Source = reader.IsDBNull(9) ? "local" : reader.GetString(9),
                 SourceFileId = reader.IsDBNull(10) ? null : reader.GetString(10),
                 DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11),
-                LoadIndex = reader.IsDBNull(12) ? null : reader.GetInt32(12)
+                LoadIndex = reader.IsDBNull(12) ? null : reader.GetInt32(12),
+                InstallChoices = reader.IsDBNull(13) ? null : Modular.Core.Installers.InstallChoices.FromJson(reader.GetString(13))
             });
         }
 
@@ -850,7 +855,11 @@ public class SnapshotManager
                     AutoSnapshot = false,
                     NoDeploy = true,
                     Source = mod.Source,
-                    SourceFileId = mod.SourceFileId
+                    SourceFileId = mod.SourceFileId,
+                    // Re-staging repeats the answers the mod was installed with.
+                    Selections = mod.InstallChoices is { } saved
+                        ? new Dictionary<string, string>(saved, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 },
                 progress,
                 ct);
@@ -877,7 +886,8 @@ public class SnapshotManager
                 Source = d.Source,
                 SourceFileId = d.SourceFileId,
                 ChangesetId = d.ChangesetId,
-                DisplayName = d.DisplayName
+                DisplayName = d.DisplayName,
+                InstallChoices = d.InstallChoices
             }).ToList(),
             ct);
 

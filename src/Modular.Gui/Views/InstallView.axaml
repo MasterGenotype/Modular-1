@@ -140,6 +140,9 @@
                               Content="Create backups of overwritten files"/>
                     <CheckBox IsChecked="{Binding DryRun}"
                               Content="Dry run (preview changes without installing)"/>
+                    <CheckBox IsChecked="{Binding ChooseOptionsAgain}" Content="Choose installer options again"
+
+                              ToolTip.Tip="A reinstalled mod normally repeats the installer answers it was installed with. Tick to be asked every question again."/>
                 </StackPanel>
             </Border>
 

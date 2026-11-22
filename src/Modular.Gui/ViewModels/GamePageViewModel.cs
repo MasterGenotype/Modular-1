@@ -268,7 +268,8 @@ public partial class GamePageViewModel : ViewModelBase
             using var gate = await InstallGate.EnterAsync($"installing {Game.DisplayName}'s mod list", m => ActionStatus = m);
             var result = await importer.ApplyAsync(list, installation, key,
                 _owner.Lookups.ResolveUrlAsync, http,
-                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
+                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m),
+                choiceResolver: InstallChoiceDialog.For(_dialogs));
             var report = $"Installed {result.Installed}, already there {result.Skipped}, failed {result.Failed.Count}.";
             if (result.Failed.Count > 0)
                 report += "\n\nFailed:\n" + string.Join("\n", result.Failed.Select(f => $"• {f.Entry.Name}: {f.Error}"));
@@ -334,7 +335,8 @@ public partial class GamePageViewModel : ViewModelBase
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Modular/1.0");
             using var gate = await InstallGate.EnterAsync($"updating {Game.DisplayName}'s mods", m => ActionStatus = m);
             var result = await updater.ApplyAsync(key, installation, chosen.Select(i => check.Updates[i]).ToList(), http,
-                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m));
+                _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m),
+                choiceResolver: InstallChoiceDialog.For(_dialogs));
             var report = $"Updated {result.Updated}, failed {result.Failed.Count}.";
             if (result.Failed.Count > 0)
                 report += "\n\n" + string.Join("\n", result.Failed.Select(f => $"• {f.Update.Name}: {f.Error}"));

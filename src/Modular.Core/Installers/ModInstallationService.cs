@@ -425,6 +425,17 @@ public class ModInstallationService
                 ModPaths = modPaths
             };
 
+            // The answers this mod was installed with last time come first (an update or a
+            // reinstall repeats them); answers the caller gives win over them.
+            IReadOnlyDictionary<string, string>? savedChoices = null;
+            if (staged && options.ReuseSavedChoices &&
+                (await _deployment.Mods.GetAsync(gameKey, modId, ct))?.InstallChoices is { } saved)
+            {
+                savedChoices = saved;
+                foreach (var (choiceId, optionId) in saved)
+                    context.Selections[choiceId] = optionId;
+            }
+
             foreach (var (choiceId, optionId) in options.Selections)
                 context.Selections[choiceId] = optionId;
 
@@ -495,7 +506,24 @@ public class ModInstallationService
                 }
             }
 
+            // With nobody to ask, an install that would fall back to defaults stops instead, so an
+            // unattended update never quietly changes a mod's options.
+            if (options.RequireAnsweredChoices && !options.DryRun && plan.Choices.Any(c => !c.IsResolved))
+            {
+                var open2 = plan.Choices.Where(c => !c.IsResolved).Select(c => c.Title).ToList();
+                result.Error = savedChoices is null
+                    ? $"This mod has installer options Modular hasn't saved yet ({string.Join("; ", open2)}). Install or update it from the GUI to pick them."
+                    : $"This version adds installer options ({string.Join("; ", open2)}). Update it from the GUI to pick them.";
+                await _changesetManager.UpdateStateAsync(changesetId, ChangesetState.RolledBack, ct: ct);
+                return result;
+            }
+
             result.Choices = plan.Choices;
+            // Every answer the plan went with, picked or default: what a later reinstall repeats.
+            result.InstallChoices = plan.Choices.Count > 0
+                ? plan.Choices.Where(c => !string.IsNullOrEmpty(c.SelectedOptionId))
+                    .ToDictionary(c => c.Id, c => c.SelectedOptionId!, StringComparer.OrdinalIgnoreCase)
+                : null;
             result.Warnings.AddRange(plan.Warnings);
 
             // Step 4c: Learn the mod's category while there is time to ask.
@@ -668,6 +696,7 @@ public class ModInstallationService
                     ModuleId = module?.ModuleId,
                     InstallerId = selection.Installer.InstallerId,
                     StagingPath = stagingDirectory!,
+                    InstallChoices = result.InstallChoices,
                     DisplayName = options.DisplayName
                         ?? (ModDisplayNames.IsNumericId(options.ModId)
                             ? ModDisplayNames.FromArchiveFileName(archivePath, options.ModId) ?? options.ModId
@@ -2078,6 +2107,18 @@ public class ModInstallationOptions
     public Dictionary<string, string> Selections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Start from the answers this mod (same game, same mod id) was installed with last time, so
+    /// an update or reinstall repeats them. On by default.
+    /// </summary>
+    public bool ReuseSavedChoices { get; set; } = true;
+
+    /// <summary>
+    /// Stop instead of installing defaults when a question is left unanswered and there is no
+    /// <see cref="ChoiceResolver"/> to ask (unattended updates).
+    /// </summary>
+    public bool RequireAnsweredChoices { get; set; }
+
+    /// <summary>
     /// Asks the user to settle the choices an archive offers. Given every choice, with
     /// the installer's default marked on each; returns choice id to option id, or
     /// <c>null</c> to cancel the install. When absent, the defaults are installed and
@@ -2168,6 +2209,9 @@ public class ModInstallationResult
 
     /// <summary>The choices the archive offered, each marked with what was installed.</summary>
     public List<InstallChoice> Choices { get; set; } = new();
+
+    /// <summary>The answers the install went with (question id → option id); saved with the mod.</summary>
+    public IReadOnlyDictionary<string, string>? InstallChoices { get; set; }
     public List<string> InstalledFiles { get; set; } = new();
     public List<string> BackedUpFiles { get; set; } = new();
     public List<string> PlannedOperations { get; set; } = new();

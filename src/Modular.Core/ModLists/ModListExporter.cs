@@ -158,14 +158,16 @@ public sealed partial class ModListExporter
                 ArchiveName = archiveName,
                 Size = size,
                 Sha256 = record?.Sha256,
+                Choices = mod.InstallChoices is { } answers ? new Dictionary<string, string>(answers) : null,
                 Note = note ?? (source is null ? "Installed from a local file; no download source is known." : null),
             });
         }
 
-        var notes = new List<string>
-        {
-            "Installer choices (FOMOD options) are not recorded; the importing Modular uses each installer's defaults.",
-        };
+        var notes = new List<string>();
+        var withoutAnswers = entries.Count(e => e.Choices is null);
+        if (withoutAnswers > 0)
+            notes.Add($"{withoutAnswers} mod(s) carry no saved installer answers (installed before Modular saved them, or without options); "
+                + "if one has options, the importing Modular asks for them.");
         if (noFileId > 0)
             notes.Add($"{noFileId} mod(s) have a mod page but no exact file; the importer lists them to pick a file by hand.");
         if (manual > 0)

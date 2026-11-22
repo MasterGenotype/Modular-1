@@ -63,7 +63,8 @@ public sealed class ModListImporter
     public async Task<ModListImportResult> ApplyAsync(
         ModList list, GameInstallation installation, string gameKey,
         Func<ModListSource, CancellationToken, Task<string?>> resolveUrl, HttpClient http, string modsRoot,
-        IProgress<string>? progress = null, CancellationToken ct = default)
+        IProgress<string>? progress = null, CancellationToken ct = default,
+        Func<IReadOnlyList<Modular.Sdk.Installers.InstallChoice>, CancellationToken, Task<IReadOnlyDictionary<string, string>?>>? choiceResolver = null)
     {
         var plan = await PlanAsync(list, gameKey, ct);
         var failed = new List<(ModListEntry, string)>();
@@ -104,6 +105,12 @@ public sealed class ModListImporter
                     Source = src.Backend,
                     SourceFileId = src.FileId,
                     NoDeploy = true,
+                    // The list's answers first; anything they don't cover is asked (or, unattended, stops).
+                    Selections = entry.Choices is { } chosen
+                        ? new Dictionary<string, string>(chosen, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                    ChoiceResolver = choiceResolver,
+                    RequireAnsweredChoices = choiceResolver is null,
                 }, ct: ct);
                 if (!result.Success)
                 {

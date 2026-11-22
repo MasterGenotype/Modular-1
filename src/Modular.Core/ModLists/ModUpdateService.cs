@@ -201,9 +201,12 @@ public sealed partial class ModUpdateService
     private static partial Regex Spaces();
 
     /// <summary>Downloads and installs the chosen updates in place, then deploys once.</summary>
+    /// <param name="choiceResolver">Asks about installer options a mod hasn't saved answers for (or that are new in
+    /// this version). Without one, such a mod is not updated rather than installed with defaults.</param>
     public async Task<ModUpdateResult> ApplyAsync(
         string gameKey, GameInstallation installation, IReadOnlyList<ModUpdate> updates, HttpClient http, string modsRoot,
-        IProgress<string>? progress = null, CancellationToken ct = default)
+        IProgress<string>? progress = null, CancellationToken ct = default,
+        Func<IReadOnlyList<Modular.Sdk.Installers.InstallChoice>, CancellationToken, Task<IReadOnlyDictionary<string, string>?>>? choiceResolver = null)
     {
         var sources = _cache.Load(gameKey);
         var failed = new List<(ModUpdate, string)>();
@@ -244,6 +247,8 @@ public sealed partial class ModUpdateService
                     Source = u.Source.Backend,
                     SourceFileId = u.Newer.FileId,
                     NoDeploy = true,
+                    ChoiceResolver = choiceResolver,
+                    RequireAnsweredChoices = choiceResolver is null,
                 }, ct: ct);
                 if (!result.Success)
                 {

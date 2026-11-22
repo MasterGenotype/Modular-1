@@ -8,7 +8,7 @@ namespace Modular.Core.Database;
 /// </summary>
 public sealed class ModularDatabase : IAsyncDisposable, IDisposable
 {
-    private const int CurrentSchemaVersion = 9;
+    private const int CurrentSchemaVersion = 10;
 
     private readonly string _connectionString;
     private SqliteConnection? _connection;
@@ -192,6 +192,7 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             await CreateV7SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV8SchemaAsync(connection, (SqliteTransaction)transaction);
             await CreateV9SchemaAsync(connection, (SqliteTransaction)transaction);
+            await CreateV10SchemaAsync(connection, (SqliteTransaction)transaction);
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
             await transaction.CommitAsync();
@@ -249,6 +250,11 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             if (fromVersion < 9)
             {
                 await CreateV9SchemaAsync(connection, (SqliteTransaction)transaction);
+            }
+
+            if (fromVersion < 10)
+            {
+                await CreateV10SchemaAsync(connection, (SqliteTransaction)transaction);
             }
 
             await SetSchemaVersionAsync(connection, CurrentSchemaVersion);
@@ -589,6 +595,16 @@ public sealed class ModularDatabase : IAsyncDisposable, IDisposable
             cmd.CommandText = $"UPDATE {table} SET load_index = order_index WHERE load_index IS NULL;";
             await cmd.ExecuteNonQueryAsync();
         }
+    }
+
+    /// <summary>
+    /// Creates the v10 schema: the installer answers each mod was installed with, so updates,
+    /// reinstalls, restores and mod lists repeat them instead of falling back to defaults.
+    /// </summary>
+    private static async Task CreateV10SchemaAsync(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        await AddColumnIfMissingAsync(connection, transaction, table: "game_mod", column: "install_choices", definition: "TEXT");
+        await AddColumnIfMissingAsync(connection, transaction, table: "snapshot_game_mod", column: "install_choices", definition: "TEXT");
     }
 
     /// <summary>

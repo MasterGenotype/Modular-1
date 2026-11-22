@@ -60,11 +60,11 @@ public sealed class GameModRepository
             INSERT INTO game_mod
                 (game_key, mod_id, module_id, installer_id, staging_path, order_index,
                  enabled, installed_at, source, source_file_id, changeset_id, display_name,
-                 load_index)
+                 load_index, install_choices)
             VALUES
                 ($gameKey, $modId, $moduleId, $installerId, $stagingPath, $orderIndex,
                  $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName,
-                 $loadIndex)
+                 $loadIndex, $installChoices)
             ON CONFLICT(game_key, mod_id) DO UPDATE SET
                 module_id      = excluded.module_id,
                 installer_id   = excluded.installer_id,
@@ -76,7 +76,9 @@ public sealed class GameModRepository
                 source_file_id = excluded.source_file_id,
                 changeset_id   = excluded.changeset_id,
                 display_name   = excluded.display_name,
-                load_index     = excluded.load_index;
+                load_index     = excluded.load_index,
+                -- A reinstall that carries no answers keeps the saved ones.
+                install_choices = COALESCE(excluded.install_choices, game_mod.install_choices);
             """;
 
         cmd.Parameters.AddWithValue("$gameKey", record.GameKey);
@@ -92,6 +94,7 @@ public sealed class GameModRepository
         cmd.Parameters.AddWithValue("$sourceFileId", (object?)record.SourceFileId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$changesetId", (object?)record.ChangesetId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$displayName", (object?)record.DisplayName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$installChoices", (object?)Modular.Core.Installers.InstallChoices.ToJson(record.InstallChoices) ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$loadIndex", loadIndex);
 
         await cmd.ExecuteNonQueryAsync(ct);
@@ -119,7 +122,7 @@ public sealed class GameModRepository
         cmd.CommandText = $"""
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
                    enabled, installed_at, source, source_file_id, changeset_id, display_name,
-                   load_index
+                   load_index, install_choices
             FROM game_mod
             WHERE game_key = $gameKey {(enabledOnly ? "AND enabled = 1" : string.Empty)}
             ORDER BY order_index, mod_id
@@ -151,7 +154,7 @@ public sealed class GameModRepository
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
                    enabled, installed_at, source, source_file_id, changeset_id, display_name,
-                   load_index
+                   load_index, install_choices
             FROM game_mod WHERE game_key = $gameKey AND mod_id = $modId
             """;
         cmd.Parameters.AddWithValue("$gameKey", gameKey);
@@ -176,7 +179,7 @@ public sealed class GameModRepository
         cmd.CommandText = """
             SELECT game_key, mod_id, module_id, installer_id, staging_path, order_index,
                    enabled, installed_at, source, source_file_id, changeset_id, display_name,
-                   load_index
+                   load_index, install_choices
             FROM game_mod WHERE changeset_id = $changesetId LIMIT 1
             """;
         cmd.Parameters.AddWithValue("$changesetId", changesetId);
@@ -411,11 +414,11 @@ public sealed class GameModRepository
                     INSERT INTO game_mod
                         (game_key, mod_id, module_id, installer_id, staging_path, order_index,
                          enabled, installed_at, source, source_file_id, changeset_id, display_name,
-                         load_index)
+                         load_index, install_choices)
                     VALUES
                         ($gameKey, $modId, $moduleId, $installerId, $stagingPath, $orderIndex,
                          $enabled, $installedAt, $source, $sourceFileId, $changesetId, $displayName,
-                         $loadIndex)
+                         $loadIndex, $installChoices)
                     """;
                 insert.Parameters.AddWithValue("$gameKey", gameKey);
                 insert.Parameters.AddWithValue("$modId", record.ModId);
@@ -431,6 +434,7 @@ public sealed class GameModRepository
                 insert.Parameters.AddWithValue("$sourceFileId", (object?)record.SourceFileId ?? DBNull.Value);
                 insert.Parameters.AddWithValue("$changesetId", (object?)record.ChangesetId ?? DBNull.Value);
                 insert.Parameters.AddWithValue("$displayName", (object?)record.DisplayName ?? DBNull.Value);
+                insert.Parameters.AddWithValue("$installChoices", (object?)Modular.Core.Installers.InstallChoices.ToJson(record.InstallChoices) ?? DBNull.Value);
                 insert.Parameters.AddWithValue("$loadIndex", record.LoadIndex ?? record.OrderIndex ?? i);
                 await insert.ExecuteNonQueryAsync(ct);
             }
@@ -569,7 +573,9 @@ public sealed class GameModRepository
         SourceFileId = reader.IsDBNull(9) ? null : reader.GetString(9),
         ChangesetId = reader.IsDBNull(10) ? null : reader.GetString(10),
         DisplayName = reader.IsDBNull(11) ? null : reader.GetString(11),
-        LoadIndex = reader.IsDBNull(12) ? reader.GetInt32(5) : reader.GetInt32(12)
+        LoadIndex = reader.IsDBNull(12) ? reader.GetInt32(5) : reader.GetInt32(12),
+        InstallChoices = reader.FieldCount > 13 && !reader.IsDBNull(13)
+            ? Modular.Core.Installers.InstallChoices.FromJson(reader.GetString(13)) : null
     };
 }
 
@@ -624,4 +630,7 @@ public sealed record GameModRecord
 
     /// <summary>Human-readable name, for order listings.</summary>
     public string? DisplayName { get; init; }
+
+    /// <summary>The installer answers the mod was installed with (question id → option id).</summary>
+    public IReadOnlyDictionary<string, string>? InstallChoices { get; init; }
 }

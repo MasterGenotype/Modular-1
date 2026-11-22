@@ -25,6 +25,10 @@ public partial class InstallViewModel : ViewModelBase
     private readonly ModMetadataCache? _metadataCache;
     private readonly Modular.Core.Backends.BackendRegistry? _backends;
 
+    /// <summary>Ask every installer question again instead of repeating a mod's saved answers.</summary>
+    [ObservableProperty]
+    private bool _chooseOptionsAgain;
+
     [ObservableProperty]
     private ObservableCollection<string> _archivePaths = new();
 
@@ -484,7 +488,10 @@ public partial class InstallViewModel : ViewModelBase
                     CreateBackups = CreateBackups,
                     DryRun = DryRun,
                     AutoSnapshot = false,
-                    ChoiceResolver = AskInstallChoicesAsync
+                    ChoiceResolver = AskInstallChoicesAsync,
+                    // Reinstalling a mod repeats the installer answers it was installed with,
+                    // unless the point of the reinstall is to choose differently.
+                    ReuseSavedChoices = !ChooseOptionsAgain
                 };
 
                 var progress = new Progress<InstallProgress>(p =>
