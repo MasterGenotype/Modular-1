@@ -123,7 +123,8 @@ public sealed class ModListImportCommand : AsyncCommand<ModListImportCommand.Set
         var result = await AnsiConsole.Status().StartAsync("Installing…", async status =>
             await importer.ApplyAsync(list, installation, gameKey,
                 lookups.ResolveUrlAsync, http, services.Settings.ModsDirectory,
-                new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token));
+                new Progress<string>(m => status.Status(Markup.Escape(m))), cts.Token,
+                sortGameFolder: ModListCli.LibrarySorter(services, db)));
 
         AnsiConsole.MarkupLine($"Installed [bold]{result.Installed}[/], already there {result.Skipped}, failed {result.Failed.Count}, need you {result.NeedsUser.Count}.");
         foreach (var (entry, error) in result.Failed)
@@ -154,6 +155,15 @@ internal static class ModListCli
         var registry = services.CreateBackendRegistry();
         var nexus = registry.Get("nexusmods") is NexusModsBackend n && await services.EnsureNexusLoginAsync(ct) ? n : null;
         return new ModListLookups(nexus, registry.Get("modio") as Modular.Core.Backends.ModIo.ModIoBackend);
+    }
+
+    /// <summary>The Library's own sort (category folders, records kept linked) for one game folder.</summary>
+    public static Func<string, string, CancellationToken, Task> LibrarySorter(RuntimeServices services, ModularDatabase db)
+    {
+        var sorter = new Modular.Core.Services.ModLibrarySorter(
+            new Modular.Core.Services.BackendLibraryGameLookup(services.CreateBackendRegistry().GetAll(), services.Settings),
+            new Modular.Core.Installers.ChangesetManager(db).RelocateArchiveFolderAsync);
+        return async (backend, folder, ct) => await sorter.SortAsync(backend, folder, services.Settings.OrganizeByCategory, ct);
     }
 
     public static string FileStem(string name) =>

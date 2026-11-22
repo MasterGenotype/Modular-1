@@ -269,7 +269,8 @@ public partial class GamePageViewModel : ViewModelBase
             var result = await importer.ApplyAsync(list, installation, key,
                 _owner.Lookups.ResolveUrlAsync, http,
                 _owner.Settings!.ModsDirectory, new Progress<string>(m => ActionStatus = m),
-                choiceResolver: InstallChoiceDialog.For(_dialogs));
+                choiceResolver: InstallChoiceDialog.For(_dialogs),
+                sortGameFolder: _owner.LibrarySorter());
             var report = $"Installed {result.Installed}, already there {result.Skipped}, failed {result.Failed.Count}.";
             if (result.Failed.Count > 0)
                 report += "\n\nFailed:\n" + string.Join("\n", result.Failed.Select(f => $"• {f.Entry.Name}: {f.Error}"));

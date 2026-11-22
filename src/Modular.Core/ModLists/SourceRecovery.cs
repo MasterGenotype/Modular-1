@@ -93,13 +93,16 @@ public sealed class SourceRecovery
                 found = new DeclaredSource(h.Backend, h.ModId, h.Game.Length > 0 ? h.Game : null, h.FileId.Length > 0 ? h.FileId : null);
                 method = "download history";
             }
-            // 2. mod.io: numbered file name, install id, or the mod-title folder.
-            else if (lookups is { HasModIo: true } && (existing?.BackendId == "modio" || LooksLikeModIo(mod.ModId, archive, fileName)))
+            // 2. mod.io: the mod's own pak names its mod.io id (BG3 meta.lsx PublishHandle); else a
+            //    numbered file name, the install id, or the mod-title folder.
+            else if (lookups is { HasModIo: true } && (existing?.BackendId == "modio" || LooksLikeModIo(mod.ModId, archive, fileName)
+                                                       || PublishHandle(mod.StagingPath) is not null))
             {
                 try
                 {
-                    string? modioId = existing?.BackendId == "modio" ? existing.ModId : NumberedModIo(fileName);
+                    string? modioId = existing?.BackendId == "modio" ? existing.ModId : PublishHandle(mod.StagingPath) ?? NumberedModIo(fileName);
                     string? game = existing?.GameDomain;
+                    var fromPak = existing?.BackendId != "modio" && PublishHandle(mod.StagingPath) is not null;
                     if (modioId is null)
                     {
                         var nameId = mod.ModId.StartsWith("modio-", StringComparison.OrdinalIgnoreCase) ? mod.ModId["modio-".Length..] : null;
@@ -112,7 +115,8 @@ public sealed class SourceRecovery
                         var files = await lookups.ListFilesAsync("modio", game, modioId, ct);
                         var file = ModListExporter.MatchFile(files, fileName, null);
                         found = new DeclaredSource("modio", modioId, string.IsNullOrEmpty(game) ? null : game, file?.FileId);
-                        method = file is null ? "mod.io (mod found; that file is no longer listed)" : "mod.io";
+                        method = (fromPak ? "mod.io, id from the mod's pak" : "mod.io")
+                            + (file is null ? " (that file is no longer listed)" : "");
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -182,6 +186,28 @@ public sealed class SourceRecovery
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The mod.io id a BG3 pak carries in its meta.lsx (PublishHandle): paks published through the
+    /// in-game mod browser name their mod. Null when no staged pak has one.
+    /// </summary>
+    private static string? PublishHandle(string stagingPath)
+    {
+        if (!Directory.Exists(stagingPath))
+            return null;
+        try
+        {
+            foreach (var pak in Directory.EnumerateFiles(stagingPath, "*.pak", SearchOption.AllDirectories).Take(8))
+            {
+                if (Modular.Core.Installers.BaldursGate3.BG3PakMeta.Read(pak)?.Module.PublishHandle is { } handle and > 0)
+                    return handle.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+        }
+        return null;
     }
 
     private static bool LooksLikeModIo(string modId, string archive, string fileName) =>

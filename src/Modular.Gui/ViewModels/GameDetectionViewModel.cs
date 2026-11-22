@@ -42,6 +42,17 @@ public partial class GameDetectionViewModel : ViewModelBase
     /// <summary>The one TotK merge service (TkSharp allows one per process), shared with the TotK page.</summary>
     internal Lazy<Modular.Switch.Totk.TotkMergeService>? Totk { get; }
 
+    /// <summary>The Library's own sort (category folders, records kept linked), for one game folder.</summary>
+    internal Func<string, string, CancellationToken, Task>? LibrarySorter()
+    {
+        if (Database is null || Settings is null || Nexus is null || ModIo is null)
+            return null;
+        var sorter = new Modular.Core.Services.ModLibrarySorter(
+            new Modular.Core.Services.BackendLibraryGameLookup(new Modular.Sdk.Backends.IModBackend[] { Nexus, ModIo }, Settings),
+            new Modular.Core.Installers.ChangesetManager(Database).RelocateArchiveFolderAsync);
+        return async (backend, folder, ct) => await sorter.SortAsync(backend, folder, Settings.OrganizeByCategory, ct);
+    }
+
     /// <summary>Switch emulators found on this machine, shown under the games.</summary>
     public ObservableCollection<EmulatorDisplayModel> Emulators { get; } = new();
 

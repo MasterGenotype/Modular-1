@@ -588,6 +588,28 @@ public sealed class ModIoBackend : IModBackend, ISearchableBackend, IRequirement
         return null;
     }
 
+    /// <summary>
+    /// A mod whose name id starts with <paramref name="prefix"/> (mod.io's <c>name_id-lk</c> filter):
+    /// finds mods recorded under a shortened name id. Null unless exactly one mod matches.
+    /// </summary>
+    public async Task<string?> FindModIdByNameIdPrefixAsync(string prefix, string? gameDomain = null, CancellationToken ct = default)
+    {
+        prefix = prefix.Trim();
+        if (prefix.Length < 6)
+            return null; // too short to be one mod
+        foreach (var gameId in ResolveGameIds(gameDomain))
+        {
+            var page = await _client.GetAsync<ModIoPage<ModIoMod>>(
+                gameId,
+                $"games/{gameId}/mods",
+                new Dictionary<string, string> { ["name_id-lk"] = prefix + "*", ["_limit"] = "2" },
+                ct);
+            if (page.Data.Count == 1)
+                return Remember(page.Data[0]).Id.ToString(CultureInfo.InvariantCulture);
+        }
+        return null;
+    }
+
     /// <inheritdoc />
     public void Dispose() => _client.Dispose();
 

@@ -178,6 +178,18 @@ public sealed partial class ModUpdateService
         return m.Success ? m.Groups[1].Value.Replace('-', '.') : null;
     }
 
+    /// <summary>The folder the mod's current archive (or its record) is in, when that is inside the mods folder.</summary>
+    private async Task<string?> PreviousArchiveFolderAsync(string gameKey, string modId, string modsRoot, CancellationToken ct)
+    {
+        var row = await _install.Deployment.Mods.GetAsync(gameKey, modId, ct);
+        var archive = row?.ChangesetId is { } cs ? (await new ChangesetManager(_db).GetChangesetAsync(cs, ct))?.ArchivePath : null;
+        var dir = archive is null ? null : Path.GetDirectoryName(archive);
+        if (dir is null || !Path.GetFullPath(dir).StartsWith(Path.GetFullPath(modsRoot), StringComparison.Ordinal))
+            return null;
+        // Files Modular keeps for installed mods (.archives) are not where downloads go.
+        return dir.Contains($"{Path.DirectorySeparatorChar}.archives{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ? null : dir;
+    }
+
     /// <summary>A file name without version numbers, dates, ids or extension: "Mod Name-123-1-2-1700000000.zip" → "mod name".</summary>
     internal static string Series(string fileName)
     {
@@ -226,7 +238,10 @@ public sealed partial class ModUpdateService
                         : "no download link"));
                     continue;
                 }
-                var folder = ModLibraryLayout.ModFolder(modsRoot, u.Source.Backend, u.Source.Game, u.Name);
+                // Beside the version it replaces, which is already where the library keeps it
+                // (its category folder); a mod with no earlier archive falls back to the layout.
+                var folder = await PreviousArchiveFolderAsync(gameKey, u.ModId, modsRoot, ct)
+                    ?? ModLibraryLayout.ModFolder(modsRoot, u.Source.Backend, u.Source.Game, u.Name);
                 Directory.CreateDirectory(folder);
                 var archive = Path.Combine(folder, FileUtils.SanitizeDirectoryName(u.Newer.FileName));
                 if (!File.Exists(archive))

@@ -170,6 +170,9 @@ public static class DependencyConventions
         record["ModId"] = source.ModId;
         record["GameDomain"] = source.GameDomain;
         record["FileId"] = source.FileId;
+        // An archive released (or removed) along with its folder still gets its record back where
+        // it was, which is where everything reading records looks.
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         var tmp = path + ".tmp";
         File.WriteAllText(tmp, record.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         File.Move(tmp, path, overwrite: true);

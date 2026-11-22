@@ -64,10 +64,12 @@ public sealed class ModListImporter
         ModList list, GameInstallation installation, string gameKey,
         Func<ModListSource, CancellationToken, Task<string?>> resolveUrl, HttpClient http, string modsRoot,
         IProgress<string>? progress = null, CancellationToken ct = default,
-        Func<IReadOnlyList<Modular.Sdk.Installers.InstallChoice>, CancellationToken, Task<IReadOnlyDictionary<string, string>?>>? choiceResolver = null)
+        Func<IReadOnlyList<Modular.Sdk.Installers.InstallChoice>, CancellationToken, Task<IReadOnlyDictionary<string, string>?>>? choiceResolver = null,
+        Func<string, string, CancellationToken, Task>? sortGameFolder = null)
     {
         var plan = await PlanAsync(list, gameKey, ct);
         var failed = new List<(ModListEntry, string)>();
+        var touched = new HashSet<(string Backend, string Folder)>();
         var installedCount = 0;
         foreach (var item in plan.Where(p => p.Action == ModListAction.Download))
         {
@@ -84,6 +86,7 @@ public sealed class ModListImporter
                     continue;
                 }
                 var folder = ModLibraryLayout.ModFolder(modsRoot, src.Backend, src.Game, entry.Name);
+                touched.Add((src.Backend, ModLibraryLayout.GameFolder(modsRoot, src.Backend, src.Game)));
                 Directory.CreateDirectory(folder);
                 var fileName = entry.ArchiveName ?? Path.GetFileName(new Uri(url).LocalPath);
                 var archive = Path.Combine(folder, FileUtils.SanitizeDirectoryName(fileName));
@@ -125,6 +128,13 @@ public sealed class ModListImporter
             {
                 failed.Add((entry, ex.Message));
             }
+        }
+
+        // New downloads join their category folders, as the download queue's do.
+        if (sortGameFolder is not null)
+        {
+            foreach (var (backend, gameFolder) in touched)
+                await sortGameFolder(backend, gameFolder, ct);
         }
 
         if (installedCount > 0)
