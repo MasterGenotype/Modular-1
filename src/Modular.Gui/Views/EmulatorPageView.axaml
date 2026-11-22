@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.EmulatorPageView"
+             x:DataType="vm:EmulatorPageViewModel">
+
+    <Design.DataContext>
+        <vm:EmulatorPageViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer>
+        <StackPanel Spacing="14">
+            <Button Command="{Binding BackCommand}" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                    <TextBlock Text="Games"/>
+                </StackPanel>
+            </Button>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="SWITCH EMULATOR" Classes="eyebrow"/>
+                    <TextBlock Text="{Binding Emulator.Name}" Classes="title"/>
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                        <Grid.Styles>
+                            <Style Selector="TextBlock.key">
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                <Setter Property="Margin" Value="0,0,16,6"/>
+                            </Style>
+                        </Grid.Styles>
+                        <TextBlock Grid.Row="0" Text="Program" Classes="key"/>
+                        <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ExecutableText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="1" Text="Data folder" Classes="key"/>
+                        <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Emulator.DataRoot}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="2" Text="Game folders" Classes="key"/>
+                        <SelectableTextBlock Grid.Row="2" Grid.Column="1" Text="{Binding GameDirsText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="3" Text="Games" Classes="key"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Summary}"/>
+                    </Grid>
+                    <WrapPanel>
+                        <Button Command="{Binding OpenDataFolderCommand}" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                                <TextBlock Text="Open data folder"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding RefreshCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                                <TextBlock Text="Rescan games"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding Titles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SwitchTitleDisplayModel">
+                        <Button Classes="tile" Width="170" Margin="0,0,14,16"
+                                Command="{Binding $parent[UserControl].((vm:EmulatorPageViewModel)DataContext).OpenTitleCommand}"
+                                CommandParameter="{Binding}" ToolTip.Tip="{Binding Name}">
+                            <StackPanel Spacing="6">
+                                <Border Classes="cover" CornerRadius="8" Width="170" Height="170"
+                                        Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                    <StackPanel VerticalAlignment="Center" Margin="10" Spacing="8">
+                                        <mi:MaterialIcon Kind="GamepadVariantOutline" Width="32" Height="32" Opacity="0.4"/>
+                                        <TextBlock Text="{Binding Name}" TextWrapping="Wrap" TextAlignment="Center" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Caption}" Classes="caption"/>
+                                <TextBlock Text="{Binding ModsText}" Classes="caption"/>
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

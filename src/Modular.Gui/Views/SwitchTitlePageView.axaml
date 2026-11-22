@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Modular.Gui.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="Modular.Gui.Views.SwitchTitlePageView"
+             x:DataType="vm:SwitchTitlePageViewModel">
+
+    <Design.DataContext>
+        <vm:SwitchTitlePageViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer>
+        <StackPanel Spacing="14">
+            <Button Command="{Binding BackCommand}" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                    <TextBlock Text="{Binding EmulatorName}"/>
+                </StackPanel>
+            </Button>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="SWITCH GAME" Classes="eyebrow"/>
+                    <TextBlock Text="{Binding Title.Name}" Classes="title" TextWrapping="Wrap"/>
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                        <Grid.Styles>
+                            <Style Selector="TextBlock.key">
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                <Setter Property="Margin" Value="0,0,16,6"/>
+                            </Style>
+                        </Grid.Styles>
+                        <TextBlock Grid.Row="0" Text="Title ID" Classes="key"/>
+                        <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Title.TitleId}" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="1" Text="Version" Classes="key"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding VersionText}" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="2" Text="Add-ons" Classes="key"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AddOnsText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="3" Text="Emulator" Classes="key"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding EmulatorName}" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="4" Text="Mod folder" Classes="key"/>
+                        <SelectableTextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Title.ModDir}" TextWrapping="Wrap"/>
+                    </Grid>
+                    <Button Command="{Binding OpenModFolderCommand}" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                            <TextBlock Text="Open mod folder"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="INSTALLED MODS" Classes="eyebrow"/>
+                    <TextBlock Text="{Binding HowModsWork}" Classes="caption" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ModsSummary}" Classes="caption"/>
+                    <DataGrid ItemsSource="{Binding Mods}" IsVisible="{Binding HasMods}"
+                              AutoGenerateColumns="False" IsReadOnly="True" MaxHeight="520"
+                              CanUserSortColumns="True" GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="*"/>
+                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="130"/>
+                            <DataGridTextColumn Header="From" Binding="{Binding Source}" Width="220"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

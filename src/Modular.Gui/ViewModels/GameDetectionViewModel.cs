@@ -39,6 +39,41 @@ public partial class GameDetectionViewModel : ViewModelBase
     internal Modular.Core.Database.ModularDatabase? Database { get; }
     internal Modular.Core.Backends.ModIo.ModIoBackend? ModIo { get; }
 
+    /// <summary>The one TotK merge service (TkSharp allows one per process), shared with the TotK page.</summary>
+    internal Lazy<Modular.Switch.Totk.TotkMergeService>? Totk { get; }
+
+    /// <summary>Switch emulators found on this machine, shown under the games.</summary>
+    public ObservableCollection<EmulatorDisplayModel> Emulators { get; } = new();
+
+    public bool HasEmulators => Emulators.Count > 0;
+
+    private readonly Dictionary<string, EmulatorPageViewModel> _emulatorPages = new(StringComparer.OrdinalIgnoreCase);
+
+    [RelayCommand]
+    private void OpenEmulator(EmulatorDisplayModel? emulator)
+    {
+        if (emulator is null)
+            return;
+        if (!_emulatorPages.TryGetValue(emulator.Emulator.DataRoot, out var page))
+            _emulatorPages[emulator.Emulator.DataRoot] = page = new EmulatorPageViewModel(emulator.Emulator, this, _dialogService);
+        ActivePage = page;
+    }
+
+    private void LoadEmulators()
+    {
+        Emulators.Clear();
+        try
+        {
+            foreach (var e in Modular.Switch.Scanner.SwitchEmulatorDetector.Detect())
+                Emulators.Add(new EmulatorDisplayModel(e));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // No emulators listed this time.
+        }
+        OnPropertyChanged(nameof(HasEmulators));
+    }
+
     /// <summary>Online lookups for mod lists: Nexus when logged in, mod.io always.</summary>
     internal Modular.Core.ModLists.ModListLookups Lookups => new(
         string.IsNullOrEmpty(Settings?.NexusApiKey) ? null : Nexus, ModIo);
@@ -95,9 +130,10 @@ public partial class GameDetectionViewModel : ViewModelBase
     public GameDetectionViewModel(SteamGameScanner scanner, IDialogService dialogService, ModInstallationService installService,
         Modular.Core.Snapshots.SnapshotManager snapshots, Modular.Core.Backends.NexusMods.NexusModsBackend nexus,
         Modular.Core.Configuration.AppSettings settings, Modular.Core.Database.ModularDatabase database,
-        Modular.Core.Backends.ModIo.ModIoBackend modio)
+        Modular.Core.Backends.ModIo.ModIoBackend modio, Lazy<Modular.Switch.Totk.TotkMergeService> totk)
     {
         ModIo = modio;
+        Totk = totk;
         Database = database;
         _scanner = scanner;
         _dialogService = dialogService;
@@ -164,6 +200,7 @@ public partial class GameDetectionViewModel : ViewModelBase
                 Games.Add(g);
             TotalGames = Games.Count;
             ApplyFilter();
+            LoadEmulators();
             _ = LoadCoversAsync(Games.ToList());
             _ = CheckPinnedGamesAsync(Games.ToList());
             StatusMessage = $"Found {TotalGames} game(s)";
